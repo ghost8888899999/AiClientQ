@@ -1,0 +1,171 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/main"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:padding="16dp">
+    <EditText
+        android:id="@+id/et_private_key"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:hint="粘贴私钥"
+        android:inputType="textNoSuggestions" />
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:layout_marginTop="8dp">
+        <Button
+            android:id="@+id/btn_add_key"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="添加私钥" />
+        <View
+            android:layout_width="8dp"
+            android:layout_height="0dp" />
+        <Button
+            android:id="@+id/btn_refresh_list"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="刷新列表" />
+        <View
+            android:layout_width="8dp"
+            android:layout_height="0dp" />
+        <Button
+            android:id="@+id/btn_remove_selected"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="删除选中" />
+        <View
+            android:layout_width="8dp"
+            android:layout_height="0dp" />
+        <Button
+            android:id="@+id/btn_clear_all"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="清空全部" />
+    </LinearLayout>
+    <!-- ==========新增红色安全警告按钮 ========== -->
+    <Button
+        android:id="@+id/btn_security_warn"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:backgroundTint="#D32F2F"
+        android:textColor="#ffffff"
+        android:text="⚠安全风险提醒(必看)" />
+
+    <!--后台服务状态标签-->
+    <TextView
+        android:id="@+id/tv_service_status"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="后台服务：运行中（请在系统设置放开电池后台限制）"
+        android:textSize="13sp"
+        android:textColor="#00796B"
+        android:layout_marginTop="4dp"/>
+
+    <!-- 自动清除私钥配置区域 -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:layout_marginTop="8dp">
+        <EditText
+            android:id="@+id/et_auto_clear_val"
+            android:layout_width="80dp"
+            android:layout_height="wrap_content"
+            android:hint="数值"
+            android:inputType="number" />
+        <View
+            android:layout_width="8dp"
+            android:layout_height="0dp" />
+        <Spinner
+            android:id="@+id/sp_time_unit"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1" />
+        <View
+            android:layout_width="8dp"
+            android:layout_height="0dp" />
+        <Button
+            android:id="@+id/btn_set_auto_clear"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="设置自动清除" />
+        <View
+            android:layout_width="8dp"
+            android:layout_height="0dp"/>
+        <Button
+            android:id="@+id/btn_sys_schedule_setting"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="系统调度设置"/>
+    </LinearLayout>
+    <TextView
+        android:id="@+id/tv_auto_clear_status"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="当前：关闭自动清除(0)"
+        android:textSize="13sp" />
+    <TextView
+        android:id="@+id/tv_count_info"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="共 0 条密钥" />
+    <ListView
+        android:id="@+id/lv_cipher_keys"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1" />
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:layout_marginTop="8dp">
+        <Button
+            android:id="@+id/btn_batch_enter"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="批量入场" />
+        <View
+            android:layout_width="6dp"
+            android:layout_height="0dp" />
+        <Button
+            android:id="@+id/btn_batch_claim"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="批量领取" />
+        <View
+            android:layout_width="6dp"
+            android:layout_height="0dp" />
+        <Button
+            android:id="@+id/btn_full_workflow"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="完整工作流" />
+        <Button
+            android:id="@+id/btn_reset_task"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="重置任务进度"/>
+
+    </LinearLayout>
+    <ScrollView
+        android:layout_width="match_parent"
+        android:layout_height="180dp"
+        android:layout_marginTop="8dp">
+        <TextView
+            android:id="@+id/tv_log"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content" />
+    </ScrollView>
+</LinearLayout>
