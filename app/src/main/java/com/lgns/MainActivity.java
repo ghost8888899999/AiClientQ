@@ -16,12 +16,8 @@ import android.widget.ListView;
 import android.widget.Spinner;
 import android.widget.TextView;
 import android.util.SparseBooleanArray;
-import androidx.activity.EdgeToEdge;
 import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
-import androidx.core.graphics.Insets;
-import androidx.core.view.ViewCompat;
-import androidx.core.view.WindowInsetsCompat;
 import androidx.work.ExistingPeriodicWorkPolicy;
 import androidx.work.PeriodicWorkRequest;
 import androidx.work.WorkManager;
@@ -42,8 +38,6 @@ public class MainActivity extends AppCompatActivity implements TaskLogCallback, 
     private Button btnSetAutoClear;
     private Button btnSysScheduleSetting;
     private TextView tvAutoClearStatus;
-    private TextView tvServiceStatus;
-
     private long mAutoClearMilli = 0;
     private SharedPreferences sp;
     private final String[] unitArray = {"分钟","小时","天"};
@@ -57,13 +51,9 @@ public class MainActivity extends AppCompatActivity implements TaskLogCallback, 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        EdgeToEdge.enable(this);
+        // =====移除 EdgeToEdge.enable(this); 无边框全屏=====
         setContentView(R.layout.activity_main);
-        ViewCompat.setOnApplyWindowInsetsListener(findViewById(R.id.main), (v, insets) -> {
-            Insets systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars());
-            v.setPadding(systemBars.left, systemBars.top, systemBars.right, systemBars.bottom);
-            return insets;
-        });
+        // =====删除整套 OnApplyWindowInsetsListener 监听器，解决左侧控件被裁切问题=====
 
         sp = getSharedPreferences("app_setting",MODE_PRIVATE);
 
@@ -71,8 +61,6 @@ public class MainActivity extends AppCompatActivity implements TaskLogCallback, 
         tvLog = findViewById(R.id.tv_log);
         tvCountInfo = findViewById(R.id.tv_count_info);
         lvCipherKeys = findViewById(R.id.lv_cipher_keys);
-        tvServiceStatus = findViewById(R.id.tv_service_status);
-        tvServiceStatus.setText("后台：WorkManager系统调度（最小15分钟，受电池策略影响）");
 
         btnSecurityWarn = findViewById(R.id.btn_security_warn);
         etAutoClearVal = findViewById(R.id.et_auto_clear_val);
