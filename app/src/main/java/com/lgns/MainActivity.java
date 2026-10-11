@@ -972,4 +972,12 @@ public class MainActivity extends AppCompatActivity implements TaskLogCallback {
             tempUserCryptoKey = null;
         }
     }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        //每次回到页面，立刻校验自动清除是否到期
+        checkAutoClearBoot();
+    }
+
 }
