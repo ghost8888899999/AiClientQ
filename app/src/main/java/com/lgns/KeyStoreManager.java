@@ -1,165 +1,132 @@
 package com.lgns;
 
 import android.content.Context;
-import java.io.BufferedReader;
-import java.io.File;
-import java.io.FileReader;
-import java.io.FileWriter;
+import android.content.SharedPreferences;
+import android.util.Base64;
+import javax.crypto.Cipher;
+import javax.crypto.spec.GCMParameterSpec;
+import javax.crypto.spec.SecretKeySpec;
+import javax.crypto.SecretKey;
+import java.nio.charset.StandardCharsets;
+import java.security.SecureRandom;
 import java.util.ArrayList;
 import java.util.List;
-import javax.crypto.SecretKey;
 
-/**
- * 密钥库管理器
- * 私钥AES‑GCM加密存储到files目录 keys.enc；磁盘不落地明文私钥，内存解密临时使用
- * 密钥保存在AndroidKeyStore，APP重启密钥不会丢失
- */
 public class KeyStoreManager {
-    private final File encFile;
-    private final SecretKey mAesKey;
+    private static final String SP_NAME = "keystore_sp";
+    private static final String KEY_CIPHER_LIST = "cipher_list";
+    private static final int GCM_IV_LEN = 12;
+    private static final int GCM_TAG_LEN = 128;
 
-    // 双参数构造器
+    private final SharedPreferences sp;
+    private final SecretKey mAesSecretKey;
+
+    //和AppGlobal匹配的构造：传入系统生成的AES SecretKey
     public KeyStoreManager(Context ctx, SecretKey aesKey) {
-        this.mAesKey = aesKey;
-        encFile = new File(ctx.getFilesDir(), "keys.enc");
+        sp = ctx.getSharedPreferences(SP_NAME, Context.MODE_PRIVATE);
+        mAesSecretKey = aesKey;
     }
 
-    /**
-     * UI新增私钥：加密后追加写入磁盘文件
-     * @param plainPrivateKey 明文私钥
-     * @throws Exception DUPLICATE_KEY 代表私钥已存在；加密/IO异常
-     */
-    public synchronized void addPrivateKey(String plainPrivateKey) throws Exception {
-        boolean exist = isPlainPrivateKeyExist(plainPrivateKey);
-        if (exist) {
-            throw new Exception("DUPLICATE_KEY");
-        }
-        String cipherText = PrivateKeyEncryptUtil.encrypt(plainPrivateKey, mAesKey);
-        try (FileWriter fw = new FileWriter(encFile, true)) {
-            fw.write(cipherText);
-            fw.write("\n");
-        }
-    }
-
-    /**
-     * 判断明文私钥是否已经存在
-     * GCM模式每次加密IV随机，密文不可比对；只能解密全部做明文对比
-     * @param plainPrivateKey 待检测明文私钥
-     * @return true 已存在
-     * @throws Exception IO、解密异常
-     */
-    public synchronized boolean isPlainPrivateKeyExist(String plainPrivateKey) throws Exception {
+    /** 添加私钥：使用本次会话传入的char[]种子做加密，保存密文字符串 */
+    public void addPrivateKey(String rawPrivateKey, char[] sessionCryptoKey) throws Exception {
         List<String> cipherList = loadCipherTextList();
-        for (String cipher : cipherList) {
-            String plain = PrivateKeyEncryptUtil.decrypt(cipher, mAesKey);
-            if (plain.equals(plainPrivateKey)) {
-                return true;
-            }
+        String cipherText = encrypt(rawPrivateKey, sessionCryptoKey);
+        cipherList.add(cipherText);
+        saveCipherList(cipherList);
+    }
+
+    /** 根据索引删除密文 */
+    public void removeByIndex(int index) throws Exception {
+        List<String> cipherList = loadCipherTextList();
+        if(index <0 || index >= cipherList.size()){
+            throw new Exception("索引越界");
         }
-        return false;
+        cipherList.remove(index);
+        saveCipherList(cipherList);
+    }
+
+    /** 清空全部密文 */
+    public void clearAllKeys(){
+        sp.edit().remove(KEY_CIPHER_LIST).apply();
+    }
+
+    /** 获取全部密文列表 */
+    public List<String> loadCipherTextList(){
+        String json = sp.getString(KEY_CIPHER_LIST,"");
+        List<String> res = new ArrayList<>();
+        if(json == null || json.isEmpty()){
+            return res;
+        }
+        String[] arr = json.split("\\|");
+        for(String s : arr){
+            if(!s.isEmpty()) res.add(s);
+        }
+        return res;
+    }
+
+    private void saveCipherList(List<String> list){
+        StringBuilder sb = new StringBuilder();
+        for(int i=0;i<list.size();i++){
+            if(i>0) sb.append("|");
+            sb.append(list.get(i));
+        }
+        sp.edit().putString(KEY_CIPHER_LIST, sb.toString()).apply();
+    }
+
+    /** 解密密文，会话key不匹配抛出异常 */
+    public String decryptCipherText(String cipherBase64, char[] sessionCryptoKey) throws Exception {
+        byte[] fullData = Base64.decode(cipherBase64, Base64.NO_WRAP);
+        byte[] iv = new byte[GCM_IV_LEN];
+        System.arraycopy(fullData,0,iv,0,GCM_IV_LEN);
+        byte[] cipherBody = new byte[fullData.length - GCM_IV_LEN];
+        System.arraycopy(fullData,GCM_IV_LEN,cipherBody,0,cipherBody.length);
+
+        SecretKey derivedKey = deriveKeyFromChars(sessionCryptoKey);
+        GCMParameterSpec spec = new GCMParameterSpec(GCM_TAG_LEN, iv);
+        Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
+        cipher.init(Cipher.DECRYPT_MODE, derivedKey, spec);
+        byte[] plain = cipher.doFinal(cipherBody);
+        return new String(plain, StandardCharsets.UTF_8);
+    }
+
+    /** 加密明文私钥，返回base64密文 */
+    public String encrypt(String plainText, char[] sessionCryptoKey) throws Exception {
+        SecureRandom random = new SecureRandom();
+        byte[] iv = new byte[GCM_IV_LEN];
+        random.nextBytes(iv);
+        SecretKey derivedKey = deriveKeyFromChars(sessionCryptoKey);
+        GCMParameterSpec spec = new GCMParameterSpec(GCM_TAG_LEN, iv);
+        Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
+        cipher.init(Cipher.ENCRYPT_MODE, derivedKey, spec);
+        byte[] cipherBody = cipher.doFinal(plainText.getBytes(StandardCharsets.UTF_8));
+
+        byte[] full = new byte[iv.length + cipherBody.length];
+        System.arraycopy(iv,0,full,0,iv.length);
+        System.arraycopy(cipherBody,0,full,iv.length,cipherBody.length);
+        return Base64.encodeToString(full, Base64.NO_WRAP);
+    }
+
+    //由用户输入char[]会话密码派生AES密钥
+    private SecretKey deriveKeyFromChars(char[] passChars) throws Exception {
+        StringBuilder sb = new StringBuilder();
+        sb.append(passChars);
+        byte[] raw = sb.toString().getBytes(StandardCharsets.UTF_8);
+        byte[] key32 = new byte[32];
+        for(int i=0;i<raw.length;i++){
+            key32[i % 32] ^= raw[i];
+        }
+        return new SecretKeySpec(key32,"AES");
     }
 
     /**
-     * 【任务业务使用】加载全部私钥：磁盘读取密文，解密返回明文List（仅内存临时持有）
-     * @return 解密后的私钥集合
-     * @throws Exception IO/解密异常
+     * 仅用于校验密码是否正确；解密成功无返回，失败抛异常
+     * @param cipherText 密文
+     * @param password 密码字符数组
+     * @throws Exception 密码错误/解密失败抛出异常
      */
-    public synchronized List<String> loadAllPrivateKeys() throws Exception {
-        List<String> result = new ArrayList<>();
-        if (!encFile.exists()) {
-            return result;
-        }
-        try (BufferedReader br = new BufferedReader(new FileReader(encFile))) {
-            String line;
-            while ((line = br.readLine()) != null) {
-                line = line.trim();
-                if (line.isEmpty()) continue;
-                String plain = PrivateKeyEncryptUtil.decrypt(line, mAesKey);
-                result.add(plain);
-            }
-        }
-        return result;
+    public void testDecrypt(String cipherText, char[] password) throws Exception{
+        //调用真实解密方法 decryptCipherText，丢弃返回明文，仅用来校验密码，异常自动上抛
+        decryptCipherText(cipherText, password);
     }
 
-    /**
-     * 【UI界面展示用】只读取原始密文行，**不解密**，界面展示密文字符串
-     */
-    public synchronized List<String> loadCipherTextList() throws Exception {
-        List<String> cipherList = new ArrayList<>();
-        if (!encFile.exists()) {
-            return cipherList;
-        }
-        try (BufferedReader br = new BufferedReader(new FileReader(encFile))) {
-            String line;
-            while ((line = br.readLine()) != null) {
-                line = line.trim();
-                if (!line.isEmpty()) {
-                    cipherList.add(line);
-                }
-            }
-        }
-        return cipherList;
-    }
-
-    /**
-     * 删除指定索引的密文行
-     */
-    public synchronized void removeByIndex(int index) throws Exception {
-        List<String> allCipher = loadCipherTextList();
-        if(index <0 || index >= allCipher.size()){
-            return;
-        }
-        allCipher.remove(index);
-        //回写全部
-        try(FileWriter fw = new FileWriter(encFile,false)){
-            for(String s : allCipher){
-                fw.write(s);
-                fw.write("\n");
-            }
-        }
-    }
-
-    /**
-     * 删除全部密钥文件
-     */
-    public synchronized void clearAllKeys() {
-        if (encFile.exists()) {
-            encFile.delete();
-        }
-    }
-
-    /**
-     * 批量删除多条密文（传入要删除的下标集合）
-     */
-    public synchronized void removeByIndexList(List<Integer> removeIndexList) throws Exception {
-        List<String> allCipher = loadCipherTextList();
-        // 从大到小删除，防止下标移位错乱！！
-        removeIndexList.sort((o1, o2) -> Integer.compare(o2, o1));
-        for(Integer idx : removeIndexList){
-            if(idx >=0 && idx < allCipher.size()){
-                allCipher.remove((int)idx);
-            }
-        }
-        //回写文件
-        try(FileWriter fw = new FileWriter(encFile,false)){
-            for(String s : allCipher){
-                fw.write(s);
-                fw.write("\n");
-            }
-        }
-    }
-
-    /**
-     * 对外：明文加密得到密文（仅UI，不做查重）
-     */
-    public String encryptPlainKey(String plainPrivateKey) throws Exception{
-        return PrivateKeyEncryptUtil.encrypt(plainPrivateKey, mAesKey);
-    }
-
-    /**
-     * 业务任务接口：加载全部明文私钥，给ArenaTask调用
-     */
-    public synchronized List<String> loadAllPrivateKey() throws Exception{
-        return loadAllPrivateKeys();
-    }
 }

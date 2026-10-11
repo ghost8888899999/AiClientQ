@@ -1,503 +1,959 @@
 package com.lgns;
 
-import android.content.Intent;
+import android.app.AlertDialog;
+import android.content.Context;
+import android.content.DialogInterface;
 import android.content.SharedPreferences;
-import android.net.Uri;
 import android.os.Bundle;
-import android.provider.Settings;
+import android.text.InputType;
+import android.view.LayoutInflater;
 import android.view.View;
-import android.view.ViewParent;
 import android.view.ViewGroup;
+import android.view.animation.RotateAnimation;
 import android.widget.ArrayAdapter;
 import android.widget.Button;
 import android.widget.CheckedTextView;
 import android.widget.EditText;
+import android.widget.ImageButton;
+import android.widget.ImageView;
 import android.widget.ListView;
+import android.widget.PopupWindow;
+import android.widget.ScrollView;
 import android.widget.Spinner;
 import android.widget.TextView;
-import android.util.SparseBooleanArray;
-import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.work.ExistingPeriodicWorkPolicy;
 import androidx.work.PeriodicWorkRequest;
 import androidx.work.WorkManager;
+import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Date;
 import java.util.List;
+import java.util.Locale;
 import java.util.concurrent.TimeUnit;
 
-public class MainActivity extends AppCompatActivity implements TaskLogCallback, SharedPreferences.OnSharedPreferenceChangeListener {
-    private EditText etPrivateKey;
-    private TextView tvLog;
+public class MainActivity extends AppCompatActivity implements TaskLogCallback {
+    //入场模式
+    public static final int MODE_FLEXIBLE = 0; //能打就打，过滤不可执行账号
+    public static final int MODE_TOGETHER = 1; //等齐再打，全部模拟通过才提交
+    private int currentPlayMode = MODE_FLEXIBLE;
+
+    //临时自定义加解密key，仅内存，不持久化；解密密钥密文用
+    private char[] tempUserCryptoKey;
+
+    //WorkManager自动清除配置
+    private static final String WORK_AUTO_CLEAR = "work_auto_clear_task";
+    private static final long MIN_ALLOW_MINUTE = 15;
+    private SharedPreferences spAppSetting;
+    private final String[] unitArray = {"分钟", "小时", "天"};
+
+    //UI控件
+    private ImageButton btnSettingGear;
+    private Button btnSecurityWarn;
     private TextView tvCountInfo;
     private ListView lvCipherKeys;
-    private ArrayAdapter<String> cipherAdapter;
+    private Button btnBatchEnter;
+    private Button btnBatchClaim;
+    private Button btnFullWorkflow;
+    private Button btnResetTask;
+    private TextView tvLog;
+    private ScrollView scrollView;
 
-    private Button btnSecurityWarn;
-    private EditText etAutoClearVal;
-    private Spinner spTimeUnit;
-    private Button btnSetAutoClear;
-    private Button btnSysScheduleSetting;
-    private TextView tvAutoClearStatus;
-    private long mAutoClearMilli = 0;
-    private SharedPreferences sp;
-    private final String[] unitArray = {"分钟","小时","天"};
-    private SharedPreferences.OnSharedPreferenceChangeListener mSpListener;
+    private PopupWindow mPopupWindow;
 
-    // workManager任务唯一名称
-    private static final String WORK_AUTO_CLEAR = "work_auto_clear_task";
-    // WorkManager系统强制最小周期：15分钟
-    private static final long MIN_ALLOW_MINUTE = 15;
+    //密钥列表Model
+    static class KeyListItem {
+        public int seqNo;
+        public String displayNo; //格式化 001
+        public String cipherText;
+        public boolean isUsable = true;
+        public boolean isChecked; //自己维护勾选状态，不依赖ListView
+    }
+
+    private List<KeyListItem> keyListItemList = new ArrayList<>();
+    private ArrayAdapter<KeyListItem> keyAdapter;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        // =====移除 EdgeToEdge.enable(this); 无边框全屏=====
         setContentView(R.layout.activity_main);
-        // =====删除整套 OnApplyWindowInsetsListener 监听器，解决左侧控件被裁切问题=====
+        spAppSetting = getSharedPreferences("app_setting", MODE_PRIVATE);
+        //读取持久化入场模式
+        currentPlayMode = spAppSetting.getInt("play_mode", MODE_FLEXIBLE);
 
-        sp = getSharedPreferences("app_setting",MODE_PRIVATE);
+        bindViews();
+        setupGearMenu();
+        setupButtonEvents();
+        setupListViewCheckListener();
 
-        etPrivateKey = findViewById(R.id.et_private_key);
-        tvLog = findViewById(R.id.tv_log);
+        //====APP打开兜底自动清除校验====
+        checkAutoClearBoot();
+
+        //APP启动后台线程初始化密钥管理器
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    AppGlobal.initKeyManager(getApplicationContext());
+                    runOnUiThread(new Runnable() {
+                        @Override
+                        public void run() {
+                            appendLog("", "", "✅密钥管理器初始化完成");
+                            refreshCipherKeyList();
+                        }
+                    });
+                } catch (Exception e) {
+                    runOnUiThread(new Runnable() {
+                        @Override
+                        public void run() {
+                            appendLog("", "", "❌密钥管理器初始化失败:" + e.getMessage());
+                        }
+                    });
+                }
+            }
+        }).start();
+    }
+
+    /** ListView条目点击：更新model勾选标记 */
+    private void setupListViewCheckListener() {
+        lvCipherKeys.setOnItemClickListener(new android.widget.AdapterView.OnItemClickListener() {
+            @Override
+            public void onItemClick(android.widget.AdapterView<?> parent, View view, int position, long id) {
+                KeyListItem item = keyListItemList.get(position);
+                item.isChecked = !item.isChecked;
+                CheckedTextView tv = (CheckedTextView) view;
+                tv.setChecked(item.isChecked);
+                refreshCheckedStatText();
+            }
+        });
+    }
+
+    /** 统计勾选数量，遍历model，不再依赖ListView内部勾选集合 */
+    private void refreshCheckedStatText() {
+        int total = keyListItemList.size();
+        int checked = 0;
+        for (KeyListItem item : keyListItemList) {
+            if (item.isChecked) {
+                checked++;
+            }
+        }
+        String info = String.format(Locale.getDefault(), "总:%d条密钥，已选:%d条", total, checked);
+        tvCountInfo.setText(info);
+    }
+
+    /** APP打开兜底校验自动清除计时，解决WorkManager被省电杀掉不执行 */
+    private void checkAutoClearBoot() {
+        long saveTotalMs = spAppSetting.getLong("auto_clear_ms", 0);
+        long saveStartTs = spAppSetting.getLong("auto_clear_start_ts", 0);
+        if (saveTotalMs > 0 && saveStartTs > 0) {
+            long now = System.currentTimeMillis();
+            if (now - saveStartTs >= saveTotalMs) {
+                new Thread(new Runnable() {
+                    @Override
+                    public void run() {
+                        try {
+                            KeyStoreManager mgr = AppGlobal.getKeyStoreManager();
+                            mgr.clearAllKeys();
+                            runOnUiThread(new Runnable() {
+                                @Override
+                                public void run() {
+                                    appendLog("", "", "⚠检测到自动清除计时到期，打开APP自动清空全部私钥！");
+                                    refreshCipherKeyList();
+                                }
+                            });
+                        } catch (Exception ignored) {
+                        }
+                    }
+                }).start();
+                spAppSetting.edit()
+                        .putLong("auto_clear_ms", 0)
+                        .putLong("auto_clear_start_ts", 0)
+                        .apply();
+                WorkManager.getInstance(getApplicationContext()).cancelUniqueWork(WORK_AUTO_CLEAR);
+            }
+        }
+    }
+
+    private void bindViews() {
+        btnSettingGear = findViewById(R.id.btn_setting_gear);
+        btnSecurityWarn = findViewById(R.id.btn_security_warn);
         tvCountInfo = findViewById(R.id.tv_count_info);
         lvCipherKeys = findViewById(R.id.lv_cipher_keys);
+        btnBatchEnter = findViewById(R.id.btn_batch_enter);
+        btnBatchClaim = findViewById(R.id.btn_batch_claim);
+        btnFullWorkflow = findViewById(R.id.btn_full_workflow);
+        btnResetTask = findViewById(R.id.btn_reset_task);
+        tvLog = findViewById(R.id.tv_log);
+        scrollView = findViewById(R.id.scrollView);
+    }
 
-        btnSecurityWarn = findViewById(R.id.btn_security_warn);
-        etAutoClearVal = findViewById(R.id.et_auto_clear_val);
-        spTimeUnit = findViewById(R.id.sp_time_unit);
-        btnSetAutoClear = findViewById(R.id.btn_set_auto_clear);
-        btnSysScheduleSetting = findViewById(R.id.btn_sys_schedule_setting);
-        tvAutoClearStatus = findViewById(R.id.tv_auto_clear_status);
-
-        Button btnAddKey = findViewById(R.id.btn_add_key);
-        Button btnRefreshList = findViewById(R.id.btn_refresh_list);
-        Button btnRemoveSelected = findViewById(R.id.btn_remove_selected);
-        Button btnClearAll = findViewById(R.id.btn_clear_all);
-        Button btnBatchEnter = findViewById(R.id.btn_batch_enter);
-        Button btnBatchClaim = findViewById(R.id.btn_batch_claim);
-        Button btnFullWorkflow = findViewById(R.id.btn_full_workflow);
-        Button btnResetTask = findViewById(R.id.btn_reset_task);
-
-        ArrayAdapter<String> unitAdapter = new ArrayAdapter<>(this,android.R.layout.simple_spinner_dropdown_item,unitArray);
-        spTimeUnit.setAdapter(unitAdapter);
-
-        // APP打开兜底校验：如果计时已经超时，直接清空密钥
-        long saveTotalMs = sp.getLong("auto_clear_ms",0);
-        long saveStartTs = sp.getLong("auto_clear_start_ts",0);
-        if(saveTotalMs >0 && saveStartTs>0){
-            long now = System.currentTimeMillis();
-            if(now - saveStartTs >= saveTotalMs){
-                new Thread(()->{
-                    try {
-                        KeyStoreManager mgr = AppGlobal.getKeyStoreManager();
-                        mgr.clearAllKeys();
-                        runOnUiThread(()->{
-                            appendLog("⚠检测到上次会话计时已超时，打开APP自动清空全部私钥！");
-                            refreshCipherKeyList();
-                        });
-                    }catch (Exception ignored){}
-                }).start();
-                sp.edit().putLong("auto_clear_ms",0).putLong("auto_clear_start_ts",0).apply();
-                mAutoClearMilli =0;
-                // 取消work任务
-                WorkManager.getInstance(getApplicationContext()).cancelUniqueWork(WORK_AUTO_CLEAR);
-            }else{
-                mAutoClearMilli = saveTotalMs - (now - saveStartTs);
-            }
-        }else{
-            mAutoClearMilli = saveTotalMs;
-        }
-        refreshAutoClearUi();
-
-        cipherAdapter = new ArrayAdapter<String>(this, R.layout.item_cipher_key) {
+    private void setupGearMenu() {
+        btnSettingGear.setOnClickListener(new View.OnClickListener() {
             @Override
-            public View getView(int position, View convertView, ViewGroup parent) {
-                View v = super.getView(position, convertView, parent);
-                CheckedTextView tv = (CheckedTextView) v;
-                String full = getItem(position);
-                if(full != null && full.length() > 32){
-                    tv.setText(full.substring(0,32)+"...");
-                }else{
-                    tv.setText(full);
-                }
-                return v;
+            public void onClick(View v) {
+                showCollapseMenu(v);
             }
-        };
-        lvCipherKeys.setChoiceMode(ListView.CHOICE_MODE_MULTIPLE);
-        lvCipherKeys.setAdapter(cipherAdapter);
+        });
+    }
 
-        new Thread(() -> {
-            try {
-                AppGlobal.initKeyManager(getApplicationContext());
-                runOnUiThread(() -> {
-                    appendLog("✅密钥管理器初始化完成（AndroidKeyStore持久存储）");
-                    refreshCipherKeyList();
+    /** 切换分组展开/收起，箭头旋转动画 */
+    private void toggleGroup(View container, ImageView ivArrow) {
+        RotateAnimation anim;
+        if (container.getVisibility() == View.VISIBLE) {
+            container.setVisibility(View.GONE);
+            anim = new RotateAnimation(180f, 0f, RotateAnimation.RELATIVE_TO_SELF, 0.5f, RotateAnimation.RELATIVE_TO_SELF, 0.5f);
+            ivArrow.setRotation(0f);
+        } else {
+            container.setVisibility(View.VISIBLE);
+            anim = new RotateAnimation(0f, 180f, RotateAnimation.RELATIVE_TO_SELF, 0.5f, RotateAnimation.RELATIVE_TO_SELF, 0.5f);
+            ivArrow.setRotation(180f);
+        }
+        anim.setDuration(200);
+        anim.setFillAfter(true);
+        ivArrow.startAnimation(anim);
+    }
+
+    private void showCollapseMenu(View anchorView) {
+        if (mPopupWindow != null && mPopupWindow.isShowing()) {
+            mPopupWindow.dismiss();
+            return;
+        }
+        View popView = LayoutInflater.from(this).inflate(R.layout.layout_pop_menu, null);
+
+        //分组控件
+        final View groupKeyContainer = popView.findViewById(R.id.group_key_container);
+        final ImageView ivArrowKey = popView.findViewById(R.id.iv_arrow_key);
+        popView.findViewById(R.id.group_key_title).setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                toggleGroup(groupKeyContainer, ivArrowKey);
+            }
+        });
+
+        final View groupLogContainer = popView.findViewById(R.id.group_log_container);
+        final ImageView ivArrowLog = popView.findViewById(R.id.iv_arrow_log);
+        popView.findViewById(R.id.group_log_title).setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                toggleGroup(groupLogContainer, ivArrowLog);
+            }
+        });
+
+        final View groupAutoContainer = popView.findViewById(R.id.group_auto_container);
+        final ImageView ivArrowAuto = popView.findViewById(R.id.iv_arrow_auto);
+        popView.findViewById(R.id.group_auto_title).setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                toggleGroup(groupAutoContainer, ivArrowAuto);
+            }
+        });
+
+        final View groupModeContainer = popView.findViewById(R.id.group_mode_container);
+        final ImageView ivArrowMode = popView.findViewById(R.id.iv_arrow_mode);
+        popView.findViewById(R.id.group_mode_title).setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                toggleGroup(groupModeContainer, ivArrowMode);
+            }
+        });
+
+        //二级菜单项绑定点击事件
+        TextView menuAddKey = popView.findViewById(R.id.menu_add_key);
+        menuAddKey.setText("添加密钥");
+        menuAddKey.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                showAddKeyDialog();
+                mPopupWindow.dismiss();
+            }
+        });
+
+        TextView menuRefreshList = popView.findViewById(R.id.menu_refresh_list);
+        menuRefreshList.setText("刷新密钥列表");
+        menuRefreshList.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                refreshCipherKeyList();
+                mPopupWindow.dismiss();
+            }
+        });
+
+        TextView menuRemoveSel = popView.findViewById(R.id.menu_remove_selected);
+        menuRemoveSel.setText("删除选中密钥");
+        menuRemoveSel.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                removeSelectedKeys();
+                mPopupWindow.dismiss();
+            }
+        });
+
+        TextView menuClearAllKey = popView.findViewById(R.id.menu_clear_all_key);
+        menuClearAllKey.setText("清空全部密钥");
+        menuClearAllKey.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                showConfirmClearAllKey();
+                mPopupWindow.dismiss();
+            }
+        });
+
+        TextView menuViewLog = popView.findViewById(R.id.menu_view_log);
+        menuViewLog.setText("查看日志(最新优先)");
+        menuViewLog.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                showViewLogDialog();
+                mPopupWindow.dismiss();
+            }
+        });
+
+        TextView menuClearLogDb = popView.findViewById(R.id.menu_clear_log_db);
+        menuClearLogDb.setText("清空数据库全部日志");
+        menuClearLogDb.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                showConfirmClearLogDb();
+                mPopupWindow.dismiss();
+            }
+        });
+
+        TextView menuSysSchedule = popView.findViewById(R.id.menu_sys_schedule_setting);
+        menuSysSchedule.setText("自动清除配置");
+        menuSysSchedule.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                openSysScheduleDialog();
+                mPopupWindow.dismiss();
+            }
+        });
+
+        //==== 根据当前模式动态设置选中标记 ● ====
+        TextView menuModeFlex = popView.findViewById(R.id.menu_mode_flexible);
+        TextView menuModeTogether = popView.findViewById(R.id.menu_mode_together);
+        if (currentPlayMode == MODE_FLEXIBLE) {
+            menuModeFlex.setText("● 能打就打(过滤不可执行账号)");
+            menuModeTogether.setText("  等齐再打(全部模拟通过才提交)");
+        } else {
+            menuModeFlex.setText("  能打就打(过滤不可执行账号)");
+            menuModeTogether.setText("● 等齐再打(全部模拟通过才提交)");
+        }
+
+        //切换：能打就打
+        menuModeFlex.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                currentPlayMode = MODE_FLEXIBLE;
+                spAppSetting.edit()
+                        .putInt("play_mode", currentPlayMode)
+                        .apply();
+                appendLog("", "", "✅已切换入场模式：能打就打，自动过滤不可执行账号");
+                mPopupWindow.dismiss();
+            }
+        });
+
+        //切换：等齐再打
+        menuModeTogether.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                currentPlayMode = MODE_TOGETHER;
+                spAppSetting.edit()
+                        .putInt("play_mode", currentPlayMode)
+                        .apply();
+                appendLog("", "", "✅已切换入场模式：等齐再打，全部模拟通过才提交交易");
+                mPopupWindow.dismiss();
+            }
+        });
+
+        mPopupWindow = new PopupWindow(popView, ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, true);
+        mPopupWindow.setOutsideTouchable(true);
+        mPopupWindow.showAsDropDown(anchorView, 0, 4);
+    }
+
+    private void setupButtonEvents() {
+        btnSecurityWarn.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                showSecurityWarningDialog();
+            }
+        });
+
+        //批量入场
+        btnBatchEnter.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                showDecryptPasswordDialog(new PasswordCallback() {
+                    @Override
+                    public void onInputPwd(char[] pwdCharArray) {
+                        new Thread(new Runnable() {
+                            @Override
+                            public void run() {
+                                try {
+                                    List<KeyListItem> selectedList = getSelectedKeyItem();
+                                    ArenaTask.batchEnterAllResume(getApplicationContext(), MainActivity.this, currentPlayMode, selectedList, tempUserCryptoKey);
+                                } catch (Exception e) {
+                                    runOnUiThread(new Runnable() {
+                                        @Override
+                                        public void run() {
+                                            appendLog("", "ENTER", "❌批量入场外层异常：" + e.getMessage());
+                                        }
+                                    });
+                                } finally {
+                                    Arrays.fill(pwdCharArray, (char) 0);
+                                }
+                            }
+                        }).start();
+                    }
                 });
-            } catch (Exception e) {
-                runOnUiThread(() -> appendLog("❌初始化失败:" + e.getMessage()));
-                e.printStackTrace();
+            }
+        });
+
+        //批量领取
+        btnBatchClaim.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                showDecryptPasswordDialog(new PasswordCallback() {
+                    @Override
+                    public void onInputPwd(char[] pwdCharArray) {
+                        new Thread(new Runnable() {
+                            @Override
+                            public void run() {
+                                try {
+                                    List<KeyListItem> selectedList = getSelectedKeyItem();
+                                    ArenaTask.batchClaimAllResume(getApplicationContext(), MainActivity.this, currentPlayMode, selectedList, tempUserCryptoKey);
+                                } catch (Exception e) {
+                                    runOnUiThread(new Runnable() {
+                                        @Override
+                                        public void run() {
+                                            appendLog("", "CLAIM", "❌批量领取外层异常：" + e.getMessage());
+                                        }
+                                    });
+                                } finally {
+                                    Arrays.fill(pwdCharArray, (char) 0);
+                                }
+                            }
+                        }).start();
+                    }
+                });
+            }
+        });
+
+        //完整工作流
+        btnFullWorkflow.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                showDecryptPasswordDialog(new PasswordCallback() {
+                    @Override
+                    public void onInputPwd(char[] pwdCharArray) {
+                        new Thread(new Runnable() {
+                            @Override
+                            public void run() {
+                                try {
+                                    List<KeyListItem> selectedList = getSelectedKeyItem();
+                                    ArenaTask.fullArenaWorkflowResume(getApplicationContext(), MainActivity.this, 2, currentPlayMode, selectedList, tempUserCryptoKey);
+                                } catch (Exception e) {
+                                    runOnUiThread(new Runnable() {
+                                        @Override
+                                        public void run() {
+                                            appendLog("", "", "❌完整工作流外层异常：" + e.getMessage());
+                                        }
+                                    });
+                                } finally {
+                                    Arrays.fill(pwdCharArray, (char) 0);
+                                }
+                            }
+                        }).start();
+                    }
+                });
+            }
+        });
+
+        //重置任务进度
+        btnResetTask.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                ArenaTask.resetTaskProgress(getApplicationContext());
+                appendLog("", "", "✅任务进度已重置");
+            }
+        });
+    }
+
+    /** 获取选中条目，读取model的isChecked，不再依赖ListView */
+    private List<KeyListItem> getSelectedKeyItem() {
+        List<KeyListItem> res = new ArrayList<>();
+        for (KeyListItem item : keyListItemList) {
+            if (item.isChecked) {
+                res.add(item);
+            }
+        }
+        return res;
+    }
+
+    //添加密钥弹窗【眼睛：默认隐藏明文】
+    private void showAddKeyDialog() {
+        AlertDialog.Builder builder = new AlertDialog.Builder(this);
+        View view = LayoutInflater.from(this).inflate(R.layout.dialog_add_key, null);
+        EditText etPk1 = view.findViewById(R.id.et_pk_part1);
+        EditText etPk2 = view.findViewById(R.id.et_pk_part2);
+        EditText etUserCrypto = view.findViewById(R.id.et_user_crypto_key);
+        ImageButton ivEyeToggle = view.findViewById(R.id.iv_eye_toggle);
+
+        final boolean[] isPasswordVisible = {false};
+        ivEyeToggle.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                isPasswordVisible[0] = !isPasswordVisible[0];
+                if (isPasswordVisible[0]) {
+                    etUserCrypto.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_NORMAL);
+                    ivEyeToggle.setImageResource(R.drawable.ic_eye_on_svg);
+                } else {
+                    etUserCrypto.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
+                    ivEyeToggle.setImageResource(R.drawable.ic_eye_off_svg);
+                }
+            }
+        });
+
+        builder.setView(view);
+        builder.setPositiveButton("确认添加", new DialogInterface.OnClickListener() {
+            @Override
+            public void onClick(DialogInterface dialog, int which) {
+                String part1 = etPk1.getText().toString().trim();
+                String part2 = etPk2.getText().toString().trim();
+                String fullPrivateKey = (part1 + part2).trim();
+                String userKeyStr = etUserCrypto.getText().toString().trim();
+                tempUserCryptoKey = userKeyStr.toCharArray();
+                new Thread(new Runnable() {
+                    @Override
+                    public void run() {
+                        try {
+                            KeyStoreManager mgr = AppGlobal.getKeyStoreManager();
+                            mgr.addPrivateKey(fullPrivateKey, tempUserCryptoKey);
+                            runOnUiThread(new Runnable() {
+                                @Override
+                                public void run() {
+                                    appendLog("", "", "✅密钥添加完成");
+                                    refreshCipherKeyList();
+                                }
+                            });
+                        } catch (Exception e) {
+                            runOnUiThread(new Runnable() {
+                                @Override
+                                public void run() {
+                                    appendLog("", "", "❌添加密钥失败：" + e.getMessage());
+                                }
+                            });
+                        }
+                    }
+                }).start();
+            }
+        });
+        builder.setNegativeButton("取消", null);
+        builder.show();
+    }
+
+    //查看数据库日志弹窗，按时间倒序，最新优先
+    private void showViewLogDialog() {
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                List<TaskLogItem> logList = AppLogDbHelper.getInstance(MainActivity.this).queryAllLogDesc();
+                SimpleDateFormat sdf = new SimpleDateFormat("yyyy‑MM‑dd HH:mm:ss", Locale.getDefault());
+                StringBuilder sb = new StringBuilder();
+                for (TaskLogItem item : logList) {
+                    String timeStr = sdf.format(new Date(item.timeMs));
+                    sb.append("[").append(timeStr).append("] ");
+                    sb.append("[").append(item.keyNo).append("] ");
+                    sb.append("[").append(item.logType).append("] ");
+                    sb.append(item.content);
+                    sb.append("\n");
+                }
+                final String showText;
+                if (sb.length() == 0) {
+                    showText = "暂无日志记录";
+                } else {
+                    showText = sb.toString();
+                }
+                runOnUiThread(new Runnable() {
+                    @Override
+                    public void run() {
+                        AlertDialog.Builder builder = new AlertDialog.Builder(MainActivity.this);
+                        View v = LayoutInflater.from(MainActivity.this).inflate(R.layout.dialog_view_log, null);
+                        TextView tvLogContent = v.findViewById(R.id.tv_dialog_log_content);
+                        tvLogContent.setText(showText);
+                        builder.setView(v);
+                        builder.setPositiveButton("关闭", null);
+                        builder.show();
+                    }
+                });
             }
         }).start();
+    }
 
-        btnSecurityWarn.setOnClickListener(v->{
-            String warnText = "【安全风险提醒】\n" +
-                    "1.本APP只是普通工具，不等同硬件钱包。\n" +
-                    "2.手机丢失：如果锁屏密码被破解，私钥存在泄露风险。\n" +
-                    "3.Root手机禁止存放真实资产私钥。\n" +
-                    "4.已关闭系统备份；但请关闭厂商云整机备份。\n" +
-                    "5.AndroidKeyStore防护离线密文破解，不能防护解锁后的手机。\n" +
-                    "6.重要私钥建议纸钱包离线备份，不要只依赖本APP存储。\n" +
-                    "7.⚠自动清除使用系统WorkManager调度，最小设置15分钟，受省电策略影响，时间会有浮动，不能精确计时。\n" +
-                    "8.⚠进程被杀不会实时计时；Worker唤醒后校验时间戳；打开APP会执行兜底超时清除。\n" +
-                    "9.⚠批量任务：直接点任务按钮默认延续上次进度；如需全部账号从头跑，请先点【强制重置任务进度】。\n" +
-                    "10.⚠清空全部只是删除磁盘密文；安全收尾建议：清空后强制停止应用消除内存明文残留。\n" +
-                    "【WorkManager自动清除注意事项】\n" +
-                    "· 系统最小间隔15分钟，受手机省电策略影响，时间会有浮动，不能做到精确计时。\n" +
-                    "· 请在手机系统设置为本APP：开启【允许后台活动】、关闭电池省电限制，多任务界面下拉APP卡片加锁。\n" +
-                    "· 如果系统深度休眠，任务可能延迟；打开APP会执行兜底超时清除。\n" +
-                    "· 重要场景建议优先手动点【清空全部】，不要完全依赖自动清除。";
-            new AlertDialog.Builder(MainActivity.this)
-                    .setTitle("安全风险⚠重要")
-                    .setMessage(warnText)
-                    .setPositiveButton("知道了",null)
-                    .show();
+    //解密密码弹窗，执行任务才弹出
+    private void showDecryptPasswordDialog(final PasswordCallback callback) {
+        final AlertDialog.Builder builder = new AlertDialog.Builder(this);
+        final View view = LayoutInflater.from(this).inflate(R.layout.dialog_decrypt_password, null);
+        final EditText etPwd = view.findViewById(R.id.et_decrypt_pwd);
+        builder.setView(view);
+        builder.setPositiveButton("确认", null);
+        builder.setNegativeButton("取消", null);
+        final AlertDialog dialog = builder.create();
+        dialog.show();
+
+        //重写确认按钮，不要dismiss，密码错误保留弹窗
+        dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                final char[] pwdCharArray = etPwd.getText().toString().toCharArray();
+                //没有密钥，直接放行
+                if(keyListItemList.isEmpty()){
+                    dialog.dismiss();
+                    callback.onInputPwd(pwdCharArray);
+                    return;
+                }
+                //拿第一条密文做解密测试，校验密码正确性
+                new Thread(new Runnable() {
+                    @Override
+                    public void run() {
+                        boolean testOk;
+                        try{
+                            KeyStoreManager mgr = AppGlobal.getKeyStoreManager();
+                            String firstCipher = keyListItemList.get(0).cipherText;
+                            //尝试解密第一条，只做测试，丢弃结果
+                            mgr.testDecrypt(firstCipher, pwdCharArray);
+                            testOk = true;
+                        }catch (Exception e){
+                            testOk = false;
+                        }
+                        final boolean result = testOk;
+                        runOnUiThread(new Runnable() {
+                            @Override
+                            public void run() {
+                                if(result){
+                                    //密码正确，关闭弹窗，执行任务
+                                    dialog.dismiss();
+                                    callback.onInputPwd(pwdCharArray);
+                                }else{
+                                    //密码错误，不清空输入框，弹窗提示，密码弹窗不关闭，让用户继续输入
+                                    new AlertDialog.Builder(MainActivity.this)
+                                            .setTitle("密码错误")
+                                            .setMessage("解密密码校验失败，请核对密码后重新输入！")
+                                            .setPositiveButton("知道了",null)
+                                            .show();
+                                }
+                            }
+                        });
+                    }
+                }).start();
+            }
         });
+    }
 
-        // 系统调度设置按钮
-        btnSysScheduleSetting.setOnClickListener(v -> {
-            String helpText = "【WorkManager系统调度设置指引】\n" +
-                    "⚠注意：APP无法自动开启后台权限，全部需要用户手动在系统设置操作。\n\n" +
-                    "【小米 / Redmi】\n" +
-                    "1.进入本应用信息 → 电池 → 设置为【无限制】\n" +
-                    "2.打开自启动；多任务下拉APP卡片加小锁锁定后台\n\n" +
-                    "【华为 / 荣耀】\n" +
-                    "1.应用启动管理 → 关闭自动管理\n" +
-                    "2.开启允许自启动、允许后台活动\n" +
-                    "3.电池优化设置为本应用【不允许】\n\n" +
-                    "【OPPO / realme】\n" +
-                    "1.应用信息→电池→关闭智能耗电限制\n" +
-                    "2.开启允许后台活动、开启自启动\n\n" +
-                    "【vivo / iQOO】\n" +
-                    "1.后台耗电管理，打开【允许后台高耗电】\n" +
-                    "2.开启自启动\n\n" +
-                    "【全部机型通用】\n" +
-                    "①关闭手机全局省电/低电量模式\n" +
-                    "②多任务界面下拉APP卡片加锁\n" +
-                    "③WorkManager最小周期15分钟，省电模式会推迟执行\n" +
-                    "④兜底保障：打开APP会自动校验并执行超时清除\n\n" +
-                    "点击【跳转应用信息】进入本APP系统设置页面，手动调整电池与后台权限。";
+    private interface PasswordCallback {
+        void onInputPwd(char[] pwd);
+    }
 
-            new AlertDialog.Builder(MainActivity.this)
-                    .setTitle("系统调度后台设置")
-                    .setMessage(helpText)
-                    .setPositiveButton("跳转应用信息", (dialog, which) -> {
-                        Intent intent = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS);
-                        Uri uri = Uri.fromParts("package", getPackageName(), null);
-                        intent.setData(uri);
-                        startActivity(intent);
-                    })
-                    .setNegativeButton("关闭", null)
-                    .show();
-        });
-
-        //强制重置任务进度，增加二次确认弹窗
-        btnResetTask.setOnClickListener(v->{
-            new AlertDialog.Builder(MainActivity.this)
-                    .setTitle("确认强制重置任务进度")
-                    .setMessage("⚠说明：\n" +
-                            "• 正常继续任务：直接点击【批量入场/批量领取】，默认自动延续进度，跳过已完成账号，不需要点此按钮。\n" +
-                            "• 本操作会清除全部账号本地任务状态记录，下次任务所有账号强制从头开始执行。\n" +
-                            "• 适合：开启新一轮任务、本地状态脏数据修复。\n\n确定要重置吗？")
-                    .setPositiveButton("确认重置", (dialog, which) -> {
-                        new Thread(()->{
-                            ArenaTask.resetAllTaskProgress(getApplicationContext());
-                            runOnUiThread(()->appendLog("✅已强制重置全部批量任务进度，下次任务从头开始"));
-                        }).start();
-                    })
-                    .setNegativeButton("取消",null)
-                    .show();
-        });
-
-        btnSetAutoClear.setOnClickListener(v->{
-            String valStr = etAutoClearVal.getText().toString().trim();
-            if(valStr.isEmpty()){
-                //关闭自动清除，取消work任务
-                sp.edit()
-                        .putLong("auto_clear_ms",0)
-                        .putLong("auto_clear_start_ts",0L)
-                        .apply();
-                mAutoClearMilli =0;
-                WorkManager.getInstance(getApplicationContext()).cancelUniqueWork(WORK_AUTO_CLEAR);
-                appendLog("✅已关闭自动清除，取消系统定时任务");
-                refreshAutoClearUi();
-                return;
-            }
-
-            int val;
-            try{
-                val = Integer.parseInt(valStr);
-            }catch (Exception e){
-                appendLog("⚠数值输入错误，关闭自动清除");
-                sp.edit()
-                        .putLong("auto_clear_ms",0)
-                        .putLong("auto_clear_start_ts",0L)
-                        .apply();
-                mAutoClearMilli=0;
-                WorkManager.getInstance(getApplicationContext()).cancelUniqueWork(WORK_AUTO_CLEAR);
-                refreshAutoClearUi();
-                return;
-            }
-            int unitPos = spTimeUnit.getSelectedItemPosition();
-            long oneUnitMs;
-            long inputMinute;
-            if(unitPos ==0){
-                oneUnitMs = 60*1000L;
-                inputMinute = val;
-            }else if(unitPos ==1){
-                oneUnitMs = 60*60*1000L;
-                inputMinute = val * 60L;
-            }else{
-                oneUnitMs = 24*60*60*1000L;
-                inputMinute = val * 24*60L;
-            }
-
-            // =========WorkManager强制最小15分钟校验=========
-            if(inputMinute < MIN_ALLOW_MINUTE){
-                new AlertDialog.Builder(MainActivity.this)
-                        .setTitle("输入限制")
-                        .setMessage("系统WorkManager最小周期为15分钟，请设置≥15分钟！")
-                        .setPositiveButton("确定",null)
-                        .show();
-                return;
-            }
-
-            mAutoClearMilli = val * oneUnitMs;
-            sp.edit()
-                    .putLong("auto_clear_ms",mAutoClearMilli)
-                    .putLong("auto_clear_start_ts", System.currentTimeMillis())
-                    .apply();
-
-            // 启动WorkManager周期任务，最小15min
-            long periodMin = Math.max(inputMinute, MIN_ALLOW_MINUTE);
-            PeriodicWorkRequest workReq = new PeriodicWorkRequest.Builder(
-                    AutoClearWorker.class,
-                    periodMin, TimeUnit.MINUTES
-            ).build();
-
-            WorkManager.getInstance(getApplicationContext())
-                    .enqueueUniquePeriodicWork(WORK_AUTO_CLEAR,
-                            ExistingPeriodicWorkPolicy.UPDATE,
-                            workReq);
-
-            refreshAutoClearUi();
-            appendLog("✅自动清除设置完成："+ getAutoClearDesc() +" 系统调度已启动");
-        });
-
-        btnAddKey.setOnClickListener(v -> {
-            String pk = etPrivateKey.getText().toString().trim();
-            if (pk.isEmpty()) {
-                appendLog("⚠️请输入私钥");
-                return;
-            }
-            new Thread(() -> {
+    /**
+     * 刷新密钥列表，序号001；model默认全部勾选；不再调用lvCipherKeys.setItemChecked
+     */
+    private void refreshCipherKeyList() {
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
                 try {
                     KeyStoreManager mgr = AppGlobal.getKeyStoreManager();
-                    mgr.addPrivateKey(pk);
-                    runOnUiThread(() -> {
-                        appendLog("✅私钥添加成功，已加密存入");
-                        etPrivateKey.setText("");
-                        refreshCipherKeyList();
-                    });
-                } catch (IllegalStateException ie) {
-                    runOnUiThread(() -> appendLog("❌密钥管理器尚未初始化完成，请等待"));
-                } catch (Exception ex) {
-                    String msg = ex.getMessage();
-                    if ("DUPLICATE_KEY".equals(msg)) {
-                        runOnUiThread(() -> {
-                            appendLog("⚠️该私钥已经存在，跳过添加");
-                            new AlertDialog.Builder(MainActivity.this)
-                                    .setTitle("重复私钥")
-                                    .setMessage("当前私钥已经存在于列表中，请勿重复添加！")
-                                    .setPositiveButton("确定", null)
-                                    .show();
-                        });
-                    } else {
-                        runOnUiThread(() -> appendLog("❌添加私钥异常:" + ex.getMessage()));
+                    List<String> cipherList = mgr.loadCipherTextList();
+                    keyListItemList.clear();
+                    for (int i = 0; i < cipherList.size(); i++) {
+                        KeyListItem item = new KeyListItem();
+                        item.seqNo = i + 1;
+                        item.displayNo = String.format(Locale.getDefault(), "%03d", item.seqNo);
+                        item.cipherText = cipherList.get(i);
+                        item.isUsable = true;
+                        item.isChecked = true; //加载默认全部勾选
+                        keyListItemList.add(item);
                     }
-                    ex.printStackTrace();
-                }
-            }).start();
-        });
-
-        btnRefreshList.setOnClickListener(v-> refreshCipherKeyList());
-
-        btnRemoveSelected.setOnClickListener(v->{
-            SparseBooleanArray checkedArray = lvCipherKeys.getCheckedItemPositions();
-            final List<Integer> deleteIndexList = new ArrayList<>();
-            for(int i=0; i< checkedArray.size();i++){
-                int pos = checkedArray.keyAt(i);
-                if(checkedArray.get(pos)){
-                    deleteIndexList.add(pos);
-                }
-            }
-            if(deleteIndexList.isEmpty()){
-                appendLog("⚠️请在列表勾选需要删除的条目");
-                return;
-            }
-            new Thread(()->{
-                try{
-                    KeyStoreManager mgr = AppGlobal.getKeyStoreManager();
-                    mgr.removeByIndexList(deleteIndexList);
-                    runOnUiThread(()->{
-                        appendLog("✅已删除选中 "+deleteIndexList.size()+" 条密钥");
-                        lvCipherKeys.clearChoices();
-                        refreshCipherKeyList();
+                    runOnUiThread(new Runnable() {
+                        @Override
+                        public void run() {
+                            if (keyAdapter == null) {
+                                keyAdapter = new ArrayAdapter<KeyListItem>(MainActivity.this, R.layout.item_cipher_key, keyListItemList) {
+                                    @Override
+                                    public View getView(int position, View convertView, android.view.ViewGroup parent) {
+                                        CheckedTextView tv = (CheckedTextView) super.getView(position, convertView, parent);
+                                        KeyListItem it = getItem(position);
+                                        tv.setText(it.displayNo + " · " + it.cipherText);
+                                        tv.setChecked(it.isChecked);
+                                        if (!it.isUsable) {
+                                            tv.setBackgroundColor(0xFFFFCDD2);
+                                        } else {
+                                            tv.setBackgroundColor(0x00000000);
+                                        }
+                                        return tv;
+                                    }
+                                };
+                                lvCipherKeys.setAdapter(keyAdapter);
+                            } else {
+                                keyAdapter.notifyDataSetChanged();
+                            }
+                            refreshCheckedStatText();
+                        }
                     });
-                }catch (Exception e){
-                    runOnUiThread(()->appendLog("❌批量删除异常:"+e.getMessage()));
-                }
-            }).start();
-        });
-
-        btnClearAll.setOnClickListener(v->{
-            new Thread(()->{
-                try{
-                    KeyStoreManager mgr = AppGlobal.getKeyStoreManager();
-                    mgr.clearAllKeys();
-                    runOnUiThread(()->{
-                        appendLog("✅全部密钥已清空");
-                        lvCipherKeys.clearChoices();
-                        refreshCipherKeyList();
+                } catch (Exception e) {
+                    runOnUiThread(new Runnable() {
+                        @Override
+                        public void run() {
+                            appendLog("", "", "❌刷新密钥列表异常：" + e.getMessage());
+                        }
                     });
-                }catch (Exception e){
-                    runOnUiThread(()->appendLog("❌清空异常:"+e.getMessage()));
                 }
-            }).start();
-        });
-
-        // ==========任务按钮：调用断点续跑Resume版本 ==========
-        btnBatchEnter.setOnClickListener(v -> new Thread(() -> {
-            try {
-                appendLog("\n--------开始批量入场【断点续跑版】--------");
-                appendLog("💡提示：直接执行延续历史进度；如需全部账号从头跑，请先点击【强制重置任务进度】");
-                ArenaTask.batchEnterAllResume(getApplicationContext(), MainActivity.this);
-                appendLog("--------批量入场任务执行结束--------");
-            } catch (IllegalStateException ie) {
-                runOnUiThread(() -> appendLog("❌密钥管理器未初始化"));
-            } catch (Exception e) {
-                runOnUiThread(() -> appendLog("❌批量入场异常：" + e.getMessage()));
-                e.printStackTrace();
-            }
-        }).start());
-
-        btnBatchClaim.setOnClickListener(v -> new Thread(() -> {
-            try {
-                appendLog("\n--------开始批量领取奖励【断点续跑版】--------");
-                appendLog("💡提示：直接执行延续历史进度；如需全部账号从头跑，请先点击【强制重置任务进度】");
-                ArenaTask.batchClaimAllResume(getApplicationContext(), MainActivity.this,2);
-                appendLog("--------批量领取任务执行结束--------");
-            } catch (IllegalStateException ie) {
-                runOnUiThread(() -> appendLog("❌密钥管理器未初始化"));
-            } catch (Exception e) {
-                runOnUiThread(() -> appendLog("❌批量领取异常：" + e.getMessage()));
-                e.printStackTrace();
-            }
-        }).start());
-
-        btnFullWorkflow.setOnClickListener(v -> new Thread(() -> {
-            try {
-                appendLog("\n--------开始完整工作流：入场 -> 领取【断点续跑版】--------");
-                appendLog("💡提示：直接执行延续历史进度；如需全部账号从头跑，请先点击【强制重置任务进度】");
-                ArenaTask.fullArenaWorkflowResume(getApplicationContext(), MainActivity.this,2);
-                appendLog("--------完整工作流执行结束--------");
-            } catch (IllegalStateException ie) {
-                runOnUiThread(() -> appendLog("❌密钥管理器未初始化"));
-            } catch (Exception e) {
-                runOnUiThread(() -> appendLog("❌完整工作流异常：" + e.getMessage()));
-                e.printStackTrace();
-            }
-        }).start());
-    }
-
-    @Override
-    protected void onResume() {
-        super.onResume();
-        mSpListener = this;
-        sp.registerOnSharedPreferenceChangeListener(mSpListener);
-    }
-
-    @Override
-    protected void onPause() {
-        super.onPause();
-        sp.unregisterOnSharedPreferenceChangeListener(mSpListener);
-    }
-
-    @Override
-    public void onSharedPreferenceChanged(SharedPreferences sharedPreferences, String key) {
-        if("key_auto_cleared".equals(key)){
-            boolean isAutoCleared = sharedPreferences.getBoolean("key_auto_cleared",false);
-            if(isAutoCleared){
-                appendLog("⚠【WorkManager调度到期自动清除密钥，刷新界面】");
-                refreshCipherKeyList();
-                sp.edit().putBoolean("key_auto_cleared",false).apply();
-            }
-        }
-    }
-
-    private String getAutoClearDesc(){
-        if(mAutoClearMilli <=0){
-            return "关闭自动清除(0)";
-        }
-        if(mAutoClearMilli >= 1000L*60*60*24){
-            return "自动清除："+(mAutoClearMilli/(1000L*60*60*24)) + " 天(系统调度，≥15分钟)";
-        }else if(mAutoClearMilli >= 1000L*60*60){
-            return "自动清除："+(mAutoClearMilli/(1000L*60*60)) + " 小时(系统调度，≥15分钟)";
-        }else{
-            return "自动清除："+(mAutoClearMilli/(1000L*60)) + " 分钟(系统调度，≥15分钟)";
-        }
-    }
-
-    private void refreshAutoClearUi(){
-        tvAutoClearStatus.setText("当前："+ getAutoClearDesc());
-    }
-
-    @Override
-    public void onLog(String msg) {
-        appendLog(msg);
-    }
-
-    private void refreshCipherKeyList(){
-        new Thread(()->{
-            try{
-                KeyStoreManager mgr = AppGlobal.getKeyStoreManager();
-                List<String> cipherList = mgr.loadCipherTextList();
-                runOnUiThread(()->{
-                    cipherAdapter.clear();
-                    cipherAdapter.addAll(cipherList);
-                    cipherAdapter.notifyDataSetChanged();
-                    lvCipherKeys.clearChoices();
-                    tvCountInfo.setText("共 " + cipherList.size() + " 条密钥");
-                    appendLog("ℹ️密文列表已刷新，共"+cipherList.size()+"条");
-                });
-            }catch (Exception e){
-                runOnUiThread(()->appendLog("❌读取密文列表异常:"+e.getMessage()));
             }
         }).start();
     }
 
-    private void appendLog(String text) {
-        runOnUiThread(() -> {
-            String old = tvLog.getText().toString();
-            tvLog.setText(old + "\n" + text);
-            ViewParent parent = tvLog.getParent();
-            if (parent instanceof android.widget.ScrollView) {
-                ((android.widget.ScrollView) parent).fullScroll(View.FOCUS_DOWN);
+    /** 删除选中密钥：遍历model收集下标，倒序删除防止索引错乱 */
+    private void removeSelectedKeys() {
+        final List<Integer> deletePosList = new ArrayList<>();
+        for (int i = 0; i < keyListItemList.size(); i++) {
+            KeyListItem item = keyListItemList.get(i);
+            if (item.isChecked) {
+                deletePosList.add(i);
+            }
+        }
+        if (deletePosList.isEmpty()) {
+            new AlertDialog.Builder(this)
+                    .setMessage("请先在列表勾选需要删除的密钥")
+                    .setPositiveButton("知道了", null).show();
+            return;
+        }
+        new AlertDialog.Builder(this)
+                .setTitle("确认删除")
+                .setMessage("确定删除选中 " + deletePosList.size() + " 条密钥？该操作不可恢复！")
+                .setPositiveButton("确认删除", new DialogInterface.OnClickListener() {
+                    @Override
+                    public void onClick(DialogInterface d, int w) {
+                        new Thread(new Runnable() {
+                            @Override
+                            public void run() {
+                                try {
+                                    KeyStoreManager mgr = AppGlobal.getKeyStoreManager();
+                                    //倒序删除
+                                    for (int i = deletePosList.size() - 1; i >= 0; i--) {
+                                        int pos = deletePosList.get(i);
+                                        mgr.removeByIndex(pos);
+                                    }
+                                    runOnUiThread(new Runnable() {
+                                        @Override
+                                        public void run() {
+                                            appendLog("", "", "✅已删除选中 " + deletePosList.size() + " 条密钥");
+                                            refreshCipherKeyList();
+                                        }
+                                    });
+                                } catch (Exception e) {
+                                    runOnUiThread(new Runnable() {
+                                        @Override
+                                        public void run() {
+                                            appendLog("", "", "❌删除选中密钥异常：" + e.getMessage());
+                                        }
+                                    });
+                                }
+                            }
+                        }).start();
+                    }
+                })
+                .setNegativeButton("取消", null)
+                .show();
+    }
+
+    /**清空全部密钥 */
+    private void showConfirmClearAllKey() {
+        new AlertDialog.Builder(this)
+                .setTitle("⚠确认清空全部密钥")
+                .setMessage("将删除本地全部保存的密钥密文，不可恢复！")
+                .setPositiveButton("确认清空", new DialogInterface.OnClickListener() {
+                    @Override
+                    public void onClick(DialogInterface d, int w) {
+                        new Thread(new Runnable() {
+                            @Override
+                            public void run() {
+                                try {
+                                    KeyStoreManager mgr = AppGlobal.getKeyStoreManager();
+                                    mgr.clearAllKeys();
+                                    runOnUiThread(new Runnable() {
+                                        @Override
+                                        public void run() {
+                                            appendLog("", "", "✅全部密钥已清空");
+                                            refreshCipherKeyList();
+                                        }
+                                    });
+                                } catch (Exception e) {
+                                    runOnUiThread(new Runnable() {
+                                        @Override
+                                        public void run() {
+                                            appendLog("", "", "❌清空密钥异常：" + e.getMessage());
+                                        }
+                                    });
+                                }
+                            }
+                        }).start();
+                    }
+                })
+                .setNegativeButton("取消", null)
+                .show();
+    }
+
+    private void showConfirmClearLogDb() {
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                AppLogDbHelper.getInstance(MainActivity.this).clearAllLog();
+                runOnUiThread(new Runnable() {
+                    @Override
+                    public void run() {
+                        appendLog("", "", "✅数据库日志已全部清空");
+                    }
+                });
+            }
+        }).start();
+    }
+
+    /** 系统调度/自动清除配置弹窗完整实现 */
+    private void openSysScheduleDialog() {
+        AlertDialog.Builder builder = new AlertDialog.Builder(this);
+        View view = LayoutInflater.from(this).inflate(R.layout.dialog_sys_auto_clear, null);
+        EditText etVal = view.findViewById(R.id.et_auto_clear_val);
+        Spinner spUnit = view.findViewById(R.id.sp_time_unit);
+        TextView tvStatus = view.findViewById(R.id.tv_auto_clear_status);
+        ArrayAdapter<String> unitAdapter = new ArrayAdapter<>(this, android.R.layout.simple_spinner_dropdown_item, unitArray);
+        spUnit.setAdapter(unitAdapter);
+
+        long ms = spAppSetting.getLong("auto_clear_ms", 0);
+        if (ms > 0) {
+            if (ms >= 1000L * 60 * 60 * 24) {
+                etVal.setText(String.valueOf(ms / (1000L * 60 * 60 * 24)));
+                spUnit.setSelection(2);
+            } else if (ms >= 1000L * 60 * 60) {
+                etVal.setText(String.valueOf(ms / (1000L * 60 * 60)));
+                spUnit.setSelection(1);
+            } else {
+                etVal.setText(String.valueOf(ms / (1000L * 60)));
+                spUnit.setSelection(0);
+            }
+            tvStatus.setText("当前已开启自动清除");
+        } else {
+            tvStatus.setText("当前：关闭自动清除");
+        }
+
+        builder.setView(view);
+        builder.setPositiveButton("保存设置", new DialogInterface.OnClickListener() {
+            @Override
+            public void onClick(DialogInterface dialog, int which) {
+                String valStr = etVal.getText().toString().trim();
+                if (valStr.isEmpty()) {
+                    spAppSetting.edit()
+                            .putLong("auto_clear_ms", 0)
+                            .putLong("auto_clear_start_ts", 0)
+                            .apply();
+                    WorkManager.getInstance(getApplicationContext()).cancelUniqueWork(WORK_AUTO_CLEAR);
+                    appendLog("", "", "✅已关闭自动清除");
+                    return;
+                }
+                int val;
+                try {
+                    val = Integer.parseInt(valStr);
+                } catch (Exception e) {
+                    new AlertDialog.Builder(MainActivity.this).setMessage("请输入合法数字").setPositiveButton("OK", null).show();
+                    return;
+                }
+                int selPos = spUnit.getSelectedItemPosition();
+                long oneUnitMs;
+                long inputMinute;
+                if (selPos == 0) {
+                    oneUnitMs = 60 * 1000L;
+                    inputMinute = val;
+                } else if (selPos == 1) {
+                    oneUnitMs = 60 * 60 * 1000L;
+                    inputMinute = val * 60L;
+                } else {
+                    oneUnitMs = 24 * 60 * 60 * 1000L;
+                    inputMinute = val * 24 * 60L;
+                }
+                if (inputMinute < MIN_ALLOW_MINUTE) {
+                    new AlertDialog.Builder(MainActivity.this)
+                            .setTitle("输入限制")
+                            .setMessage("系统WorkManager最小周期为15分钟，请设置≥15分钟！")
+                            .setPositiveButton("确定", null).show();
+                    return;
+                }
+                long totalMs = val * oneUnitMs;
+                spAppSetting.edit()
+                        .putLong("auto_clear_ms", totalMs)
+                        .putLong("auto_clear_start_ts", System.currentTimeMillis())
+                        .apply();
+                long periodMin = Math.max(inputMinute, MIN_ALLOW_MINUTE);
+                PeriodicWorkRequest req = new PeriodicWorkRequest.Builder(
+                        AutoClearWorker.class, periodMin, TimeUnit.MINUTES
+                ).build();
+                WorkManager.getInstance(getApplicationContext())
+                        .enqueueUniquePeriodicWork(WORK_AUTO_CLEAR, ExistingPeriodicWorkPolicy.UPDATE, req);
+                appendLog("", "", "✅自动清除设置完成：" + val + " " + unitArray[selPos] + "；系统调度已启动，APP打开会兜底校验超时清除");
             }
         });
+        builder.setNegativeButton("关闭", null);
+        builder.show();
+    }
+
+    private void showSecurityWarningDialog() {
+        new AlertDialog.Builder(this)
+                .setTitle("安全风险提醒")
+                .setMessage("1.本APP为工具，非硬件钱包\n2.Root设备禁止存放大额资产私钥\n3.解密密码仅内存使用，不会持久化保存\n4.自动清除受手机省电策略影响，APP打开会兜底执行")
+                .setPositiveButton("知道了", null)
+                .show();
+    }
+
+    // ============ TaskLogCallback接口实现 ==============
+    @Override
+    public void onLog(final String keyNo, final String type, final String msg) {
+        runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                StringBuilder sb = new StringBuilder();
+                String keyNoTrimmed = (keyNo == null) ? "" : keyNo.trim();
+                String typeTrimmed = (type == null) ? "" : type.trim();
+                if (typeTrimmed.length() > 0) {
+                    if (keyNoTrimmed.length() == 0) {
+                        sb.append("[").append(typeTrimmed).append("] ");
+                    } else {
+                        sb.append("[").append(keyNoTrimmed).append("][").append(typeTrimmed).append("] ");
+                    }
+                }
+                sb.append(msg);
+                String newLine = sb.toString() + "\n";
+                tvLog.setText(tvLog.getText() + newLine);
+                tvLog.post(new Runnable() {
+                    @Override
+                    public void run() {
+                        scrollView.fullScroll(ScrollView.FOCUS_DOWN);
+                    }
+                });
+            }
+        });
+    }
+
+    public void appendLog(String unusedKeyNo, String unusedType, String msg) {
+        onLog(unusedKeyNo, unusedType, msg);
     }
 
     @Override
     protected void onDestroy() {
         super.onDestroy();
+        if (mPopupWindow != null && mPopupWindow.isShowing()) {
+            mPopupWindow.dismiss();
+        }
+        if (tempUserCryptoKey != null) {
+            Arrays.fill(tempUserCryptoKey, (char) 0);
+            tempUserCryptoKey = null;
+        }
     }
 }

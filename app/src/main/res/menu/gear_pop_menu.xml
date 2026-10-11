@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<menu xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:title="密钥管理" android:enabled="false"/>
+    <item android:id="@+id/menu_add_key" android:title="添加密钥"/>
+    <item android:id="@+id/menu_refresh_list" android:title="刷新密钥列表"/>
+    <item android:id="@+id/menu_remove_selected" android:title="删除选中密钥"/>
+    <item android:id="@+id/menu_clear_all_key" android:title="清空全部密钥"/>
+
+    <item android:title="日志管理" android:enabled="false"/>
+    <item android:id="@+id/menu_view_log" android:title="查看日志(最新优先)"/>
+    <item android:id="@+id/menu_clear_log_db" android:title="清空数据库全部日志"/>
+
+    <item android:title="自动清除配置" android:enabled="false"/>
+    <item android:id="@+id/menu_sys_schedule_setting" android:title="自动清除配置"/>
+
+    <item android:title="竞技场入场模式" android:enabled="false"/>
+    <item android:id="@+id/menu_mode_flexible" android:title="能打就打(过滤不可执行账号)"/>
+    <item android:id="@+id/menu_mode_together" android:title="等齐再打(全部模拟通过才提交)"/>
+</menu>

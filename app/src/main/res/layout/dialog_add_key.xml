@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:padding="16dp">
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="添加密钥（分两段粘贴私钥）"
+        android:textSize="16sp"/>
+
+    <!-- 私钥前半段 -->
+    <EditText
+        android:id="@+id/et_pk_part1"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:hint="私钥 前半段"
+        android:inputType="textNoSuggestions"
+        android:layout_marginTop="8dp"/>
+
+    <!-- 私钥后半段 -->
+    <EditText
+        android:id="@+id/et_pk_part2"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:hint="私钥 后半段"
+        android:inputType="textNoSuggestions"
+        android:layout_marginTop="4dp"/>
+
+    <!-- 自定义加解密Key +眼睛切换按钮 水平布局 -->
+    <RelativeLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="12dp">
+        <EditText
+            android:id="@+id/et_user_crypto_key"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="自定义加解密Key字符串（本次会话生效，不保存）"
+            android:inputType="textPassword"
+            android:layout_toLeftOf="@id/iv_eye_toggle"/>
+
+        <ImageButton
+            android:id="@+id/iv_eye_toggle"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:layout_alignParentEnd="true"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="显示/隐藏密码"
+            android:src="@drawable/ic_eye_off_svg"/>
+    </RelativeLayout>
+
+</LinearLayout>

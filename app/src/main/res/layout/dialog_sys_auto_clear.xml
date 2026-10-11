@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:padding="16dp">
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="自动清除私钥配置"
+        android:textSize="16sp"/>
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="⚠注意：系统WorkManager最小15分钟；受手机省电策略影响，可能延迟；APP打开会兜底校验超时自动清空"
+        android:textColor="#D32F2F"
+        android:layout_marginTop="4dp"/>
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:layout_marginTop="12dp">
+        <EditText
+            android:id="@+id/et_auto_clear_val"
+            android:layout_width="80dp"
+            android:layout_height="wrap_content"
+            android:hint="数值"
+            android:inputType="number"/>
+        <Spinner
+            android:id="@+id/sp_time_unit"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:layout_marginStart="8dp"/>
+    </LinearLayout>
+
+    <TextView
+        android:id="@+id/tv_auto_clear_status"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="当前：关闭自动清除"
+        android:layout_marginTop="8dp"/>
+
+</LinearLayout>
