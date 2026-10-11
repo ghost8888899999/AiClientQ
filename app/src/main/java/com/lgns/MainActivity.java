@@ -64,12 +64,14 @@ public class MainActivity extends AppCompatActivity implements TaskLogCallback {
 
     //密钥列表Model
     static class KeyListItem {
-        public int seqNo;
-        public String displayNo; //格式化 001
+        public long keyId; //全局永久ID，删除其他条目，此id不变
+        public int seqNo; //内存列表位置（可变，仅UI排序用）
+        public String displayNo; //格式化001，使用keyId
         public String cipherText;
         public boolean isUsable = true;
-        public boolean isChecked; //自己维护勾选状态，不依赖ListView
+        public boolean isChecked;
     }
+
 
     private List<KeyListItem> keyListItemList = new ArrayList<>();
     private ArrayAdapter<KeyListItem> keyAdapter;
@@ -557,30 +559,36 @@ public class MainActivity extends AppCompatActivity implements TaskLogCallback {
         new Thread(new Runnable() {
             @Override
             public void run() {
-                List<TaskLogItem> logList = AppLogDbHelper.getInstance(MainActivity.this).queryAllLogDesc();
-                SimpleDateFormat sdf = new SimpleDateFormat("yyyy‑MM‑dd HH:mm:ss", Locale.getDefault());
-                StringBuilder sb = new StringBuilder();
-                for (TaskLogItem item : logList) {
-                    String timeStr = sdf.format(new Date(item.timeMs));
-                    sb.append("[").append(timeStr).append("] ");
-                    sb.append("[").append(item.keyNo).append("] ");
-                    sb.append("[").append(item.logType).append("] ");
-                    sb.append(item.content);
-                    sb.append("\n");
+                String showText;
+                try {
+                    List<TaskLogItem> logList = AppLogDbHelper.getInstance(MainActivity.this).queryAllLogDesc();
+                    //使用标准半角短横线
+                    SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault());
+                    StringBuilder sb = new StringBuilder();
+                    for (TaskLogItem item : logList) {
+                        String timeStr = sdf.format(new Date(item.timeMs));
+                        sb.append("[").append(timeStr).append("] ");
+                        sb.append("[").append(item.keyNo).append("] ");
+                        sb.append("[").append(item.logType).append("] ");
+                        sb.append(item.content);
+                        sb.append("\n");
+                    }
+                    if (sb.length() == 0) {
+                        showText = "暂无日志记录";
+                    } else {
+                        showText = sb.toString();
+                    }
+                } catch (Exception e) {
+                    showText = "读取日志异常：" + e.getMessage();
                 }
-                final String showText;
-                if (sb.length() == 0) {
-                    showText = "暂无日志记录";
-                } else {
-                    showText = sb.toString();
-                }
+                final String finalShow = showText;
                 runOnUiThread(new Runnable() {
                     @Override
                     public void run() {
                         AlertDialog.Builder builder = new AlertDialog.Builder(MainActivity.this);
                         View v = LayoutInflater.from(MainActivity.this).inflate(R.layout.dialog_view_log, null);
                         TextView tvLogContent = v.findViewById(R.id.tv_dialog_log_content);
-                        tvLogContent.setText(showText);
+                        tvLogContent.setText(finalShow);
                         builder.setView(v);
                         builder.setPositiveButton("关闭", null);
                         builder.show();
@@ -589,6 +597,7 @@ public class MainActivity extends AppCompatActivity implements TaskLogCallback {
             }
         }).start();
     }
+
 
     //解密密码弹窗，执行任务才弹出
     private void showDecryptPasswordDialog(final PasswordCallback callback) {
@@ -663,15 +672,17 @@ public class MainActivity extends AppCompatActivity implements TaskLogCallback {
             public void run() {
                 try {
                     KeyStoreManager mgr = AppGlobal.getKeyStoreManager();
-                    List<String> cipherList = mgr.loadCipherTextList();
+                    List<KeyStoreManager.KeyEntry> entryList = mgr.loadKeyEntryList();
                     keyListItemList.clear();
-                    for (int i = 0; i < cipherList.size(); i++) {
+                    for (int i = 0; i < entryList.size(); i++) {
+                        KeyStoreManager.KeyEntry entry = entryList.get(i);
                         KeyListItem item = new KeyListItem();
+                        item.keyId = entry.id; //永久不变ID
                         item.seqNo = i + 1;
-                        item.displayNo = String.format(Locale.getDefault(), "%03d", item.seqNo);
-                        item.cipherText = cipherList.get(i);
+                        item.displayNo = String.format(Locale.getDefault(), "%03d", entry.id); //显示永久ID
+                        item.cipherText = entry.cipherText;
                         item.isUsable = true;
-                        item.isChecked = true; //加载默认全部勾选
+                        item.isChecked = true;
                         keyListItemList.add(item);
                     }
                     runOnUiThread(new Runnable() {
@@ -711,6 +722,7 @@ public class MainActivity extends AppCompatActivity implements TaskLogCallback {
             }
         }).start();
     }
+
 
     /** 删除选中密钥：遍历model收集下标，倒序删除防止索引错乱 */
     private void removeSelectedKeys() {
@@ -915,6 +927,9 @@ public class MainActivity extends AppCompatActivity implements TaskLogCallback {
     // ============ TaskLogCallback接口实现 ==============
     @Override
     public void onLog(final String keyNo, final String type, final String msg) {
+        //写入数据库持久化日志
+        AppLogDbHelper.getInstance(this).insertLog(keyNo, type, msg);
+
         runOnUiThread(new Runnable() {
             @Override
             public void run() {
@@ -940,6 +955,7 @@ public class MainActivity extends AppCompatActivity implements TaskLogCallback {
             }
         });
     }
+
 
     public void appendLog(String unusedKeyNo, String unusedType, String msg) {
         onLog(unusedKeyNo, unusedType, msg);
