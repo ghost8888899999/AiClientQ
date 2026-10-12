@@ -19,9 +19,15 @@ android {
     buildTypes {
         debug {
             debuggable true
+            // debug不要开minify，否则不好调试；debug体积大是正常现象
+            minifyEnabled false
+            shrinkResources false
         }
         release {
-            minifyEnabled false
+            // 开启代码混淆（R8），删除未使用代码
+            minifyEnabled true
+            // 删除没有被引用的资源文件
+            shrinkResources true
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
     }
@@ -47,7 +53,11 @@ dependencies {
         // web3j core 4.9.8 (标准版，包含RawTransaction)
         implementation ('org.web3j:core:4.9.8'){
             exclude group: 'com.squareup.okhttp3', module:'okhttp'
+            // ===== 删除下面这一行！！不能排除slf4j-api =====
+            // exclude group: 'org.slf4j', module:'slf4j-api'
         }
+
+
         // 你自己的okhttp
         implementation "com.squareup.okhttp3:okhttp:4.12.0"
 

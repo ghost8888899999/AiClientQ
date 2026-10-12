@@ -15,7 +15,7 @@ import java.util.concurrent.TimeUnit;
 
 /**
  * Web3工具类
- * 修复原Python脚本全部缺陷：nonce冲突、gas硬编码、无回执校验、RPC无重试、固定sleep等待等风险
+ * 修复脚本全部缺陷：nonce冲突、gas硬编码、无回执校验、RPC无重试、固定sleep等待等风险
  */
 public class Web3AndroidUtil {
 

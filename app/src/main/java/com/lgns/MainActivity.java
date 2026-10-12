@@ -27,6 +27,7 @@ import androidx.appcompat.app.AppCompatActivity;
 import androidx.work.ExistingPeriodicWorkPolicy;
 import androidx.work.PeriodicWorkRequest;
 import androidx.work.WorkManager;
+
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -60,18 +61,6 @@ public class MainActivity extends AppCompatActivity implements TaskLogCallback {
     private ScrollView scrollView;
     private PopupWindow mPopupWindow;
 
-    //密钥列表Model，带永久keyId
-    static class KeyListItem {
-        public long keyId; //全局永久ID，删除其他条目，此id不变
-        public int seqNo; //内存列表位置（可变，仅UI排序用）
-        public String displayNo; //降级备用：格式化001，使用keyId
-        public String userGroupNo; //✅用户手动输入分组编号，优先展示
-        public String cipherText;
-        public boolean isUsable = true;
-        public boolean isChecked;
-    }
-
-
     private List<KeyListItem> keyListItemList = new ArrayList<>();
     private ArrayAdapter<KeyListItem> keyAdapter;
 
@@ -83,6 +72,8 @@ public class MainActivity extends AppCompatActivity implements TaskLogCallback {
         //读取持久化入场模式
         currentPlayMode = spAppSetting.getInt("play_mode", MODE_FLEXIBLE);
         bindViews();
+        setupButtonEvents();
+
         //增加长按监听
         lvCipherKeys.setOnItemLongClickListener((parent, view, position, id) -> {
             showSortMenu(position);
@@ -92,7 +83,6 @@ public class MainActivity extends AppCompatActivity implements TaskLogCallback {
         setupListViewCheckListener();
         //APP冷启动兜底自动清除校验
         checkAutoClearBoot();
-
         //APP启动后台线程初始化密钥管理器
         new Thread(new Runnable() {
             @Override
@@ -120,15 +110,12 @@ public class MainActivity extends AppCompatActivity implements TaskLogCallback {
 
     /** ListView条目点击：更新model勾选标记 */
     private void setupListViewCheckListener() {
-        lvCipherKeys.setOnItemClickListener(new android.widget.AdapterView.OnItemClickListener() {
-            @Override
-            public void onItemClick(android.widget.AdapterView<?> parent, View view, int position, long id) {
-                KeyListItem item = keyListItemList.get(position);
-                item.isChecked = !item.isChecked;
-                CheckedTextView tv = (CheckedTextView) view;
-                tv.setChecked(item.isChecked);
-                refreshCheckedStatText();
-            }
+        lvCipherKeys.setOnItemClickListener((parent, view, position, id) -> {
+            KeyListItem item = keyListItemList.get(position);
+            item.isChecked = !item.isChecked;
+            CheckedTextView tv = (CheckedTextView) view;
+            tv.setChecked(item.isChecked);
+            refreshCheckedStatText();
         });
     }
 
@@ -154,12 +141,10 @@ public class MainActivity extends AppCompatActivity implements TaskLogCallback {
         boolean enable = spAppSetting.getBoolean("auto_clear_enable", false);
         long saveTotalMs = spAppSetting.getLong("auto_clear_ms", 0);
         long saveStartTs = spAppSetting.getLong("auto_clear_start_ts", 0);
-
         //开关关闭 或者 时长为0，直接返回，不执行清除
         if (!enable || saveTotalMs <= 0 || saveStartTs <=0) {
             return;
         }
-
         long now = System.currentTimeMillis();
         if (now - saveStartTs >= saveTotalMs) {
             new Thread(new Runnable() {
@@ -180,8 +165,6 @@ public class MainActivity extends AppCompatActivity implements TaskLogCallback {
         }
     }
 
-
-
     private void bindViews() {
         btnSettingGear = findViewById(R.id.btn_setting_gear);
         btnSecurityWarn = findViewById(R.id.btn_security_warn);
@@ -193,6 +176,65 @@ public class MainActivity extends AppCompatActivity implements TaskLogCallback {
         btnResetTask = findViewById(R.id.btn_reset_task);
         tvLog = findViewById(R.id.tv_log);
         scrollView = findViewById(R.id.scrollView);
+    }
+
+    private void setupButtonEvents() {
+        btnSecurityWarn.setOnClickListener(v -> showSecurityWarningDialog());
+
+        //批量入场
+        btnBatchEnter.setOnClickListener(v -> {
+            Log.d("UI_CLICK","点击【批量入场】按钮");
+            showDecryptPasswordDialog(pwdCharArray -> new Thread(() -> {
+                try {
+                    List<KeyListItem> selectedList = getSelectedKeyItem();
+                    ArenaTask.batchEnterAllResume(getApplicationContext(), MainActivity.this, currentPlayMode, selectedList, pwdCharArray);
+                } catch (Exception e) {
+                    runOnUiThread(() -> appendLog("", "ENTER", "❌批量入场外层异常：" + e.getMessage()));
+                    Log.e("BATCH_ENTER","异常",e);
+                } finally {
+                    Arrays.fill(pwdCharArray, (char) 0);
+                }
+            }).start());
+        });
+
+        //批量领取
+        btnBatchClaim.setOnClickListener(v -> {
+            Log.d("UI_CLICK","点击【批量领取】按钮");
+            showDecryptPasswordDialog(pwdCharArray -> new Thread(() -> {
+                try {
+                    List<KeyListItem> selectedList = getSelectedKeyItem();
+                    ArenaTask.batchClaimAllResume(getApplicationContext(), MainActivity.this, currentPlayMode, selectedList, pwdCharArray);
+                } catch (Exception e) {
+                    runOnUiThread(() -> appendLog("", "CLAIM", "❌批量领取外层异常：" + e.getMessage()));
+                    Log.e("BATCH_CLAIM","异常",e);
+                } finally {
+                    Arrays.fill(pwdCharArray, (char) 0);
+                }
+            }).start());
+        });
+
+        //完整工作流
+        btnFullWorkflow.setOnClickListener(v -> {
+            Log.d("UI_CLICK","点击【完整工作流】按钮");
+            showDecryptPasswordDialog(pwdCharArray -> new Thread(() -> {
+                try {
+                    List<KeyListItem> selectedList = getSelectedKeyItem();
+                    ArenaTask.fullArenaWorkflowResume(getApplicationContext(), MainActivity.this, 2, currentPlayMode, selectedList, pwdCharArray);
+                } catch (Exception e) {
+                    runOnUiThread(() -> appendLog("", "", "❌完整工作流外层异常：" + e.getMessage()));
+                    Log.e("FULL_WORKFLOW","异常",e);
+                } finally {
+                    Arrays.fill(pwdCharArray, (char) 0);
+                }
+            }).start());
+        });
+
+        //重置任务进度
+        btnResetTask.setOnClickListener(v -> {
+            Log.d("UI_CLICK","点击【重置任务进度】");
+            ArenaTask.resetTaskProgress(getApplicationContext());
+            appendLog("", "", "✅任务进度已重置");
+        });
     }
 
     private void setupGearMenu() {
@@ -226,19 +268,15 @@ public class MainActivity extends AppCompatActivity implements TaskLogCallback {
         final View groupKeyContainer = popView.findViewById(R.id.group_key_container);
         final ImageView ivArrowKey = popView.findViewById(R.id.iv_arrow_key);
         popView.findViewById(R.id.group_key_title).setOnClickListener(v -> toggleGroup(groupKeyContainer, ivArrowKey));
-
         final View groupLogContainer = popView.findViewById(R.id.group_log_container);
         final ImageView ivArrowLog = popView.findViewById(R.id.iv_arrow_log);
         popView.findViewById(R.id.group_log_title).setOnClickListener(v -> toggleGroup(groupLogContainer, ivArrowLog));
-
         final View groupAutoContainer = popView.findViewById(R.id.group_auto_container);
         final ImageView ivArrowAuto = popView.findViewById(R.id.iv_arrow_auto);
         popView.findViewById(R.id.group_auto_title).setOnClickListener(v -> toggleGroup(groupAutoContainer, ivArrowAuto));
-
         final View groupModeContainer = popView.findViewById(R.id.group_mode_container);
         final ImageView ivArrowMode = popView.findViewById(R.id.iv_arrow_mode);
         popView.findViewById(R.id.group_mode_title).setOnClickListener(v -> toggleGroup(groupModeContainer, ivArrowMode));
-
         //二级菜单项绑定点击事件
         TextView menuAddKey = popView.findViewById(R.id.menu_add_key);
         menuAddKey.setText("添加密钥");
@@ -246,49 +284,42 @@ public class MainActivity extends AppCompatActivity implements TaskLogCallback {
             showAddKeyDialog();
             mPopupWindow.dismiss();
         });
-
         TextView menuRefreshList = popView.findViewById(R.id.menu_refresh_list);
         menuRefreshList.setText("刷新密钥列表");
         menuRefreshList.setOnClickListener(v -> {
             refreshCipherKeyList();
             mPopupWindow.dismiss();
         });
-
         TextView menuRemoveSel = popView.findViewById(R.id.menu_remove_selected);
         menuRemoveSel.setText("删除选中密钥");
         menuRemoveSel.setOnClickListener(v -> {
             removeSelectedKeys();
             mPopupWindow.dismiss();
         });
-
         TextView menuClearAllKey = popView.findViewById(R.id.menu_clear_all_key);
         menuClearAllKey.setText("清空全部密钥");
         menuClearAllKey.setOnClickListener(v -> {
             showConfirmClearAllKey();
             mPopupWindow.dismiss();
         });
-
         TextView menuViewLog = popView.findViewById(R.id.menu_view_log);
         menuViewLog.setText("查看日志(最新优先)");
         menuViewLog.setOnClickListener(v -> {
             showViewLogDialog();
             mPopupWindow.dismiss();
         });
-
         TextView menuClearLogDb = popView.findViewById(R.id.menu_clear_log_db);
         menuClearLogDb.setText("清空数据库全部日志");
         menuClearLogDb.setOnClickListener(v -> {
             showConfirmClearLogDb();
             mPopupWindow.dismiss();
         });
-
         TextView menuSysSchedule = popView.findViewById(R.id.menu_sys_schedule_setting);
         menuSysSchedule.setText("自动清除配置");
         menuSysSchedule.setOnClickListener(v -> {
             openSysScheduleDialog();
             mPopupWindow.dismiss();
         });
-
         //==== 根据当前模式动态设置选中标记 ● ====
         TextView menuModeFlex = popView.findViewById(R.id.menu_mode_flexible);
         TextView menuModeTogether = popView.findViewById(R.id.menu_mode_together);
@@ -299,7 +330,6 @@ public class MainActivity extends AppCompatActivity implements TaskLogCallback {
             menuModeFlex.setText("  能打就打(过滤不可执行账号)");
             menuModeTogether.setText("● 等齐再打(全部模拟通过才提交)");
         }
-
         //切换：能打就打
         menuModeFlex.setOnClickListener(v -> {
             currentPlayMode = MODE_FLEXIBLE;
@@ -314,56 +344,9 @@ public class MainActivity extends AppCompatActivity implements TaskLogCallback {
             appendLog("", "", "✅已切换入场模式：等齐再打，全部模拟通过才提交交易");
             mPopupWindow.dismiss();
         });
-
         mPopupWindow = new PopupWindow(popView, ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, true);
         mPopupWindow.setOutsideTouchable(true);
         mPopupWindow.showAsDropDown(anchorView, 0, 4);
-    }
-
-    private void setupButtonEvents() {
-        btnSecurityWarn.setOnClickListener(v -> showSecurityWarningDialog());
-
-        //批量入场
-        btnBatchEnter.setOnClickListener(v -> showDecryptPasswordDialog(pwdCharArray -> new Thread(() -> {
-            try {
-                List<KeyListItem> selectedList = getSelectedKeyItem();
-                ArenaTask.batchEnterAllResume(getApplicationContext(), MainActivity.this, currentPlayMode, selectedList, tempUserCryptoKey);
-            } catch (Exception e) {
-                runOnUiThread(() -> appendLog("", "ENTER", "❌批量入场外层异常：" + e.getMessage()));
-            } finally {
-                Arrays.fill(pwdCharArray, (char) 0);
-            }
-        }).start()));
-
-        //批量领取
-        btnBatchClaim.setOnClickListener(v -> showDecryptPasswordDialog(pwdCharArray -> new Thread(() -> {
-            try {
-                List<KeyListItem> selectedList = getSelectedKeyItem();
-                ArenaTask.batchClaimAllResume(getApplicationContext(), MainActivity.this, currentPlayMode, selectedList, tempUserCryptoKey);
-            } catch (Exception e) {
-                runOnUiThread(() -> appendLog("", "CLAIM", "❌批量领取外层异常：" + e.getMessage()));
-            } finally {
-                Arrays.fill(pwdCharArray, (char) 0);
-            }
-        }).start()));
-
-        //完整工作流
-        btnFullWorkflow.setOnClickListener(v -> showDecryptPasswordDialog(pwdCharArray -> new Thread(() -> {
-            try {
-                List<KeyListItem> selectedList = getSelectedKeyItem();
-                ArenaTask.fullArenaWorkflowResume(getApplicationContext(), MainActivity.this, 2, currentPlayMode, selectedList, tempUserCryptoKey);
-            } catch (Exception e) {
-                runOnUiThread(() -> appendLog("", "", "❌完整工作流外层异常：" + e.getMessage()));
-            } finally {
-                Arrays.fill(pwdCharArray, (char) 0);
-            }
-        }).start()));
-
-        //重置任务进度
-        btnResetTask.setOnClickListener(v -> {
-            ArenaTask.resetTaskProgress(getApplicationContext());
-            appendLog("", "", "✅任务进度已重置");
-        });
     }
 
     /** 获取选中条目 */
@@ -378,12 +361,9 @@ public class MainActivity extends AppCompatActivity implements TaskLogCallback {
     }
 
     //添加密钥弹窗
-//添加密钥弹窗
-    //添加密钥弹窗
     private void showAddKeyDialog() {
         AlertDialog.Builder builder = new AlertDialog.Builder(this);
         View view = LayoutInflater.from(this).inflate(R.layout.dialog_add_key, null);
-
         EditText etGroupNo = view.findViewById(R.id.et_group_no);
         EditText etPk1 = view.findViewById(R.id.et_pk_part1);
         EditText etPk2 = view.findViewById(R.id.et_pk_part2);
@@ -405,14 +385,12 @@ public class MainActivity extends AppCompatActivity implements TaskLogCallback {
         builder.setNegativeButton("取消", null);
         AlertDialog dialog = builder.create();
         dialog.show();
-
         dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
             String groupNoInput = etGroupNo.getText().toString().trim();
             String part1 = etPk1.getText().toString().trim();
             String part2 = etPk2.getText().toString().trim();
             String fullPrivateKey = (part1 + part2).trim();
             String userKeyStr = etUserCrypto.getText().toString().trim();
-
             if (groupNoInput.isEmpty()) {
                 new AlertDialog.Builder(MainActivity.this)
                         .setMessage("分组编号不能为空！")
@@ -427,16 +405,13 @@ public class MainActivity extends AppCompatActivity implements TaskLogCallback {
                         .show();
                 return;
             }
-
             tempUserCryptoKey = userKeyStr.toCharArray();
             final String userInputGroupNo = groupNoInput;
-
             new Thread(() -> {
                 try {
                     KeyStoreManager mgr = AppGlobal.getKeyStoreManager();
                     //✅传入用户手动填写分组编号保存进密钥条目
                     mgr.addPrivateKey(fullPrivateKey, tempUserCryptoKey, userInputGroupNo);
-
                     runOnUiThread(() -> {
                         appendLog(userInputGroupNo, "", "✅密钥添加完成");
                         refreshCipherKeyList();
@@ -451,8 +426,7 @@ public class MainActivity extends AppCompatActivity implements TaskLogCallback {
         });
     }
 
-
-    //查看数据库日志弹窗，修复日期特殊字符，增加try‑catch
+    //查看数据库日志弹窗
     private void showViewLogDialog() {
         new Thread(() -> {
             String showText;
@@ -486,7 +460,7 @@ public class MainActivity extends AppCompatActivity implements TaskLogCallback {
         }).start();
     }
 
-    //解密密码弹窗，密码预校验
+    //解密密码弹窗，修复：先show()再getButton，避免null
     private void showDecryptPasswordDialog(final PasswordCallback callback) {
         final AlertDialog.Builder builder = new AlertDialog.Builder(this);
         final View view = LayoutInflater.from(this).inflate(R.layout.dialog_decrypt_password, null);
@@ -529,6 +503,8 @@ public class MainActivity extends AppCompatActivity implements TaskLogCallback {
                 });
             }).start();
         });
+
+        dialog.getButton(AlertDialog.BUTTON_NEGATIVE).setOnClickListener(v -> dialog.dismiss());
     }
 
     private interface PasswordCallback {
@@ -542,7 +518,6 @@ public class MainActivity extends AppCompatActivity implements TaskLogCallback {
                 KeyStoreManager mgr = AppGlobal.getKeyStoreManager();
                 List<KeyStoreManager.KeyEntry> originEntryList = mgr.loadKeyEntryList();
                 List<Long> customSortIds = mgr.getCustomSortIdList();
-
                 //✅按照用户自定义顺序重新排序
                 List<KeyStoreManager.KeyEntry> sortedEntryList = new ArrayList<>();
                 //1、先放自定义排序中存在的id
@@ -567,7 +542,6 @@ public class MainActivity extends AppCompatActivity implements TaskLogCallback {
                         sortedEntryList.add(e);
                     }
                 }
-
                 keyListItemList.clear();
                 for (int i = 0; i < sortedEntryList.size(); i++) {
                     KeyStoreManager.KeyEntry entry = sortedEntryList.get(i);
@@ -615,7 +589,6 @@ public class MainActivity extends AppCompatActivity implements TaskLogCallback {
             }
         }).start();
     }
-
 
     /** 删除选中密钥，倒序删除 */
     private void removeSelectedKeys() {
@@ -686,19 +659,15 @@ public class MainActivity extends AppCompatActivity implements TaskLogCallback {
     private void openSysScheduleDialog() {
         AlertDialog.Builder builder = new AlertDialog.Builder(this);
         final View view = LayoutInflater.from(this).inflate(R.layout.dialog_sys_auto_clear, null);
-
         final Switch swAutoEnable = view.findViewById(R.id.sw_auto_enable);
         final EditText etVal = view.findViewById(R.id.et_auto_clear_val);
         final Spinner spUnit = view.findViewById(R.id.sp_time_unit);
         final TextView tvStatus = view.findViewById(R.id.tv_auto_clear_status);
-
         ArrayAdapter<String> unitAdapter = new ArrayAdapter<>(this, android.R.layout.simple_spinner_dropdown_item, unitArray);
         spUnit.setAdapter(unitAdapter);
-
         //读取：开关状态 + 用户保存的时长（开关关闭时长也保留）
         boolean isEnable = spAppSetting.getBoolean("auto_clear_enable", false);
         long oldMs = spAppSetting.getLong("auto_clear_ms", 0);
-
         //回填UI
         swAutoEnable.setChecked(isEnable);
         if (oldMs > 0) {
@@ -713,18 +682,15 @@ public class MainActivity extends AppCompatActivity implements TaskLogCallback {
                 spUnit.setSelection(0);
             }
         }
-
         if(isEnable){
             tvStatus.setText("当前：已启用，到达时长会自动清除私钥");
             etVal.setEnabled(true);
             spUnit.setEnabled(true);
         }else{
-            //✅修正描述”
             tvStatus.setText("当前：已禁用（配置已保存，不会校验清除；系统时间持续流逝）");
             etVal.setEnabled(false);
             spUnit.setEnabled(false);
         }
-
         //开关监听
         swAutoEnable.setOnCheckedChangeListener((buttonView, checked) -> {
             etVal.setEnabled(checked);
@@ -735,17 +701,13 @@ public class MainActivity extends AppCompatActivity implements TaskLogCallback {
                 tvStatus.setText("当前：已禁用（配置已保存，不会校验清除；系统时间持续流逝）");
             }
         });
-
-
         final AlertDialog dialog = builder.setView(view)
                 .setPositiveButton("保存", (d, i) -> {})
                 .setNegativeButton("关闭", (d, i) -> d.dismiss())
                 .create();
         dialog.show();
-
         dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
             boolean newEnable = swAutoEnable.isChecked();
-
             if(!newEnable){
                 //====开关关闭：仅标记为禁用，【不抹除auto_clear_ms时长配置】====
                 spAppSetting.edit()
@@ -757,7 +719,6 @@ public class MainActivity extends AppCompatActivity implements TaskLogCallback {
                 dialog.dismiss();
                 return;
             }
-
             //开关打开：需要有有效时长
             String valStr = etVal.getText().toString().trim();
             if(valStr.isEmpty()){
@@ -794,7 +755,6 @@ public class MainActivity extends AppCompatActivity implements TaskLogCallback {
                         .setPositiveButton("确定", null).show();
                 return;
             }
-
             long totalMs = val * oneUnitMs;
             long startTs = System.currentTimeMillis();
             spAppSetting.edit()
@@ -802,18 +762,14 @@ public class MainActivity extends AppCompatActivity implements TaskLogCallback {
                     .putLong("auto_clear_ms", totalMs)
                     .putLong("auto_clear_start_ts", startTs)
                     .apply();
-
             long periodMin = Math.max(inputMinute, MIN_ALLOW_MINUTE);
             PeriodicWorkRequest req = new PeriodicWorkRequest.Builder(AutoClearWorker.class, periodMin, TimeUnit.MINUTES).build();
             WorkManager.getInstance(getApplicationContext())
                     .enqueueUniquePeriodicWork(WORK_AUTO_CLEAR, ExistingPeriodicWorkPolicy.UPDATE, req);
-
             appendLog("", "", "✅自动清除设置完成：" + val + " " + unitArray[selPos]);
             dialog.dismiss();
         });
     }
-
-
 
     private void showSecurityWarningDialog() {
         new AlertDialog.Builder(this)
@@ -824,7 +780,6 @@ public class MainActivity extends AppCompatActivity implements TaskLogCallback {
     }
 
     // ============ TaskLogCallback接口实现，同时写数据库+UI ============
-//    Log.e("dd",finalMsg);
     @Override
     public void onLog(final String keyNo, final String type, final String msg) {
         String safeKeyNo = (keyNo == null || keyNo.trim().isEmpty()) ? null : keyNo.trim();
@@ -832,7 +787,6 @@ public class MainActivity extends AppCompatActivity implements TaskLogCallback {
         final String finalMsg = msg;
         Log.e("onLog","keyNo:"+keyNo+"type:"+type+"msg:"+msg);
         final long timeMs = System.currentTimeMillis();
-
         runOnUiThread(() -> {
             SimpleDateFormat sdf = new SimpleDateFormat("yyyy‑MM‑dd HH:mm:ss", Locale.getDefault());
             StringBuilder sb = new StringBuilder();
@@ -845,7 +799,6 @@ public class MainActivity extends AppCompatActivity implements TaskLogCallback {
             tvLog.setText(tvLog.getText() + newLine);
             scrollView.post(() -> scrollView.fullScroll(ScrollView.FOCUS_DOWN));
         });
-
         new Thread(() -> {
             AppLogDbHelper.getInstance(this).insertLog(safeKeyNo, safeType, finalMsg, timeMs);
         }).start();
@@ -881,7 +834,6 @@ public class MainActivity extends AppCompatActivity implements TaskLogCallback {
             //内存集合交换位置
             java.util.Collections.swap(keyListItemList, pos, newPos);
             keyAdapter.notifyDataSetChanged();
-
             //✅同步保存自定义排序id序列到SP
             List<Long> newSortIdList = new ArrayList<>();
             for(KeyListItem li : keyListItemList){
@@ -894,7 +846,7 @@ public class MainActivity extends AppCompatActivity implements TaskLogCallback {
         builder.show();
     }
 
-        public void appendLog(String unusedKeyNo, String unusedType, String msg) {
+    public void appendLog(String unusedKeyNo, String unusedType, String msg) {
         onLog(unusedKeyNo, unusedType, msg);
     }
 

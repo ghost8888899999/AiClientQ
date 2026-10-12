@@ -26,22 +26,27 @@ public class ArenaContractApi {
     public static final long TX_WAIT_POLL_MS = 1200;
     public static final int TX_WAIT_MAX_CNT = 40;
 
+/**
+ * Represents a summary of a player's game statistics and financial information.
+ * This class contains various attributes that track a player's wallet, allowances,
+ * prizes, match deposits, arena statistics, and battle-related data.
+ */
     public static class PlayerSummary {
-        public BigInteger walletBalance;
-        public BigInteger allowance;
-        public BigInteger prize;
-        public BigInteger inMatchDeposit;
-        public BigInteger arenaTotal;
-        public BigInteger battles;
-        public BigInteger championships;
-        public BigInteger jiaziTotalGranted;
-        public BigInteger jiaziReleased;
-        public BigInteger jiaziClaimable;
-        public boolean jiaziTruncated;
-        public BigInteger entriesToday;
-        public BigInteger entriesRemainingToday;
-        public BigInteger roundsFromPrize;
-        public boolean nextEntryFromPrize;
+        public BigInteger walletBalance;      // The current balance in the player's wallet
+        public BigInteger allowance;           // The player's current allowance
+        public BigInteger prize;              // The prize amount the player has
+        public BigInteger inMatchDeposit;     // The amount deposited in current matches
+        public BigInteger arenaTotal;         // Total amount related to arena activities
+        public BigInteger battles;            // Total number of battles participated in
+        public BigInteger championships;      // Total number of championships won or participated in
+        public BigInteger jiaziTotalGranted;  // Total amount of "jiazi" granted to the player
+        public BigInteger jiaziReleased;      // Amount of "jiazi" that has been released
+        public BigInteger jiaziClaimable;    // Amount of "jiazi" that can be claimed
+        public boolean jiaziTruncated;       // Indicates if the jiazi amount was truncated
+        public BigInteger entriesToday;       // Number of entries made today
+        public BigInteger entriesRemainingToday; // Number of entries remaining for today
+        public BigInteger roundsFromPrize;    // Number of rounds completed from the prize
+        public boolean nextEntryFromPrize;   // Indicates if the next entry is from prize
         public boolean seatedInCurrentRound;
     }
 
@@ -301,4 +306,29 @@ public class ArenaContractApi {
         }
         throw new Exception("wait receipt timeout, hash="+txHash);
     }
+
+    // 在ArenaContractApi类内新增静态成员
+    private static String lastRawTxHex;
+    public static String getLastRawTxHex(){
+        return lastRawTxHex;
+    }
+
+    /**
+     * 新增：构建并签名原始交易，返回EthSendTransaction
+     */
+    public static org.web3j.protocol.core.methods.response.EthSendTransaction buildAndSignRawTx(Web3j web3j, ECKeyPair keyPair,
+                                                                                                BigInteger nonce, BigInteger gasPrice,
+                                                                                                String to, BigInteger value, String data) throws Exception{
+        BigInteger gasLimit = BigInteger.valueOf(1600000);
+        org.web3j.crypto.RawTransaction rawTx = org.web3j.crypto.RawTransaction.createTransaction(nonce,gasPrice,gasLimit,to,value,data);
+        // 【修复点】ECKeyPair包装为Credentials
+        Credentials credentials = Credentials.create(keyPair);
+        byte[] signedMsg = org.web3j.crypto.TransactionEncoder.signMessage(rawTx, credentials);
+        String rawHex = Numeric.toHexString(signedMsg);
+        lastRawTxHex = rawHex;
+        org.web3j.protocol.core.methods.response.EthSendTransaction resp = web3j.ethSendRawTransaction(rawHex).send();
+        return resp;
+    }
+
+
 }
