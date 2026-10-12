@@ -11,6 +11,17 @@
         android:text="添加密钥（分两段粘贴私钥）"
         android:textSize="16sp"/>
 
+    <!--新增：用户手动输入分组编号-->
+    <EditText
+        android:id="@+id/et_group_no"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:hint="分组编号，例如a01,a02,......"
+        android:maxLength="10"
+        android:inputType="textCapCharacters" />
+
+    <!--原有 etPk1、etPk2、et_user_crypto_key ... -->
+
     <!-- 私钥前半段 -->
     <EditText
         android:id="@+id/et_pk_part1"

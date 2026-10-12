@@ -1,5 +1,4 @@
 package com.lgns;
-
 import org.web3j.abi.FunctionEncoder;
 import org.web3j.abi.FunctionReturnDecoder;
 import org.web3j.abi.TypeReference;
@@ -17,14 +16,13 @@ import org.web3j.protocol.core.methods.response.EthGetTransactionReceipt;
 import org.web3j.protocol.core.methods.response.EthSendTransaction;
 import org.web3j.protocol.core.methods.response.TransactionReceipt;
 import org.web3j.utils.Numeric;
-
 import java.math.BigInteger;
 import java.util.ArrayList;
 import java.util.List;
 
 public class ArenaContractApi {
     public static final String ARENA_ADDR = "0xff060bAB41e16eBF0eFE4FAd454404Fd5f75aAaA";
-    public static final long CHAIN_ID = 6714L; // 改成long，适配signMessage
+    public static final long CHAIN_ID = 6714L;
     public static final long TX_WAIT_POLL_MS = 1200;
     public static final int TX_WAIT_MAX_CNT = 40;
 
@@ -50,8 +48,6 @@ public class ArenaContractApi {
     public static PlayerSummary callPlayerSummary(Web3j web3j, String playerAddr) throws Exception {
         List<Type> inputs = new ArrayList<>();
         inputs.add(new Address(playerAddr));
-
-        // ========== 修复：输出参数用TypeReference，不再用Type实例 ==========
         List<TypeReference<?>> outputs = new ArrayList<>();
         outputs.add(TypeReference.create(Uint256.class));
         outputs.add(TypeReference.create(Uint256.class));
@@ -72,7 +68,6 @@ public class ArenaContractApi {
 
         Function func = new Function("playerSummary", inputs, outputs);
         String data = FunctionEncoder.encode(func);
-
         EthCall ethCall = web3j.ethCall(
                 Transaction.createEthCallTransaction(null, ARENA_ADDR, data),
                 DefaultBlockParameterName.LATEST
@@ -81,7 +76,6 @@ public class ArenaContractApi {
             throw new Exception("playerSummary rpc error:" + ethCall.getError().getMessage());
         }
         List<Type> dec = FunctionReturnDecoder.decode(ethCall.getValue(), func.getOutputParameters());
-
         PlayerSummary s = new PlayerSummary();
         s.walletBalance = ((Uint256) dec.get(0)).getValue();
         s.allowance = ((Uint256) dec.get(1)).getValue();
@@ -141,18 +135,15 @@ public class ArenaContractApi {
 
     /**
      * playerHistoryLatest(player,count) selector:0x0810151a
-     * 返回 (struct[],uint256)
-     * 手动解析原始返回hex，复刻py daily_wend_count；统计今日问鼎获胜次数；异常返回null
+     * 修复：增加hex解析异常捕获，畸形数据直接返回null，不向外抛NumberFormatException
      */
     public static Integer callPlayerHistoryLatestWendToday(Web3j web3j, String owner) {
         try {
             String addrNo0x = Numeric.cleanHexPrefix(owner);
             String countHex = Numeric.toHexStringNoPrefixZeroPadded(BigInteger.valueOf(100), 64);
-            // selector + padded‑address + padded‑count
             String data = "0810151a"
                     + String.format("%64s", addrNo0x).replace(' ', '0')
                     + countHex;
-
             EthCall res = web3j.ethCall(
                     Transaction.createEthCallTransaction(null, ARENA_ADDR, data),
                     DefaultBlockParameterName.LATEST
@@ -164,25 +155,42 @@ public class ArenaContractApi {
             if (hexRaw.length() < 64) {
                 return 0;
             }
+
+            int arrOffset;
+            try{
+                arrOffset = Integer.parseInt(hexRaw.substring(0, 64), 16) * 2;
+            }catch (NumberFormatException e){
+                return null;
+            }
+
+            if(arrOffset + 64 > hexRaw.length()){
+                return null;
+            }
+            int arrLen;
+            try{
+                arrLen = Integer.parseInt(hexRaw.substring(arrOffset, arrOffset + 64), 16);
+            }catch (NumberFormatException e){
+                return null;
+            }
+
+            int itemPtr = arrOffset + 64;
+            int winCount = 0;
             long nowSec = System.currentTimeMillis() / 1000L;
             long todayDayId = (nowSec + 8L * 3600L) / 86400L;
 
-            // ABI动态数组偏移头：第0个32byte是数组数据起始偏移
-            int arrOffset = Integer.parseInt(hexRaw.substring(0, 64), 16) * 2;
-            // arrOffset位置：数组长度
-            int arrLen = Integer.parseInt(hexRaw.substring(arrOffset, arrOffset + 64), 16);
-            int itemPtr = arrOffset + 64;
-            int winCount = 0;
-            // struct每个元素：uint256 roundId,uint256 ts,uint256 seat,bool settled,bool won,bool jiaziAdv,address champ,uint256 payout
-            // 每个tuple元素总占8*64=512 hex字符
             for (int idx = 0; idx < arrLen; idx++) {
                 int base = itemPtr + idx * 512;
                 if (base + 512 > hexRaw.length()) break;
-                // ts: 第1个字段偏移0‑64
+
                 String tsHex = hexRaw.substring(base + 64, base + 128);
-                long ts = new BigInteger(tsHex, 16).longValue();
+                long ts;
+                try{
+                    ts = new BigInteger(tsHex, 16).longValue();
+                }catch (NumberFormatException e){
+                    continue;
+                }
                 long rowDayId = (ts + 8L * 3600L) / 86400L;
-                // won:第4个bool：base+192 ~ base+256
+
                 String wonHex = hexRaw.substring(base + 192, base + 256);
                 boolean won = !"0000000000000000000000000000000000000000000000000000000000000000".equals(wonHex);
                 if (won && rowDayId == todayDayId) {
@@ -195,7 +203,7 @@ public class ArenaContractApi {
         }
     }
 
-        private static String readTokenAddress(Web3j web3j) throws Exception {
+    private static String readTokenAddress(Web3j web3j) throws Exception {
         List<Type> inputs = new ArrayList<>();
         List<TypeReference<?>> outputs = List.of(TypeReference.create(Address.class));
         Function f = new Function("TOKEN", inputs, outputs);
@@ -273,16 +281,13 @@ public class ArenaContractApi {
                 BigInteger.ZERO,
                 data
         );
-        // ==========修复：chainId传long，不再BigInteger==========
         byte[] signedBytes = TransactionEncoder.signMessage(rawTx, CHAIN_ID, credentials);
         String hexSigned = Numeric.toHexString(signedBytes);
-
         EthSendTransaction sendResp = web3j.ethSendRawTransaction(hexSigned).send();
         if(sendResp.hasError()){
             throw new Exception("sendRawTx error: " + sendResp.getError().getMessage());
         }
         String txHash = sendResp.getTransactionHash();
-
         for(int i=0;i<TX_WAIT_MAX_CNT;i++){
             EthGetTransactionReceipt receiptResp = web3j.ethGetTransactionReceipt(txHash).send();
             if(receiptResp.getTransactionReceipt().isPresent()){
