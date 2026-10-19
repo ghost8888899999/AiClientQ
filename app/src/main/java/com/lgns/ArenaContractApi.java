@@ -37,6 +37,8 @@ public class ArenaContractApi {
     public static final int TX_WAIT_MAX_CNT =
             (int) (ArenaConfig.TX_TIMEOUT_SEC * 1000L / ArenaConfig.TX_WAIT_POLL_MS);
 
+    private static volatile String cachedTokenAddress;
+
     /** PlayerSummary 输出 ABI 原型(共用,避免重复构造) */
     private static final List<TypeReference<?>> PLAYER_SUMMARY_OUTPUTS = buildPlayerSummaryOutputs();
 
@@ -212,6 +214,8 @@ public class ArenaContractApi {
     }
 
     private static String readTokenAddress(Web3j web3j) throws Exception {
+        String cached = cachedTokenAddress;
+        if (cached != null) return cached;
         List<Type> inputs = new ArrayList<Type>();
         List<TypeReference<?>> outputs = new ArrayList<TypeReference<?>>();
         outputs.add(TypeReference.create(Address.class));
@@ -223,7 +227,9 @@ public class ArenaContractApi {
         ).send();
         if (call.hasError()) throw new Exception("read TOKEN address fail:" + call.getError().getMessage());
         List<Type> dec = FunctionReturnDecoder.decode(call.getValue(), f.getOutputParameters());
-        return ((Address) dec.get(0)).getValue();
+        String addr = ((Address) dec.get(0)).getValue();
+        cachedTokenAddress = addr;
+        return addr;
     }
 
     // ==================================================================
@@ -340,9 +346,14 @@ public class ArenaContractApi {
 
     public static TransactionReceipt doEnterArena(Web3j web3j, ECKeyPair ecKeyPair, BigInteger nonce,
                                                   BigInteger gasPrice, PreBroadcastHook hook) throws Exception {
+        return doEnterArena(web3j, ecKeyPair, nonce, gasPrice, BigInteger.valueOf(1500000), hook);
+    }
+
+    public static TransactionReceipt doEnterArena(Web3j web3j, ECKeyPair ecKeyPair, BigInteger nonce,
+                                                  BigInteger gasPrice, BigInteger gasLimit,
+                                                  PreBroadcastHook hook) throws Exception {
         Function func = new Function("enterArena", new ArrayList<Type>(), new ArrayList<TypeReference<?>>());
         String data = FunctionEncoder.encode(func);
-        BigInteger gasLimit = BigInteger.valueOf(1500000);
         return sendRawTxAndWaitReceipt(web3j, ecKeyPair, nonce, gasPrice, gasLimit, ARENA_ADDR, data, hook);
     }
 

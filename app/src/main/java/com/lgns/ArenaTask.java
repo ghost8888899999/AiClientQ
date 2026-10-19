@@ -37,6 +37,8 @@ public class ArenaTask {
     public static final long PENDING_WARN_THRESHOLD_MS = 60_000L;
     public static final Set<String> enterFailedAddrSet = ConcurrentHashMap.newKeySet();
 
+    private static final Pattern TX_HASH_PATTERN = Pattern.compile("(0x[0-9a-fA-F]{64})");
+
     private static final Gson gson = new Gson();
     private static final String SP_TASK_PROGRESS = "task_progress";
 
@@ -163,8 +165,7 @@ public class ArenaTask {
             logCallback.onLog(keyNo, "ENTER", logLine);
 
             String txHash = null;
-            Pattern pattern = Pattern.compile("(0x[0-9a-fA-F]{64})");
-            Matcher matcher = pattern.matcher(logLine);
+            Matcher matcher = TX_HASH_PATTERN.matcher(logLine);
             if (matcher.find()) {
                 txHash = matcher.group(1);
             }
@@ -175,8 +176,7 @@ public class ArenaTask {
                 saveAccountState(ctx, fromAddr, new TaskAccountState(TaskAccountState.STATUS_IDLE, null));
             }
 
-            ArenaContractApi.PlayerSummary afterSummary = ArenaContractApi.callPlayerSummary(web3j, fromAddr);
-            return afterSummary.seatedInCurrentRound;
+            return txHash != null && !txHash.isEmpty();
         } catch (java.io.IOException ioEx) {
             // B7 · 让网络层 IOException 穿透,由 batchEnterAllResume 里 rpcTry 循环处理
             throw ioEx;
@@ -302,9 +302,7 @@ public class ArenaTask {
                 }
 
                 if (ok) {
-                    ArenaContractApi.PlayerSummary sum = ArenaContractApi.callPlayerSummary(web3j, fromAddr);
-                    if (sum.seatedInCurrentRound) skipCount++;
-                    else successCount++;
+                    skipCount++;
                 } else {
                     failCount++;
                     failNoList.add(keyNo);
@@ -318,7 +316,7 @@ public class ArenaTask {
             callback.onLog("", "ENTER", enterSummary);
         } catch (java.io.IOException dialFail) {
             // dialAny 三节点全灭 → 整批终止
-            callback.onLog("", "ENTER", "❌ 三节点全不可达:" + msgOf(dialFail));
+            callback.onLog("", "ENTER", "❌ " + ArenaConfig.RPC_URLS.length + " 个节点全不可达:" + msgOf(dialFail));
             throw dialFail;
         } finally {
             // 无论成功/异常/取消,一定要 shutdown
@@ -336,7 +334,10 @@ public class ArenaTask {
                                                                     Web3j web3j, ECKeyPair keyPair, BigInteger nonce) throws Exception {
         String addr = Web3AndroidUtil.getAddress(keyPair);
         BigInteger gasPrice = web3j.ethGasPrice().send().getGasPrice();
-        BigInteger estGas = BigInteger.valueOf(1600000);
+        String enterData = org.web3j.abi.FunctionEncoder.encode(
+                new org.web3j.abi.datatypes.Function("enterArena",
+                        new java.util.ArrayList<>(), new java.util.ArrayList<>()));
+        BigInteger estGas = Web3AndroidUtil.estimateGasWithCeiling(web3j, addr, ArenaConfig.ARENA_ADDR, enterData);
         BigInteger nativeBalance = web3j.ethGetBalance(addr, DefaultBlockParameterName.LATEST).send().getBalance();
         BigInteger needNative = estGas.multiply(gasPrice);
         if (nativeBalance.compareTo(needNative) < 0) {
@@ -349,13 +350,6 @@ public class ArenaTask {
         BigInteger allowance = summary.allowance;
         BigInteger prize = summary.prize;
         BigInteger entriesRemainingToday = summary.entriesRemainingToday;
-        boolean seatedInCurrentRound = summary.seatedInCurrentRound;
-        if (seatedInCurrentRound) {
-            return new Pair<>(addr.substring(0, 10) + "... 跳过: 当前场已入座", nonce);
-        }
-        if (entriesRemainingToday.compareTo(BigInteger.ZERO) == 0) {
-            return new Pair<>(addr.substring(0, 10) + "... 跳过: 今日已打满12场", nonce);
-        }
         String payDesc;
         boolean needApprove = false;
         if (prize.compareTo(ENTRY_FEE) >= 0) {
@@ -380,7 +374,7 @@ public class ArenaTask {
             currentNonce = currentNonce.add(BigInteger.ONE);
             Thread.sleep(2000);
         }
-        TransactionReceipt enterReceipt = ArenaContractApi.doEnterArena(web3j, keyPair, currentNonce, gasPrice,
+        TransactionReceipt enterReceipt = ArenaContractApi.doEnterArena(web3j, keyPair, currentNonce, gasPrice, estGas,
                 (txHash, rawTxHex) -> saveAccountState(ctx, fromAddrLower,
                         new TaskAccountState(TaskAccountState.STATUS_TX_SENT, txHash, rawTxHex)));
         String txHash = enterReceipt.getTransactionHash();
@@ -643,7 +637,7 @@ public class ArenaTask {
                     + " ｜领取失败私钥编号:" + claimFailNos + " --------";
             callback.onLog("", "CLAIM", claimSummary);
         } catch (java.io.IOException dialFail) {
-            callback.onLog("", "CLAIM", "❌ 三节点全不可达:" + msgOf(dialFail));
+            callback.onLog("", "CLAIM", "❌ " + ArenaConfig.RPC_URLS.length + " 个节点全不可达:" + msgOf(dialFail));
             throw dialFail;
         } finally {
             if (web3j != null) {

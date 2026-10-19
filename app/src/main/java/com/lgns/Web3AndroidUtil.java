@@ -1,12 +1,11 @@
 package com.lgns;
 
+import org.web3j.crypto.Credentials;
+import org.web3j.crypto.ECKeyPair;
 import org.web3j.protocol.Web3j;
 import org.web3j.protocol.core.methods.response.EthSendTransaction;
 import org.web3j.protocol.core.methods.response.TransactionReceipt;
-import org.web3j.crypto.Credentials;
-import org.web3j.crypto.ECKeyPair;
-import org.web3j.crypto.RawTransaction;
-import org.web3j.crypto.TransactionEncoder;
+
 import org.web3j.utils.Numeric;
 
 import java.io.IOException;
@@ -39,20 +38,6 @@ public class Web3AndroidUtil {
 
     /** 当前活跃RPC节点索引,跨线程共享,失败时原子递增 */
     private static final AtomicInteger CUR_RPC = new AtomicInteger(0);
-
-    /**
-     * 发送原始签名交易，EIP155带链ID签名，防止跨链重放攻击
-     */
-    public static String sendRawTx(Web3j web3j, RawTransaction rawTx, ECKeyPair keyPair, long chainId) throws IOException {
-        Credentials credentials = Credentials.create(keyPair);
-        byte[] signedBytes = TransactionEncoder.signMessage(rawTx, chainId, credentials);
-        String hexRawTx = Numeric.toHexString(signedBytes);
-        EthSendTransaction sendResp = web3j.ethSendRawTransaction(hexRawTx).send();
-        if (sendResp.hasError()) {
-            throw new IOException("交易广播失败: " + sendResp.getError().getMessage());
-        }
-        return sendResp.getTransactionHash();
-    }
 
     /**
      * 等待交易回执，带超时，循环轮询，替代固定sleep
@@ -107,7 +92,8 @@ public class Web3AndroidUtil {
             } catch (Exception e) {
                 lastEx = e;
                 if (isRevert(e)) throw e;
-                Thread.sleep(RPC_RETRY_INTERVAL_MS);
+                long delay = RPC_RETRY_INTERVAL_MS * (1L << Math.min(i, 4));
+                Thread.sleep(delay);
             }
         }
         throw new Exception("RPC调用重试全部失败", lastEx);
@@ -216,7 +202,7 @@ public class Web3AndroidUtil {
                     lastErr = e;
                 }
             }
-            throw new IOException("三个 RPC 节点都连不上或链不对/合约未就绪", lastErr);
+            throw new IOException(n + " 个 RPC 节点都连不上或链不对/合约未就绪", lastErr);
         } finally {
             pool.shutdownNow();
         }
@@ -237,16 +223,6 @@ public class Web3AndroidUtil {
      * 明确分类,这类错误不重试
      */
     public static boolean isAlreadyInFlight(Throwable e) {
-        if (e == null) return false;
-        String m = safeMessage(e).toLowerCase();
-        return m.contains("already known") || m.contains("already imported")
-                || m.contains("known transaction") || m.contains("transaction with the same hash");
-    }
-
-    /**
-     * 已在节点池中/已知交易,视为已在链上而非失败
-     */
-    public static boolean isAlreadyInPool(Throwable e) {
         if (e == null) return false;
         String m = safeMessage(e).toLowerCase();
         return m.contains("already known") || m.contains("already imported")
