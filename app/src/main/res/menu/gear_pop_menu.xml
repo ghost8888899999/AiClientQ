@@ -6,6 +6,11 @@
     <item android:id="@+id/menu_remove_selected" android:title="删除选中密钥"/>
     <item android:id="@+id/menu_clear_all_key" android:title="清空全部密钥"/>
 
+    <item android:title="分组管理" android:enabled="false"/>
+    <item android:id="@+id/menu_add_group" android:title="添加分组"/>
+    <item android:id="@+id/menu_delete_group" android:title="删除分组"/>
+    <item android:id="@+id/menu_rename_group" android:title="重命名分组"/>
+
     <item android:title="日志管理" android:enabled="false"/>
     <item android:id="@+id/menu_view_log" android:title="查看日志(最新优先)"/>
     <item android:id="@+id/menu_clear_log_db" android:title="清空数据库全部日志"/>
@@ -16,4 +21,8 @@
     <item android:title="竞技场入场模式" android:enabled="false"/>
     <item android:id="@+id/menu_mode_flexible" android:title="能打就打(过滤不可执行账号)"/>
     <item android:id="@+id/menu_mode_together" android:title="等齐再打(全部模拟通过才提交)"/>
+
+    <item android:title="锦标赛统计" android:enabled="false"/>
+    <item android:id="@+id/menu_championship_stats" android:title="查看锦标赛统计"/>
+    <item android:id="@+id/menu_migrate_addresses" android:title="补全密钥地址(旧数据迁移)"/>
 </menu>

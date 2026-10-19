@@ -15,6 +15,12 @@ public class ArenaConfig {
     public static final String ARENA_ADDR = "0xff060bAB41e16eBF0eFE4FAd454404Fd5f75aAaA";
     public static final long CHAIN_ID = 6714L;
 
+    // Squad 合约地址: null 表示未部署/未配置,部署后由用户设置
+    public static volatile String SQUAD_ADDR = null;
+    // 主号私钥(用于 Squad 模式的 SetCodeTx 委托 + 批量交易签名)
+    // 运行时由 UI 层设置,任务结束后清零
+    public static volatile String MASTER_PK = null;
+
     // 入场费 100*10^18
     public static final BigInteger ENTRY_FEE = BigInteger.valueOf(100).multiply(BigInteger.TEN.pow(18));
     public static final BigInteger MAX_JIAZI_BATCH = BigInteger.valueOf(64);

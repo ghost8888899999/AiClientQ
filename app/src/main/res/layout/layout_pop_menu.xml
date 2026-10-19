@@ -9,7 +9,7 @@
     android:paddingStart="1dp"
     android:paddingEnd="1dp">
 
-    <!-- 密钥管理 -->
+    <!-- 私钥管理 -->
     <RelativeLayout
         android:id="@+id/group_key_title"
         android:layout_width="match_parent"
@@ -23,7 +23,7 @@
             android:layout_width="wrap_content"
             android:layout_height="match_parent"
             android:layout_alignParentStart="true"
-            android:text="密钥管理"
+            android:text="私钥管理"
             android:textColor="#1976D2"
             android:textSize="15sp"
             android:gravity="center_vertical"/>
@@ -44,9 +44,43 @@
         android:orientation="vertical"
         android:visibility="gone">
         <TextView android:id="@+id/menu_add_key" style="@style/popup_menu_item"/>
-        <TextView android:id="@+id/menu_refresh_list" style="@style/popup_menu_item"/>
-        <TextView android:id="@+id/menu_remove_selected" style="@style/popup_menu_item"/>
-        <TextView android:id="@+id/menu_clear_all_key" style="@style/popup_menu_item"/>
+    </LinearLayout>
+
+    <!-- 分组管理 -->
+    <RelativeLayout
+        android:id="@+id/group_mgmt_title"
+        android:layout_width="match_parent"
+        android:layout_height="44dp"
+        android:clickable="true"
+        android:focusable="true"
+        android:paddingStart="4dp"
+        android:paddingEnd="4dp">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="match_parent"
+            android:layout_alignParentStart="true"
+            android:text="分组管理"
+            android:textColor="#1976D2"
+            android:textSize="15sp"
+            android:gravity="center_vertical"/>
+
+        <ImageView
+            android:id="@+id/iv_arrow_mgmt"
+            android:layout_width="20dp"
+            android:layout_height="20dp"
+            android:layout_alignParentEnd="true"
+            android:layout_centerVertical="true"
+            android:src="@drawable/ic_arrow_expand_svg"/>
+    </RelativeLayout>
+
+    <LinearLayout
+        android:id="@+id/group_mgmt_container"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:visibility="gone">
+        <TextView android:id="@+id/menu_add_group" style="@style/popup_menu_item"/>
     </LinearLayout>
 
     <!-- 日志管理 -->
@@ -160,6 +194,44 @@
         android:visibility="gone">
         <TextView android:id="@+id/menu_mode_flexible" style="@style/popup_menu_item"/>
         <TextView android:id="@+id/menu_mode_together" style="@style/popup_menu_item"/>
+    </LinearLayout>
+
+    <!-- 锦标赛统计 -->
+    <RelativeLayout
+        android:id="@+id/group_champ_title"
+        android:layout_width="match_parent"
+        android:layout_height="44dp"
+        android:clickable="true"
+        android:focusable="true"
+        android:paddingStart="4dp"
+        android:paddingEnd="4dp">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="match_parent"
+            android:layout_alignParentStart="true"
+            android:text="锦标赛统计"
+            android:textColor="#1976D2"
+            android:textSize="15sp"
+            android:gravity="center_vertical"/>
+
+        <ImageView
+            android:id="@+id/iv_arrow_champ"
+            android:layout_width="20dp"
+            android:layout_height="20dp"
+            android:layout_alignParentEnd="true"
+            android:layout_centerVertical="true"
+            android:src="@drawable/ic_arrow_expand_svg"/>
+    </RelativeLayout>
+
+    <LinearLayout
+        android:id="@+id/group_champ_container"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:visibility="gone">
+        <TextView android:id="@+id/menu_championship_stats" style="@style/popup_menu_item"/>
+        <TextView android:id="@+id/menu_migrate_addresses" style="@style/popup_menu_item"/>
     </LinearLayout>
 
 </LinearLayout>

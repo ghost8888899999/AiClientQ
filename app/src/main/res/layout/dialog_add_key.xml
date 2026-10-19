@@ -11,16 +11,21 @@
         android:text="添加密钥（分两段粘贴私钥）"
         android:textSize="16sp"/>
 
-    <!--新增：用户手动输入分组编号-->
     <EditText
-        android:id="@+id/et_group_no"
+        android:id="@+id/et_custom_code"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:hint="分组编号，例如a01,a02,......"
-        android:maxLength="10"
-        android:inputType="textCapCharacters" />
+        android:hint="自定义编号（可选，如 001）"
+        android:inputType="text"
+        android:layout_marginTop="8dp"/>
 
-    <!--原有 etPk1、etPk2、et_user_crypto_key ... -->
+    <!-- 分组选择下拉框 -->
+    <Spinner
+        android:id="@+id/sp_group_no"
+        android:layout_width="match_parent"
+        android:layout_height="48dp"
+        android:layout_marginTop="4dp"
+        android:background="@android:drawable/btn_dropdown" />
 
     <!-- 私钥前半段 -->
     <EditText

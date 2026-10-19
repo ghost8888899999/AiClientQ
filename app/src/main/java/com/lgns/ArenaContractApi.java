@@ -1,5 +1,7 @@
 package com.lgns;
 
+import android.util.Log;
+
 import org.web3j.abi.FunctionEncoder;
 import org.web3j.abi.FunctionReturnDecoder;
 import org.web3j.abi.TypeReference;
@@ -171,7 +173,7 @@ public class ArenaContractApi {
         try {
             String addrNo0x = Numeric.cleanHexPrefix(owner);
             String countHex = Numeric.toHexStringNoPrefixZeroPadded(BigInteger.valueOf(100), 64);
-            String data = "0810151a"
+            String data = "0x0810151a"
                     + String.format("%64s", addrNo0x).replace(' ', '0')
                     + countHex;
             EthCall res = web3j.ethCall(
@@ -325,6 +327,21 @@ public class ArenaContractApi {
     }
 
     // ==================================================================
+    // SetCode (EIP-7702) 交易:接受预签名的 rawTxHex
+    // ==================================================================
+
+    public static TransactionReceipt sendSetCodeRawAndWaitReceipt(
+            Web3j web3j, String rawTxHex, String localTxHash,
+            PreBroadcastHook preBroadcastHook) throws Exception {
+        if (preBroadcastHook != null) {
+            preBroadcastHook.onSigned(localTxHash, rawTxHex);
+        }
+        String rpcHash = broadcastRaw(web3j, rawTxHex);
+        String txHash = rpcHash != null ? rpcHash : localTxHash;
+        return waitReceiptLocal(web3j, txHash);
+    }
+
+    // ==================================================================
     // 业务写入函数(带 / 不带 PreBroadcastHook 两版)
     // ==================================================================
 
@@ -456,26 +473,38 @@ public class ArenaContractApi {
     }
 
     private static PlayerSummary decodePlayerSummary(String hexValue) {
-        List<Type> dec = FunctionReturnDecoder.decode(hexValue, castOutputs(buildPlayerSummaryOutputs()));
-        if (dec.size() < 16) throw new IllegalStateException("playerSummary decode short:" + dec.size());
         PlayerSummary s = new PlayerSummary();
-        s.walletBalance = ((Uint256) dec.get(0)).getValue();
-        s.allowance = ((Uint256) dec.get(1)).getValue();
-        s.prize = ((Uint256) dec.get(2)).getValue();
-        s.inMatchDeposit = ((Uint256) dec.get(3)).getValue();
-        s.arenaTotal = ((Uint256) dec.get(4)).getValue();
-        s.battles = ((Uint256) dec.get(5)).getValue();
-        s.championships = ((Uint256) dec.get(6)).getValue();
-        s.jiaziTotalGranted = ((Uint256) dec.get(7)).getValue();
-        s.jiaziReleased = ((Uint256) dec.get(8)).getValue();
-        s.jiaziClaimable = ((Uint256) dec.get(9)).getValue();
-        s.jiaziTruncated = ((Bool) dec.get(10)).getValue();
-        s.entriesToday = ((Uint256) dec.get(11)).getValue();
-        s.entriesRemainingToday = ((Uint256) dec.get(12)).getValue();
-        s.roundsFromPrize = ((Uint256) dec.get(13)).getValue();
-        s.nextEntryFromPrize = ((Bool) dec.get(14)).getValue();
-        s.seatedInCurrentRound = ((Bool) dec.get(15)).getValue();
+        try {
+            List<Type> dec = FunctionReturnDecoder.decode(hexValue, castOutputs(buildPlayerSummaryOutputs()));
+            if (dec.size() < 16) return s;
+            s.walletBalance = safeUint(dec, 0);
+            s.allowance = safeUint(dec, 1);
+            s.prize = safeUint(dec, 2);
+            s.inMatchDeposit = safeUint(dec, 3);
+            s.arenaTotal = safeUint(dec, 4);
+            s.battles = safeUint(dec, 5);
+            s.championships = safeUint(dec, 6);
+            s.jiaziTotalGranted = safeUint(dec, 7);
+            s.jiaziReleased = safeUint(dec, 8);
+            s.jiaziClaimable = safeUint(dec, 9);
+            s.jiaziTruncated = safeBool(dec, 10);
+            s.entriesToday = safeUint(dec, 11);
+            s.entriesRemainingToday = safeUint(dec, 12);
+            s.roundsFromPrize = safeUint(dec, 13);
+            s.nextEntryFromPrize = safeBool(dec, 14);
+            s.seatedInCurrentRound = safeBool(dec, 15);
+        } catch (Throwable t) {
+            Log.w("ArenaContractApi", "decodePlayerSummary partial fail: " + t.getClass().getSimpleName());
+        }
         return s;
+    }
+
+    private static BigInteger safeUint(List<Type> dec, int idx) {
+        try { return ((Uint256) dec.get(idx)).getValue(); } catch (Throwable t) { return BigInteger.ZERO; }
+    }
+
+    private static boolean safeBool(List<Type> dec, int idx) {
+        try { return ((Bool) dec.get(idx)).getValue(); } catch (Throwable t) { return false; }
     }
 
     /**
@@ -486,5 +515,78 @@ public class ArenaContractApi {
     @SuppressWarnings("unchecked")
     private static List<TypeReference<Type>> castOutputs(List<TypeReference<?>> outputs) {
         return (List<TypeReference<Type>>) (List<?>) outputs;
+    }
+
+    /**
+     * 锦标赛统计:批量查询每个地址的总场次 + 冠军次数
+     * 对标 Go championships.go ChampionshipCounts
+     * playerHistoryLatest(player,count) selector: 0x0810151a
+     * 返回 Map: addr → [totalCount, winCount]
+     */
+    public static Map<String, long[]> callChampionshipCounts(
+            Web3j web3j, Collection<String> playerAddrs) {
+        Map<String, long[]> out = new LinkedHashMap<>();
+        if (playerAddrs == null || playerAddrs.isEmpty()) return out;
+
+        List<String> addrs = new ArrayList<>(playerAddrs);
+        List<CompletableFuture<EthCall>> futures = new ArrayList<>(addrs.size());
+        for (String addr : addrs) {
+            String addrPadded = String.format("%64s", Numeric.cleanHexPrefix(addr)).replace(' ', '0');
+            String countHex = Numeric.toHexStringNoPrefixZeroPadded(BigInteger.valueOf(100), 64);
+            String data = "0x0810151a" + addrPadded + countHex;
+            futures.add(web3j.ethCall(
+                    Transaction.createEthCallTransaction(null, ARENA_ADDR, data),
+                    DefaultBlockParameterName.LATEST).sendAsync());
+        }
+        try {
+            CompletableFuture.allOf(futures.toArray(new CompletableFuture[0]))
+                    .get(ArenaConfig.RPC_CALL_TIMEOUT_SEC * 2L, TimeUnit.SECONDS);
+        } catch (Exception ignore) {}
+
+        for (int i = 0; i < futures.size(); i++) {
+            String addr = addrs.get(i);
+            try {
+                EthCall ec = futures.get(i).get();
+                if (ec.hasError()) continue;
+                String hex = Numeric.cleanHexPrefix(ec.getValue());
+                long[] counts = decodeChampionships(hex);
+                if (counts != null) out.put(addr, counts);
+            } catch (Exception ignore) {}
+        }
+
+        for (String addr : addrs) {
+            if (!out.containsKey(addr)) {
+                out.put(addr, new long[]{0, 0});
+            }
+        }
+        return out;
+    }
+
+    /**
+     * 解码 playerHistoryLatest 返回的 struct[] + total
+     * @return [totalCount, winCount] 或 null
+     */
+    private static long[] decodeChampionships(String hex) {
+        if (hex.length() < 128) return new long[]{0, 0};
+        int arrPtr, arrLen, total;
+        try {
+            arrPtr = Integer.parseInt(hex.substring(0, 64), 16) * 2;
+            if (arrPtr + 64 > hex.length()) return null;
+            arrLen = Integer.parseInt(hex.substring(arrPtr, arrPtr + 64), 16);
+            total = Integer.parseInt(hex.substring(64, 128), 16);
+        } catch (NumberFormatException e) { return null; }
+
+        int itemPtr = arrPtr + 64;
+        int winCount = 0;
+        for (int idx = 0; idx < arrLen; idx++) {
+            int base = itemPtr + idx * 512;
+            if (base + 512 > hex.length()) break;
+            String settledHex = hex.substring(base + 128, base + 192);
+            boolean settled = !"0000000000000000000000000000000000000000000000000000000000000000".equals(settledHex);
+            String wonHex = hex.substring(base + 192, base + 256);
+            boolean won = !"0000000000000000000000000000000000000000000000000000000000000000".equals(wonHex);
+            if (settled && won) winCount++;
+        }
+        return new long[]{total, winCount};
     }
 }

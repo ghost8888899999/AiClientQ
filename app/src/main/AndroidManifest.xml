@@ -28,5 +28,15 @@
             </intent-filter>
         </activity>
 
+        <activity
+            android:name=".GroupManageActivity"
+            android:exported="false"
+            android:label="分组管理" />
+
+        <activity
+            android:name=".PrivateKeyManageActivity"
+            android:exported="false"
+            android:label="私钥管理" />
+
     </application>
 </manifest>

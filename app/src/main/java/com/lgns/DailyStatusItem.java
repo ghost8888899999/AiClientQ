@@ -1,0 +1,12 @@
+package com.lgns;
+
+public class DailyStatusItem {
+    public long keyId;
+    public String keyNo;
+    public String date;
+    public int totalQd;
+    public int todayQd;
+    public int todayEnter;
+    public long tokens;
+    public boolean isFailed;
+}

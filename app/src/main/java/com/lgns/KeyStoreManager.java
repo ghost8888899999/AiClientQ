@@ -17,28 +17,42 @@ public class KeyStoreManager {
     private static final String SP_NAME = "keystore_sp";
     private static final String KEY_ENTRY_LIST = "key_entry_list";
     private static final String KEY_NEXT_ID = "next_key_id";
-    //✅新增：用户自定义排序
     private static final String KEY_CUSTOM_SORT_ORDER = "custom_sort_order";
 
-    // GCM 参数
     private static final int GCM_IV_LEN = 12;
     private static final int GCM_TAG_LEN = 128;
-    // PBKDF2 参数
     private static final int PBKDF2_SALT_LEN = 16;
     private static final int PBKDF2_ITERATION_COUNT = 65536;
     private static final int AES_KEY_BIT = 256;
     private final SharedPreferences sp;
 
-    // 存储一条密钥记录：id + 用户自定义分组编号 + cipherText
     public static class KeyEntry {
         public long id;
-        public String userGroupNo; // 用户手动输入分组编号，可为null（旧数据）
+        public String customCode;
+        public String groupNo;
         public String cipherText;
+        public String address;
+        public boolean enabled = true;
 
-        public KeyEntry(long id, String userGroupNo, String cipherText){
+        public KeyEntry(long id, String groupNo, String cipherText){
+            this(id, "", groupNo, cipherText, null, true);
+        }
+
+        public KeyEntry(long id, String groupNo, String cipherText, String address){
+            this(id, "", groupNo, cipherText, address, true);
+        }
+
+        public KeyEntry(long id, String customCode, String groupNo, String cipherText, String address){
+            this(id, customCode, groupNo, cipherText, address, true);
+        }
+
+        public KeyEntry(long id, String customCode, String groupNo, String cipherText, String address, boolean enabled){
             this.id = id;
-            this.userGroupNo = userGroupNo;
+            this.customCode = customCode != null ? customCode : "";
+            this.groupNo = groupNo != null ? groupNo : "";
             this.cipherText = cipherText;
+            this.address = address;
+            this.enabled = enabled;
         }
     }
 
@@ -46,22 +60,24 @@ public class KeyStoreManager {
         sp = ctx.getSharedPreferences(SP_NAME, Context.MODE_PRIVATE);
     }
 
-    /** 添加私钥：分配全局唯一id，接收用户自定义分组编号 */
-    public KeyEntry addPrivateKey(String rawPrivateKey, char[] sessionCryptoKey, String userGroupNo) throws Exception {
-        long newId = sp.getLong(KEY_NEXT_ID,1);
-        String cipherText = encrypt(rawPrivateKey, sessionCryptoKey);
-        List<KeyEntry> list = loadKeyEntryList();
-        list.add(new KeyEntry(newId, userGroupNo, cipherText));
-        saveKeyEntryList(list);
-        //自增，供下一条使用
-        sp.edit().putLong(KEY_NEXT_ID, newId+1).apply();
-
-        //✅新增密钥id追加到自定义排序末尾
-        appendIdToCustomSort(newId);
-        return new KeyEntry(newId, userGroupNo, cipherText);
+    public KeyEntry addPrivateKey(String rawPrivateKey, char[] sessionCryptoKey, String groupNo) throws Exception {
+        return addPrivateKey(rawPrivateKey, sessionCryptoKey, "", groupNo);
     }
 
-    /** 根据数组索引删除（内存列表的position） */
+    public KeyEntry addPrivateKey(String rawPrivateKey, char[] sessionCryptoKey, String customCode, String groupNo) throws Exception {
+        long newId = sp.getLong(KEY_NEXT_ID,1);
+        String cipherText = encrypt(rawPrivateKey, sessionCryptoKey);
+        String addr = org.web3j.crypto.Keys.getAddress(
+                org.web3j.crypto.ECKeyPair.create(org.web3j.utils.Numeric.toBigInt(rawPrivateKey)));
+        List<KeyEntry> list = loadKeyEntryList();
+        list.add(new KeyEntry(newId, customCode, groupNo, cipherText, addr));
+        saveKeyEntryList(list);
+        sp.edit().putLong(KEY_NEXT_ID, newId+1).apply();
+
+        appendIdToCustomSort(newId);
+        return new KeyEntry(newId, customCode, groupNo, cipherText, addr);
+    }
+
     public void removeByIndex(int index) throws Exception {
         List<KeyEntry> list = loadKeyEntryList();
         if(index <0 || index >= list.size()){
@@ -70,7 +86,6 @@ public class KeyStoreManager {
         long removeId = list.get(index).id;
         list.remove(index);
         saveKeyEntryList(list);
-        //✅删除时从自定义排序序列移除该id
         removeIdFromCustomSort(removeId);
     }
 
@@ -78,7 +93,7 @@ public class KeyStoreManager {
         sp.edit()
                 .remove(KEY_ENTRY_LIST)
                 .remove(KEY_NEXT_ID)
-                .remove(KEY_CUSTOM_SORT_ORDER) //✅清空排序
+                .remove(KEY_CUSTOM_SORT_ORDER)
                 .apply();
     }
 
@@ -89,51 +104,68 @@ public class KeyStoreManager {
         String[] parts = raw.split("\\|");
         for(String p : parts){
             if(p.isEmpty()) continue;
-            // 格式：id@groupNo:cipherText，旧数据：id:cipherText
             String[] kv = p.split(":",2);
             if(kv.length!=2) continue;
             String head = kv[0];
             String cipherText = kv[1];
             long id;
-            String groupNo = null;
+            String customCode = "";
+            String groupNo = "";
+            String addr = null;
+            boolean enabled = true;
+
+            String idPart = head;
             if(head.contains("@")){
                 String[] idAndGroup = head.split("@",2);
-                try{
-                    id = Long.parseLong(idAndGroup[0]);
-                    groupNo = idAndGroup[1];
-                }catch (Exception e){
-                    continue;
-                }
-            }else{
-                //兼容旧版本没有分组编号的数据
-                try{
-                    id = Long.parseLong(head);
-                }catch (Exception e){
-                    continue;
-                }
+                idPart = idAndGroup[0];
+                try{ groupNo = idAndGroup[1]; }catch (Exception ignore){}
             }
-            res.add(new KeyEntry(id, groupNo, cipherText));
+            if(idPart.contains("#")){
+                String[] idAndCode = idPart.split("#",2);
+                try{ id = Long.parseLong(idAndCode[0]); }catch (Exception e){ continue; }
+                customCode = idAndCode[1];
+            }else{
+                try{ id = Long.parseLong(idPart); }catch (Exception e){ continue; }
+            }
+
+            if(cipherText.contains("@")){
+                String[] ctAndAddr = cipherText.split("@",2);
+                cipherText = ctAndAddr[0];
+                addr = ctAndAddr[1];
+            }
+            if(cipherText.contains("!")){
+                String[] ctAndEnabled = cipherText.split("!",2);
+                cipherText = ctAndEnabled[0];
+                try{ enabled = Boolean.parseBoolean(ctAndEnabled[1]); }catch (Exception ignore){}
+            }
+            res.add(new KeyEntry(id, customCode, groupNo, cipherText, addr, enabled));
         }
         return res;
     }
 
-    private void saveKeyEntryList(List<KeyEntry> list){
+    public void saveKeyEntryList(List<KeyEntry> list){
         StringBuilder sb = new StringBuilder();
         for(int i=0;i<list.size();i++){
             if(i>0) sb.append("|");
             KeyEntry e = list.get(i);
-            if(e.userGroupNo != null){
-                sb.append(e.id).append("@").append(e.userGroupNo);
-            }else{
-                sb.append(e.id);
+            sb.append(e.id);
+            if(e.customCode != null && !e.customCode.isEmpty()){
+                sb.append("#").append(e.customCode);
+            }
+            if(e.groupNo != null && !e.groupNo.isEmpty()){
+                sb.append("@").append(e.groupNo);
             }
             sb.append(":").append(e.cipherText);
+            if(!e.enabled){
+                sb.append("!false");
+            }
+            if(e.address != null){
+                sb.append("@").append(e.address);
+            }
         }
         sp.edit().putString(KEY_ENTRY_LIST, sb.toString()).apply();
     }
 
-    // ========== ✅自定义排序相关工具方法 ==========
-    /** 获取保存的自定义排序id列表 */
     public List<Long> getCustomSortIdList(){
         String str = sp.getString(KEY_CUSTOM_SORT_ORDER,"");
         List<Long> ids = new ArrayList<>();
@@ -147,7 +179,6 @@ public class KeyStoreManager {
         return ids;
     }
 
-    /** 保存自定义排序id序列 */
     public void saveCustomSortIdList(List<Long> idList){
         StringBuilder sb = new StringBuilder();
         for(int i=0;i<idList.size();i++){
@@ -157,7 +188,6 @@ public class KeyStoreManager {
         sp.edit().putString(KEY_CUSTOM_SORT_ORDER, sb.toString()).apply();
     }
 
-    /** 新增密钥id追加到排序末尾 */
     private void appendIdToCustomSort(long newId){
         List<Long> list = getCustomSortIdList();
         if(!list.contains(newId)){
@@ -166,16 +196,12 @@ public class KeyStoreManager {
         }
     }
 
-    /** 删除密钥，从排序序列移除id */
     private void removeIdFromCustomSort(long removeId){
         List<Long> list = getCustomSortIdList();
         list.remove(removeId);
         saveCustomSortIdList(list);
     }
 
-    /**
-     * 解密：密文结构 Base64(盐[16] + IV[12] + GCM密文)
-     */
     public String decryptCipherText(String cipherBase64, char[] sessionCryptoKey) throws Exception {
         byte[] fullData = Base64.decode(cipherBase64, Base64.NO_WRAP);
         int offset = 0;

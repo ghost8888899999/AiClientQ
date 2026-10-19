@@ -16,8 +16,8 @@ import org.web3j.utils.Numeric;
 import java.math.BigInteger;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -35,7 +35,9 @@ public class ArenaTask {
     public static final int STATUS_SUCCESS = 2;
     public static final int STATUS_FAIL = 3;
     public static final long PENDING_WARN_THRESHOLD_MS = 60_000L;
-    public static final Set<String> enterFailedAddrSet = ConcurrentHashMap.newKeySet();
+    public static final Set<String> enterFailedAddrSet = new HashSet<>();
+    private static final java.util.Map<String, Long> revertedCooldownMap = new java.util.HashMap<>();
+    private static final long REVERTED_COOLDOWN_MS = 10 * 60 * 1000L;
 
     private static final Pattern TX_HASH_PATTERN = Pattern.compile("(0x[0-9a-fA-F]{64})");
 
@@ -98,9 +100,10 @@ public class ArenaTask {
                                                  TaskLogCallback logCallback, HashMap<String, BigInteger> accountLocalNonceMap)
             throws java.io.IOException {
         ECKeyPair keyPair = null;
+        String fromAddr = null;
         try {
             keyPair = Web3AndroidUtil.pkToKeyPair(privateKey);
-            String fromAddr = Web3AndroidUtil.getAddress(keyPair).toLowerCase();
+            fromAddr = Web3AndroidUtil.getAddress(keyPair).toLowerCase();
             TaskAccountState diskState = getAccountState(ctx, fromAddr);
             if (diskState.getStatus() == TaskAccountState.STATUS_TX_SENT && diskState.getTxHash() != null) {
                 long elapsed = System.currentTimeMillis() - diskState.getTimestamp();
@@ -178,11 +181,14 @@ public class ArenaTask {
 
             return txHash != null && !txHash.isEmpty();
         } catch (java.io.IOException ioEx) {
-            // B7 · 让网络层 IOException 穿透,由 batchEnterAllResume 里 rpcTry 循环处理
             throw ioEx;
-        } catch (Exception e) {
-            e.printStackTrace();
-            logCallback.onLog(keyNo, "ENTER", "✖ 【入场包装异常】:" + e.getClass().getSimpleName() + " | " + msgOf(e));
+        } catch (Throwable t) {
+            t.printStackTrace();
+            String msg = msgOf(t);
+            if (msg != null && msg.contains("reverted")) {
+                revertedCooldownMap.put(fromAddr, System.currentTimeMillis());
+            }
+            logCallback.onLog(keyNo, "ENTER", " 【入场致命异常】:" + t.getClass().getSimpleName() + " | " + msg);
             return false;
         } finally {
             keyPair = null;
@@ -223,8 +229,8 @@ public class ArenaTask {
                 callback.onLog("", "ENTER", "🔍 等齐再打模式:开始模拟预览");
                 List<String> rejects = new ArrayList<>();
                 for (KeyListItem item : selectedList) {
-                    String keyNo = (item.userGroupNo != null && !item.userGroupNo.isEmpty())
-                            ? item.userGroupNo : item.displayNo;
+                    String keyNo = (item.customCode != null && !item.customCode.isEmpty())
+                            ? item.customCode : item.displayNo;
                     String plainPk;
                     try {
                         plainPk = ksMgr.decryptCipherText(item.cipherText, sessionCryptoKey);
@@ -262,9 +268,9 @@ public class ArenaTask {
                 }
                 AppGlobal.touch();
                 KeyListItem item = selectedList.get(i);
-                String keyNo = (item.userGroupNo != null && !item.userGroupNo.isEmpty())
-                        ? item.userGroupNo : item.displayNo;
-                callback.onLog(keyNo, "ENTER", "\n-----处理账号 " + (i + 1) + "/" + total + " -----");
+                String keyNo = (item.customCode != null && !item.customCode.isEmpty())
+                        ? item.customCode : item.displayNo;
+                callback.onLog(keyNo, "ENTER", "-----处理账号 " + (i + 1) + "/" + total + " -----");
 
                 String plainPk;
                 String fromAddr = null;
@@ -275,8 +281,17 @@ public class ArenaTask {
                     tempPair = null;
                 } catch (Exception ex) {
                     callback.onLog(keyNo, "ENTER", "✖ 解密失败:" + msgOf(ex));
+                    callback.onKeyFailure(keyNo, "解密失败", msgOf(ex));
                     failCount++;
                     failNoList.add(keyNo);
+                    continue;
+                }
+
+                Long revertTs = revertedCooldownMap.get(fromAddr);
+                if (revertTs != null && System.currentTimeMillis() - revertTs < REVERTED_COOLDOWN_MS) {
+                    long remainMin = (REVERTED_COOLDOWN_MS - (System.currentTimeMillis() - revertTs)) / 60000;
+                    callback.onLog(keyNo, "ENTER", " [" + fromAddr.substring(0, 10) + "...] reverted冷却中(" + remainMin + "min),跳过");
+                    skipCount++;
                     continue;
                 }
 
@@ -296,6 +311,7 @@ public class ArenaTask {
                         web3j = next;
                     } catch (Exception e) {
                         callback.onLog(keyNo, "ENTER", "✖ 非 IOException 兜底:" + msgOf(e));
+                        callback.onKeyFailure(keyNo, "执行异常", msgOf(e));
                         ok = false;
                         break;
                     }
@@ -307,13 +323,28 @@ public class ArenaTask {
                     failCount++;
                     failNoList.add(keyNo);
                     if (fromAddr != null) enterFailedAddrSet.add(fromAddr);
+                    callback.onKeyFailure(keyNo, "入场失败", "RPC重试耗尽或执行失败");
                 }
             }
 
             String failNosStr = String.join(",", failNoList);
-            String enterSummary = "--------断点入场结束:成功=" + successCount + ",跳过=" + skipCount + ",失败=" + failCount
-                    + " ｜入场失败私钥编号:" + failNosStr + " --------";
+            String enterSummary = "--------入场结束 ✅成功=" + successCount + " 跳过=" + skipCount + " ❌失败=" + failCount
+                    + (failNosStr.isEmpty() ? "" : " ｜失败编号:" + failNosStr) + " --------";
             callback.onLog("", "ENTER", enterSummary);
+
+            java.util.Map<String, ArenaContractApi.PlayerSummary> summaries = null;
+            try {
+                java.util.List<String> addrList = new java.util.ArrayList<>();
+                for (KeyListItem item : selectedList) {
+                    if (item.address != null && !item.address.isEmpty()) addrList.add(item.address);
+                }
+                if (!addrList.isEmpty()) {
+                    summaries = ArenaContractApi.callPlayerSummaryBatch(web3j, addrList);
+                }
+            } catch (Throwable t) {
+                callback.onLog("", "ENTER", "⚠查询链上数据异常(不影响入场结果):" + t.getClass().getSimpleName());
+            }
+            callback.onBatchResult(summaries);
         } catch (java.io.IOException dialFail) {
             // dialAny 三节点全灭 → 整批终止
             callback.onLog("", "ENTER", "❌ " + ArenaConfig.RPC_URLS.length + " 个节点全不可达:" + msgOf(dialFail));
@@ -527,8 +558,8 @@ public class ArenaTask {
                 }
                 AppGlobal.touch();
                 KeyListItem item = selectedList.get(i);
-                String keyNo = (item.userGroupNo != null && !item.userGroupNo.isEmpty())
-                        ? item.userGroupNo : item.displayNo;
+                String keyNo = (item.customCode != null && !item.customCode.isEmpty())
+                        ? item.customCode : item.displayNo;
                 callback.onLog(keyNo, "CLAIM", "\n-----处理账号 " + (i + 1) + "/" + total + " -----");
 
                 String plainPk;
@@ -548,6 +579,14 @@ public class ArenaTask {
                 if (enterFailedAddrSet.contains(fromAddr)) {
                     claimSkipCount++;
                     callback.onLog(keyNo, "CLAIM", "➖ 该账号入场执行失败,跳过领取操作");
+                    continue;
+                }
+
+                Long revertTs = revertedCooldownMap.get(fromAddr);
+                if (revertTs != null && System.currentTimeMillis() - revertTs < REVERTED_COOLDOWN_MS) {
+                    long remainMin = (REVERTED_COOLDOWN_MS - (System.currentTimeMillis() - revertTs)) / 60000;
+                    callback.onLog(keyNo, "CLAIM", "🚫 [" + fromAddr.substring(0, 10) + "...] reverted冷却中(" + remainMin + "min),跳过领取");
+                    claimSkipCount++;
                     continue;
                 }
 
@@ -617,7 +656,11 @@ public class ArenaTask {
                         if (next == web3j) break;
                         web3j = next;
                     } catch (Exception e) {
-                        callback.onLog(keyNo, "CLAIM", "✖ 账号领取整体失败:" + msgOf(e));
+                        String em = msgOf(e);
+                        if (em != null && em.contains("reverted")) {
+                            revertedCooldownMap.put(fromAddr, System.currentTimeMillis());
+                        }
+                        callback.onLog(keyNo, "CLAIM", "✖ 账号领取整体失败:" + em);
                         break;
                     }
                 }
@@ -631,10 +674,10 @@ public class ArenaTask {
             }
 
             String claimFailNos = String.join(",", claimFailNoList);
-            String claimSummary = "--------断点批量领取结束:成功=" + claimSuccessCount
-                    + ",跳过=" + claimSkipCount
-                    + ",失败=" + claimFailCount
-                    + " ｜领取失败私钥编号:" + claimFailNos + " --------";
+            String claimSummary = "--------领取结束 ✅成功=" + claimSuccessCount
+                    + " ⏭跳过=" + claimSkipCount
+                    + " ❌失败=" + claimFailCount
+                    + (claimFailNos.isEmpty() ? "" : " ｜失败编号:" + claimFailNos) + " --------";
             callback.onLog("", "CLAIM", claimSummary);
         } catch (java.io.IOException dialFail) {
             callback.onLog("", "CLAIM", "❌ " + ArenaConfig.RPC_URLS.length + " 个节点全不可达:" + msgOf(dialFail));
@@ -645,6 +688,7 @@ public class ArenaTask {
             }
         }
     }
+
 
     public static void fullArenaWorkflowResume(Context ctx, TaskLogCallback callback, int claimMaxRetry, int playMode,
                                                List<KeyListItem> selectedList, char[] sessionCryptoKey) throws Exception {

@@ -1,32 +1,29 @@
 package com.lgns;
 
-import android.app.AlertDialog;
-import android.content.Context;
-import android.content.DialogInterface;
 import android.content.SharedPreferences;
 import android.os.Bundle;
-import android.text.InputType;
 import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
-import android.view.animation.RotateAnimation;
 import android.widget.ArrayAdapter;
 import android.widget.Button;
-import android.widget.CheckedTextView;
-import android.widget.EditText;
 import android.widget.ImageButton;
-import android.widget.ImageView;
-import android.widget.ListView;
-import android.widget.PopupWindow;
+import android.widget.LinearLayout;
 import android.widget.ScrollView;
-import android.widget.Spinner;
 import android.widget.Switch;
 import android.widget.TextView;
+import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.work.ExistingPeriodicWorkPolicy;
 import androidx.work.PeriodicWorkRequest;
 import androidx.work.WorkManager;
+
+import com.google.android.material.tabs.TabLayout;
+import androidx.recyclerview.widget.LinearLayoutManager;
+import androidx.recyclerview.widget.RecyclerView;
+
+import org.web3j.protocol.Web3j;
 
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
@@ -34,160 +31,141 @@ import java.util.Arrays;
 import java.util.Date;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
 public class MainActivity extends AppCompatActivity implements TaskLogCallback {
-    //入场模式
-    public static final int MODE_FLEXIBLE = 0; //能打就打，过滤不可执行账号
-    public static final int MODE_TOGETHER = 1; //等齐再打，全部模拟通过才提交
-    private int currentPlayMode = MODE_FLEXIBLE;
-    //临时自定义加解密key，仅内存，不持久化；解密密钥密文用
-    private char[] tempUserCryptoKey;
-    //WorkManager自动清除配置
+    public static final int MODE_FLEXIBLE = 0;
+    public static final int MODE_TOGETHER = 1;
+    private int currentPlayMode;
+    char[] tempUserCryptoKey;
+    List<KeyListItem> keyListItemList = new ArrayList<>();
+
     private static final String WORK_AUTO_CLEAR = "work_auto_clear_task";
     private static final long MIN_ALLOW_MINUTE = 15;
     private SharedPreferences spAppSetting;
     private final String[] unitArray = {"分钟", "小时", "天"};
-    //UI控件
+
     private ImageButton btnSettingGear;
-    private Button btnSecurityWarn;
-    private TextView tvCountInfo;
-    private ListView lvCipherKeys;
-    private Button btnBatchEnter;
-    private Button btnBatchClaim;
-    private Button btnFullWorkflow;
-    private Button btnResetTask;
+    private TextView btnSecurityWarn;
+    private TextView tvTokenCount, tvQdCount, tvEnabledCount;
+    private Button btnBatchEnter, btnBatchClaim, btnFullWorkflow, btnResetTask;
     private TextView tvLog;
     private ScrollView scrollView;
-    private PopupWindow mPopupWindow;
+    private LinearLayout layoutLogHeader;
+    private TextView tvLogToggle;
 
-    private List<KeyListItem> keyListItemList = new ArrayList<>();
-    private ArrayAdapter<KeyListItem> keyAdapter;
+    private MainDialogHelper dialogHelper;
+    private MainMenuHelper menuHelper;
+
+    private TabLayout tabLayout;
+    private RecyclerView rvDailyStatus, rvFailureList;
+    private TextView tvEmptyStatus, tvEmptyFailure;
+    private DailyStatusAdapter dailyStatusAdapter;
+    private FailureLogAdapter failureLogAdapter;
+    private List<DailyStatusItem> dailyStatusList = new ArrayList<>();
+    private List<FailureLogItem> failureLogList = new ArrayList<>();
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
+
+        tabLayout = findViewById(R.id.tab_layout);
+        rvDailyStatus = findViewById(R.id.rv_daily_status);
+        rvFailureList = findViewById(R.id.rv_failure_list);
+        tvEmptyStatus = findViewById(R.id.tv_empty_status);
+        tvEmptyFailure = findViewById(R.id.tv_empty_failure);
+
+        tabLayout.addTab(tabLayout.newTab().setText("当日状态"));
+        tabLayout.addTab(tabLayout.newTab().setText("失败列表"));
+
+        tabLayout.addOnTabSelectedListener(new TabLayout.OnTabSelectedListener() {
+            @Override
+            public void onTabSelected(TabLayout.Tab tab) {
+                if (tab.getPosition() == 0) {
+                    rvDailyStatus.setVisibility(View.VISIBLE);
+                    rvFailureList.setVisibility(View.GONE);
+                } else {
+                    rvDailyStatus.setVisibility(View.GONE);
+                    rvFailureList.setVisibility(View.VISIBLE);
+                }
+            }
+            @Override
+            public void onTabUnselected(TabLayout.Tab tab) {}
+            @Override
+            public void onTabReselected(TabLayout.Tab tab) {}
+        });
+
+        rvDailyStatus.setLayoutManager(new LinearLayoutManager(this));
+        dailyStatusAdapter = new DailyStatusAdapter();
+        rvDailyStatus.setAdapter(dailyStatusAdapter);
+
+        rvFailureList.setLayoutManager(new LinearLayoutManager(this));
+        failureLogAdapter = new FailureLogAdapter();
+        rvFailureList.setAdapter(failureLogAdapter);
+
         spAppSetting = getSharedPreferences("app_setting", MODE_PRIVATE);
-        //读取持久化入场模式
         currentPlayMode = spAppSetting.getInt("play_mode", MODE_FLEXIBLE);
+
+        dialogHelper = new MainDialogHelper(this);
+        menuHelper = new MainMenuHelper(this, spAppSetting);
+
         bindViews();
         setupButtonEvents();
-
-        //增加长按监听
-        lvCipherKeys.setOnItemLongClickListener((parent, view, position, id) -> {
-            showSortMenu(position);
-            return true;
-        });
         setupGearMenu();
         setupListViewCheckListener();
-        //APP冷启动兜底自动清除校验
         checkAutoClearBoot();
-        //APP启动后台线程初始化密钥管理器
-        new Thread(new Runnable() {
-            @Override
-            public void run() {
-                try {
-                    AppGlobal.initKeyManager(getApplicationContext());
-                    runOnUiThread(new Runnable() {
-                        @Override
-                        public void run() {
-                            appendLog("", "", "✅密钥管理器初始化完成");
-                            refreshCipherKeyList();
-                        }
-                    });
-                } catch (Exception e) {
-                    runOnUiThread(new Runnable() {
-                        @Override
-                        public void run() {
-                            appendLog("", "", "❌密钥管理器初始化失败:" + e.getMessage());
-                        }
-                    });
-                }
+
+        new Thread(() -> {
+            try {
+                AppGlobal.initKeyManager(getApplicationContext());
+                runOnUiThread(() -> {
+                    appendLog("", "", "✅密钥管理器初始化完成");
+                    refreshCipherKeyList();
+                });
+            } catch (Exception e) {
+                runOnUiThread(() -> appendLog("", "", "❌密钥管理器初始化失败:" + e.getMessage()));
             }
         }).start();
-    }
-
-    /** ListView条目点击：更新model勾选标记 */
-    private void setupListViewCheckListener() {
-        lvCipherKeys.setOnItemClickListener((parent, view, position, id) -> {
-            KeyListItem item = keyListItemList.get(position);
-            item.isChecked = !item.isChecked;
-            CheckedTextView tv = (CheckedTextView) view;
-            tv.setChecked(item.isChecked);
-            refreshCheckedStatText();
-        });
-    }
-
-    /** 统计勾选数量，遍历model */
-    private void refreshCheckedStatText() {
-        int total = keyListItemList.size();
-        int checked = 0;
-        for (KeyListItem item : keyListItemList) {
-            if (item.isChecked) {
-                checked++;
-            }
-        }
-        String info = String.format(Locale.getDefault(), "总:%d条密钥，已选:%d条", total, checked);
-        tvCountInfo.setText(info);
-    }
-
-    /**
-     * 自动清除校验
-     * 时机：onCreate冷启动 + onResume切回页面
-     * 使用System.currentTimeMillis() 毫秒时间戳
-     */
-    private void checkAutoClearBoot() {
-        boolean enable = spAppSetting.getBoolean("auto_clear_enable", false);
-        long saveTotalMs = spAppSetting.getLong("auto_clear_ms", 0);
-        long saveStartTs = spAppSetting.getLong("auto_clear_start_ts", 0);
-        //开关关闭 或者 时长为0，直接返回，不执行清除
-        if (!enable || saveTotalMs <= 0 || saveStartTs <=0) {
-            return;
-        }
-        long now = System.currentTimeMillis();
-        if (now - saveStartTs >= saveTotalMs) {
-            new Thread(new Runnable() {
-                @Override
-                public void run() {
-                    try {
-                        KeyStoreManager mgr = AppGlobal.getKeyStoreManager();
-                        mgr.clearAllKeys();
-                        runOnUiThread(() -> appendLog("", "", "⚠检测到自动清除计时到期，打开APP自动清空全部私钥！"));
-                    } catch (Exception ignored) {}
-                    //只重置计时起点，auto_clear_ms（用户设置时长）、auto_clear_enable（开关状态）全部保留不动
-                    long newStartTs = System.currentTimeMillis();
-                    spAppSetting.edit()
-                            .putLong("auto_clear_start_ts", newStartTs)
-                            .apply();
-                }
-            }).start();
-        }
     }
 
     private void bindViews() {
         btnSettingGear = findViewById(R.id.btn_setting_gear);
         btnSecurityWarn = findViewById(R.id.btn_security_warn);
-        tvCountInfo = findViewById(R.id.tv_count_info);
-        lvCipherKeys = findViewById(R.id.lv_cipher_keys);
+        tvTokenCount = findViewById(R.id.tv_token_count);
+        tvQdCount = findViewById(R.id.tv_qd_count);
+        tvEnabledCount = findViewById(R.id.tv_enabled_count);
         btnBatchEnter = findViewById(R.id.btn_batch_enter);
         btnBatchClaim = findViewById(R.id.btn_batch_claim);
         btnFullWorkflow = findViewById(R.id.btn_full_workflow);
         btnResetTask = findViewById(R.id.btn_reset_task);
         tvLog = findViewById(R.id.tv_log);
         scrollView = findViewById(R.id.scrollView);
+        layoutLogHeader = findViewById(R.id.layout_log_header);
+        tvLogToggle = findViewById(R.id.tv_log_toggle);
     }
 
     private void setupButtonEvents() {
-        btnSecurityWarn.setOnClickListener(v -> showSecurityWarningDialog());
+        btnSecurityWarn.setOnClickListener(v -> dialogHelper.showSecurityWarningDialog());
 
-        //批量入场
+        layoutLogHeader.setOnClickListener(v -> {
+            boolean visible = scrollView.getVisibility() == View.VISIBLE;
+            scrollView.setVisibility(visible ? View.GONE : View.VISIBLE);
+            tvLogToggle.setText(visible ? "▶" : "▼");
+        });
+        scrollView.setVisibility(View.VISIBLE);
+
         btnBatchEnter.setOnClickListener(v -> {
+            List<KeyListItem> enabledList = getEnabledKeyItems();
+            if (enabledList.isEmpty()) {
+                android.widget.Toast.makeText(this, "没有启用的私钥，请先在私钥管理中启用", android.widget.Toast.LENGTH_SHORT).show();
+                return;
+            }
             Log.d("UI_CLICK","点击【批量入场】按钮");
-            showDecryptPasswordDialog(pwdCharArray -> new Thread(() -> {
+            dialogHelper.showDecryptPasswordDialog(pwdCharArray -> new Thread(() -> {
                 try {
-                    List<KeyListItem> selectedList = getSelectedKeyItem();
-                    ArenaTask.batchEnterAllResume(getApplicationContext(), MainActivity.this, currentPlayMode, selectedList, pwdCharArray);
+                    ArenaTask.batchEnterAllResume(getApplicationContext(), this, currentPlayMode, enabledList, pwdCharArray);
                 } catch (Exception e) {
                     runOnUiThread(() -> appendLog("", "ENTER", "❌批量入场外层异常：" + e.getMessage()));
                     Log.e("BATCH_ENTER","异常",e);
@@ -197,13 +175,16 @@ public class MainActivity extends AppCompatActivity implements TaskLogCallback {
             }).start());
         });
 
-        //批量领取
         btnBatchClaim.setOnClickListener(v -> {
+            List<KeyListItem> enabledList = getEnabledKeyItems();
+            if (enabledList.isEmpty()) {
+                android.widget.Toast.makeText(this, "没有启用的私钥，请先在私钥管理中启用", android.widget.Toast.LENGTH_SHORT).show();
+                return;
+            }
             Log.d("UI_CLICK","点击【批量领取】按钮");
-            showDecryptPasswordDialog(pwdCharArray -> new Thread(() -> {
+            dialogHelper.showDecryptPasswordDialog(pwdCharArray -> new Thread(() -> {
                 try {
-                    List<KeyListItem> selectedList = getSelectedKeyItem();
-                    ArenaTask.batchClaimAllResume(getApplicationContext(), MainActivity.this, currentPlayMode, selectedList, pwdCharArray);
+                    ArenaTask.batchClaimAllResume(getApplicationContext(), this, currentPlayMode, enabledList, pwdCharArray);
                 } catch (Exception e) {
                     runOnUiThread(() -> appendLog("", "CLAIM", "❌批量领取外层异常：" + e.getMessage()));
                     Log.e("BATCH_CLAIM","异常",e);
@@ -213,13 +194,16 @@ public class MainActivity extends AppCompatActivity implements TaskLogCallback {
             }).start());
         });
 
-        //完整工作流
         btnFullWorkflow.setOnClickListener(v -> {
+            List<KeyListItem> enabledList = getEnabledKeyItems();
+            if (enabledList.isEmpty()) {
+                android.widget.Toast.makeText(this, "没有启用的私钥，请先在私钥管理中启用", android.widget.Toast.LENGTH_SHORT).show();
+                return;
+            }
             Log.d("UI_CLICK","点击【完整工作流】按钮");
-            showDecryptPasswordDialog(pwdCharArray -> new Thread(() -> {
+            dialogHelper.showDecryptPasswordDialog(pwdCharArray -> new Thread(() -> {
                 try {
-                    List<KeyListItem> selectedList = getSelectedKeyItem();
-                    ArenaTask.fullArenaWorkflowResume(getApplicationContext(), MainActivity.this, 2, currentPlayMode, selectedList, pwdCharArray);
+                    ArenaTask.fullArenaWorkflowResume(getApplicationContext(), this, 2, currentPlayMode, enabledList, pwdCharArray);
                 } catch (Exception e) {
                     runOnUiThread(() -> appendLog("", "", "❌完整工作流外层异常：" + e.getMessage()));
                     Log.e("FULL_WORKFLOW","异常",e);
@@ -229,7 +213,6 @@ public class MainActivity extends AppCompatActivity implements TaskLogCallback {
             }).start());
         });
 
-        //重置任务进度
         btnResetTask.setOnClickListener(v -> {
             Log.d("UI_CLICK","点击【重置任务进度】");
             ArenaTask.resetTaskProgress(getApplicationContext());
@@ -238,309 +221,98 @@ public class MainActivity extends AppCompatActivity implements TaskLogCallback {
     }
 
     private void setupGearMenu() {
-        btnSettingGear.setOnClickListener(v -> showCollapseMenu(v));
+        btnSettingGear.setOnClickListener(v -> menuHelper.showCollapseMenu(v));
     }
 
-    /** 切换分组展开/收起，箭头旋转动画 */
-    private void toggleGroup(View container, ImageView ivArrow) {
-        RotateAnimation anim;
-        if (container.getVisibility() == View.VISIBLE) {
-            container.setVisibility(View.GONE);
-            anim = new RotateAnimation(180f, 0f, RotateAnimation.RELATIVE_TO_SELF, 0.5f, RotateAnimation.RELATIVE_TO_SELF, 0.5f);
-            ivArrow.setRotation(0f);
-        } else {
-            container.setVisibility(View.VISIBLE);
-            anim = new RotateAnimation(0f, 180f, RotateAnimation.RELATIVE_TO_SELF, 0.5f, RotateAnimation.RELATIVE_TO_SELF, 0.5f);
-            ivArrow.setRotation(180f);
-        }
-        anim.setDuration(200);
-        anim.setFillAfter(true);
-        ivArrow.startAnimation(anim);
+    private void setupListViewCheckListener() {
     }
 
-    private void showCollapseMenu(View anchorView) {
-        if (mPopupWindow != null && mPopupWindow.isShowing()) {
-            mPopupWindow.dismiss();
-            return;
+    private void checkAutoClearBoot() {
+        boolean enable = spAppSetting.getBoolean("auto_clear_enable", false);
+        long saveTotalMs = spAppSetting.getLong("auto_clear_ms", 0);
+        long saveStartTs = spAppSetting.getLong("auto_clear_start_ts", 0);
+        if (!enable || saveTotalMs <= 0 || saveStartTs <= 0) return;
+
+        long now = System.currentTimeMillis();
+        if (now - saveStartTs >= saveTotalMs) {
+            new Thread(() -> {
+                try {
+                    KeyStoreManager mgr = AppGlobal.getKeyStoreManager();
+                    mgr.clearAllKeys();
+                    runOnUiThread(() -> appendLog("", "", "⚠检测到自动清除计时到期，打开APP自动清空全部私钥！"));
+                } catch (Exception ignored) {}
+                spAppSetting.edit().putLong("auto_clear_start_ts", System.currentTimeMillis()).apply();
+            }).start();
         }
-        View popView = LayoutInflater.from(this).inflate(R.layout.layout_pop_menu, null);
-        //分组控件
-        final View groupKeyContainer = popView.findViewById(R.id.group_key_container);
-        final ImageView ivArrowKey = popView.findViewById(R.id.iv_arrow_key);
-        popView.findViewById(R.id.group_key_title).setOnClickListener(v -> toggleGroup(groupKeyContainer, ivArrowKey));
-        final View groupLogContainer = popView.findViewById(R.id.group_log_container);
-        final ImageView ivArrowLog = popView.findViewById(R.id.iv_arrow_log);
-        popView.findViewById(R.id.group_log_title).setOnClickListener(v -> toggleGroup(groupLogContainer, ivArrowLog));
-        final View groupAutoContainer = popView.findViewById(R.id.group_auto_container);
-        final ImageView ivArrowAuto = popView.findViewById(R.id.iv_arrow_auto);
-        popView.findViewById(R.id.group_auto_title).setOnClickListener(v -> toggleGroup(groupAutoContainer, ivArrowAuto));
-        final View groupModeContainer = popView.findViewById(R.id.group_mode_container);
-        final ImageView ivArrowMode = popView.findViewById(R.id.iv_arrow_mode);
-        popView.findViewById(R.id.group_mode_title).setOnClickListener(v -> toggleGroup(groupModeContainer, ivArrowMode));
-        //二级菜单项绑定点击事件
-        TextView menuAddKey = popView.findViewById(R.id.menu_add_key);
-        menuAddKey.setText("添加密钥");
-        menuAddKey.setOnClickListener(v -> {
-            showAddKeyDialog();
-            mPopupWindow.dismiss();
-        });
-        TextView menuRefreshList = popView.findViewById(R.id.menu_refresh_list);
-        menuRefreshList.setText("刷新密钥列表");
-        menuRefreshList.setOnClickListener(v -> {
-            refreshCipherKeyList();
-            mPopupWindow.dismiss();
-        });
-        TextView menuRemoveSel = popView.findViewById(R.id.menu_remove_selected);
-        menuRemoveSel.setText("删除选中密钥");
-        menuRemoveSel.setOnClickListener(v -> {
-            removeSelectedKeys();
-            mPopupWindow.dismiss();
-        });
-        TextView menuClearAllKey = popView.findViewById(R.id.menu_clear_all_key);
-        menuClearAllKey.setText("清空全部密钥");
-        menuClearAllKey.setOnClickListener(v -> {
-            showConfirmClearAllKey();
-            mPopupWindow.dismiss();
-        });
-        TextView menuViewLog = popView.findViewById(R.id.menu_view_log);
-        menuViewLog.setText("查看日志(最新优先)");
-        menuViewLog.setOnClickListener(v -> {
-            showViewLogDialog();
-            mPopupWindow.dismiss();
-        });
-        TextView menuClearLogDb = popView.findViewById(R.id.menu_clear_log_db);
-        menuClearLogDb.setText("清空数据库全部日志");
-        menuClearLogDb.setOnClickListener(v -> {
-            showConfirmClearLogDb();
-            mPopupWindow.dismiss();
-        });
-        TextView menuSysSchedule = popView.findViewById(R.id.menu_sys_schedule_setting);
-        menuSysSchedule.setText("自动清除配置");
-        menuSysSchedule.setOnClickListener(v -> {
-            openSysScheduleDialog();
-            mPopupWindow.dismiss();
-        });
-        //==== 根据当前模式动态设置选中标记 ● ====
-        TextView menuModeFlex = popView.findViewById(R.id.menu_mode_flexible);
-        TextView menuModeTogether = popView.findViewById(R.id.menu_mode_together);
-        if (currentPlayMode == MODE_FLEXIBLE) {
-            menuModeFlex.setText("● 能打就打(过滤不可执行账号)");
-            menuModeTogether.setText("  等齐再打(全部模拟通过才提交)");
-        } else {
-            menuModeFlex.setText("  能打就打(过滤不可执行账号)");
-            menuModeTogether.setText("● 等齐再打(全部模拟通过才提交)");
-        }
-        //切换：能打就打
-        menuModeFlex.setOnClickListener(v -> {
-            currentPlayMode = MODE_FLEXIBLE;
-            spAppSetting.edit().putInt("play_mode", currentPlayMode).apply();
-            appendLog("", "", "✅已切换入场模式：能打就打，自动过滤不可执行账号");
-            mPopupWindow.dismiss();
-        });
-        //切换：等齐再打
-        menuModeTogether.setOnClickListener(v -> {
-            currentPlayMode = MODE_TOGETHER;
-            spAppSetting.edit().putInt("play_mode", currentPlayMode).apply();
-            appendLog("", "", "✅已切换入场模式：等齐再打，全部模拟通过才提交交易");
-            mPopupWindow.dismiss();
-        });
-        mPopupWindow = new PopupWindow(popView, ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, true);
-        mPopupWindow.setOutsideTouchable(true);
-        mPopupWindow.showAsDropDown(anchorView, 0, 4);
     }
 
-    /** 获取选中条目 */
-    private List<KeyListItem> getSelectedKeyItem() {
+    // 获取启用的密钥列表
+    List<KeyListItem> getEnabledKeyItems() {
+        List<KeyListItem> enabled = new ArrayList<>();
+        for (KeyListItem item : keyListItemList) {
+            if (item.enabled) enabled.add(item);
+        }
+        return enabled;
+    }
+
+    List<KeyListItem> getSelectedKeyItem() {
         List<KeyListItem> res = new ArrayList<>();
         for (KeyListItem item : keyListItemList) {
-            if (item.isChecked) {
-                res.add(item);
-            }
+            if (item.isChecked) res.add(item);
         }
         return res;
     }
 
-    //添加密钥弹窗
-    private void showAddKeyDialog() {
-        AlertDialog.Builder builder = new AlertDialog.Builder(this);
-        View view = LayoutInflater.from(this).inflate(R.layout.dialog_add_key, null);
-        EditText etGroupNo = view.findViewById(R.id.et_group_no);
-        EditText etPk1 = view.findViewById(R.id.et_pk_part1);
-        EditText etPk2 = view.findViewById(R.id.et_pk_part2);
-        EditText etUserCrypto = view.findViewById(R.id.et_user_crypto_key);
-        ImageButton ivEyeToggle = view.findViewById(R.id.iv_eye_toggle);
-        final boolean[] isPasswordVisible = {false};
-        ivEyeToggle.setOnClickListener(v -> {
-            isPasswordVisible[0] = !isPasswordVisible[0];
-            if (isPasswordVisible[0]) {
-                etUserCrypto.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_NORMAL);
-                ivEyeToggle.setImageResource(R.drawable.ic_eye_on_svg);
-            } else {
-                etUserCrypto.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
-                ivEyeToggle.setImageResource(R.drawable.ic_eye_off_svg);
+    List<String> loadGroupList() {
+        String raw = spAppSetting.getString("group_list", "");
+        List<String> list = new ArrayList<>();
+        if (!raw.isEmpty()) {
+            for (String s : raw.split(",")) {
+                String t = s.trim();
+                if (!t.isEmpty()) list.add(t);
             }
-        });
-        builder.setView(view);
-        builder.setPositiveButton("确认添加", null);
-        builder.setNegativeButton("取消", null);
-        AlertDialog dialog = builder.create();
-        dialog.show();
-        dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
-            String groupNoInput = etGroupNo.getText().toString().trim();
-            String part1 = etPk1.getText().toString().trim();
-            String part2 = etPk2.getText().toString().trim();
-            String fullPrivateKey = (part1 + part2).trim();
-            String userKeyStr = etUserCrypto.getText().toString().trim();
-            if (groupNoInput.isEmpty()) {
-                new AlertDialog.Builder(MainActivity.this)
-                        .setMessage("分组编号不能为空！")
-                        .setPositiveButton("知道了", null)
-                        .show();
-                return;
-            }
-            if (fullPrivateKey.isEmpty()) {
-                new AlertDialog.Builder(MainActivity.this)
-                        .setMessage("密钥内容不能为空！")
-                        .setPositiveButton("知道了", null)
-                        .show();
-                return;
-            }
-            tempUserCryptoKey = userKeyStr.toCharArray();
-            final String userInputGroupNo = groupNoInput;
-            new Thread(() -> {
-                try {
-                    KeyStoreManager mgr = AppGlobal.getKeyStoreManager();
-                    //✅传入用户手动填写分组编号保存进密钥条目
-                    mgr.addPrivateKey(fullPrivateKey, tempUserCryptoKey, userInputGroupNo);
-                    runOnUiThread(() -> {
-                        appendLog(userInputGroupNo, "", "✅密钥添加完成");
-                        refreshCipherKeyList();
-                        dialog.dismiss();
-                    });
-                } catch (Exception e) {
-                    runOnUiThread(() -> {
-                        appendLog("", "", "❌添加密钥失败：" + e.getMessage());
-                    });
-                }
-            }).start();
-        });
+        }
+        return list;
     }
 
-    //查看数据库日志弹窗
-    private void showViewLogDialog() {
-        new Thread(() -> {
-            String showText;
-            try {
-                List<TaskLogItem> logList = AppLogDbHelper.getInstance(MainActivity.this).queryAllLogDesc();
-                SimpleDateFormat sdf = new SimpleDateFormat("yyyy‑MM‑dd HH:mm:ss", Locale.getDefault());
-                StringBuilder sb = new StringBuilder();
-                for (TaskLogItem item : logList) {
-                    String timeStr = sdf.format(new Date(item.timeMs));
-                    sb.append("[").append(timeStr).append("]");
-                    if(item.keyNo != null){
-                        sb.append("[").append(item.keyNo).append("]");
-                    }
-                    sb.append(item.content);
-                    sb.append("\n");
-                }
-                showText = sb.length() == 0 ? "暂无日志记录" : sb.toString();
-            } catch (Exception e) {
-                showText = "读取日志异常：" + e.getMessage();
-            }
-            final String finalShow = showText;
-            runOnUiThread(() -> {
-                AlertDialog.Builder builder = new AlertDialog.Builder(MainActivity.this);
-                View v = LayoutInflater.from(MainActivity.this).inflate(R.layout.dialog_view_log, null);
-                TextView tvLogContent = v.findViewById(R.id.tv_dialog_log_content);
-                tvLogContent.setText(finalShow);
-                builder.setView(v);
-                builder.setPositiveButton("关闭", null);
-                builder.show();
-            });
-        }).start();
+    void saveGroupList(List<String> list) {
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < list.size(); i++) {
+            if (i > 0) sb.append(",");
+            sb.append(list.get(i));
+        }
+        spAppSetting.edit().putString("group_list", sb.toString()).apply();
     }
 
-    //解密密码弹窗，修复：先show()再getButton，避免null
-    private void showDecryptPasswordDialog(final PasswordCallback callback) {
-        final AlertDialog.Builder builder = new AlertDialog.Builder(this);
-        final View view = LayoutInflater.from(this).inflate(R.layout.dialog_decrypt_password, null);
-        final EditText etPwd = view.findViewById(R.id.et_decrypt_pwd);
-        builder.setView(view);
-        builder.setPositiveButton("确认", null);
-        builder.setNegativeButton("取消", null);
-        final AlertDialog dialog = builder.create();
-        dialog.show();
-
-        dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
-            final char[] pwdCharArray = etPwd.getText().toString().toCharArray();
-            if (keyListItemList.isEmpty()) {
-                dialog.dismiss();
-                callback.onInputPwd(pwdCharArray);
-                return;
-            }
-            final String firstCipher = keyListItemList.get(0).cipherText;
-            new Thread(() -> {
-                boolean testOk;
-                try {
-                    KeyStoreManager mgr = AppGlobal.getKeyStoreManager();
-                    mgr.testDecrypt(firstCipher, pwdCharArray);
-                    testOk = true;
-                } catch (Exception e) {
-                    testOk = false;
-                }
-                final boolean result = testOk;
-                runOnUiThread(() -> {
-                    if (result) {
-                        dialog.dismiss();
-                        callback.onInputPwd(pwdCharArray);
-                    } else {
-                        new AlertDialog.Builder(MainActivity.this)
-                                .setTitle("密码错误")
-                                .setMessage("解密密码校验失败，请核对密码后重新输入！")
-                                .setPositiveButton("知道了", null)
-                                .show();
-                    }
-                });
-            }).start();
-        });
-
-        dialog.getButton(AlertDialog.BUTTON_NEGATIVE).setOnClickListener(v -> dialog.dismiss());
-    }
-
-    private interface PasswordCallback {
-        void onInputPwd(char[] pwd);
-    }
-
-    /** 刷新密钥列表，使用永久keyId */
-    private void refreshCipherKeyList() {
+    void refreshCipherKeyList() {
         new Thread(() -> {
             try {
                 KeyStoreManager mgr = AppGlobal.getKeyStoreManager();
                 List<KeyStoreManager.KeyEntry> originEntryList = mgr.loadKeyEntryList();
+
+                List<KeyStoreManager.KeyEntry> unique = new ArrayList<>();
+                for (KeyStoreManager.KeyEntry e : originEntryList) {
+                    boolean dup = false;
+                    for (KeyStoreManager.KeyEntry u : unique) {
+                        if (u.id == e.id) { dup = true; break; }
+                    }
+                    if (!dup) unique.add(e);
+                }
+                originEntryList = unique;
+
                 List<Long> customSortIds = mgr.getCustomSortIdList();
-                //✅按照用户自定义顺序重新排序
                 List<KeyStoreManager.KeyEntry> sortedEntryList = new ArrayList<>();
-                //1、先放自定义排序中存在的id
                 for(Long sortId : customSortIds){
                     for(KeyStoreManager.KeyEntry e : originEntryList){
-                        if(e.id == sortId){
-                            sortedEntryList.add(e);
-                            break;
-                        }
+                        if(e.id == sortId){ sortedEntryList.add(e); break; }
                     }
                 }
-                //2、追加不在自定义排序里面的新密钥（兼容旧数据、新增条目）
                 for(KeyStoreManager.KeyEntry e : originEntryList){
                     boolean exist = false;
                     for(KeyStoreManager.KeyEntry s : sortedEntryList){
-                        if(s.id == e.id){
-                            exist = true;
-                            break;
-                        }
+                        if(s.id == e.id){ exist = true; break; }
                     }
-                    if(!exist){
-                        sortedEntryList.add(e);
-                    }
+                    if(!exist) sortedEntryList.add(e);
                 }
                 keyListItemList.clear();
                 for (int i = 0; i < sortedEntryList.size(); i++) {
@@ -549,126 +321,82 @@ public class MainActivity extends AppCompatActivity implements TaskLogCallback {
                     item.keyId = entry.id;
                     item.seqNo = i + 1;
                     item.displayNo = String.format(Locale.getDefault(), "%03d", entry.id);
-                    item.userGroupNo = entry.userGroupNo;
                     item.cipherText = entry.cipherText;
+                    item.address = entry.address;
                     item.isUsable = true;
                     item.isChecked = true;
+                    item.customCode = entry.customCode;
+                    item.groupNo = entry.groupNo;
+                    item.enabled = entry.enabled;
                     keyListItemList.add(item);
                 }
                 runOnUiThread(() -> {
-                    if (keyAdapter == null) {
-                        keyAdapter = new ArrayAdapter<KeyListItem>(MainActivity.this, R.layout.item_cipher_key, keyListItemList) {
-                            @Override
-                            public View getView(int position, View convertView, android.view.ViewGroup parent) {
-                                CheckedTextView tv = (CheckedTextView) super.getView(position, convertView, parent);
-                                KeyListItem it = getItem(position);
-                                String showNo;
-                                if(it.userGroupNo != null && !it.userGroupNo.isEmpty()){
-                                    showNo = it.userGroupNo;
-                                }else{
-                                    showNo = it.displayNo;
-                                }
-                                tv.setText(showNo + " · " + it.cipherText);
-                                tv.setChecked(it.isChecked);
-                                if (!it.isUsable) {
-                                    tv.setBackgroundColor(0xFFFFCDD2);
-                                } else {
-                                    tv.setBackgroundColor(0x00000000);
-                                }
-                                return tv;
-                            }
-                        };
-                        lvCipherKeys.setAdapter(keyAdapter);
-                    } else {
-                        keyAdapter.notifyDataSetChanged();
+                    int enabledCount = 0;
+                    for (KeyListItem item : keyListItemList) {
+                        if (item.enabled) enabledCount++;
                     }
-                    refreshCheckedStatText();
+                    tvEnabledCount.setText(String.valueOf(enabledCount));
+                    tvTokenCount.setText("0");
+                    tvQdCount.setText("0");
                 });
+
+                List<KeyListItem> enabledItems = getEnabledKeyItems();
+                if (!enabledItems.isEmpty()) {
+                    new Thread(() -> {
+                        try {
+                            Web3j web3j = Web3AndroidUtil.dialAny();
+                            List<String> addrs = new ArrayList<>();
+                            for (KeyListItem item : enabledItems) {
+                                if (item.address != null && !item.address.isEmpty()) {
+                                    addrs.add(item.address);
+                                }
+                            }
+                            if (addrs.isEmpty()) {
+                                try { web3j.shutdown(); } catch (Exception ignore) {}
+                                return;
+                            }
+                            Map<String, ArenaContractApi.PlayerSummary> summaries =
+                                    ArenaContractApi.callPlayerSummaryBatch(web3j, addrs);
+                            try { web3j.shutdown(); } catch (Exception ignore) {}
+
+                            long totalTokens = 0;
+                            long totalQd = 0;
+                            for (ArenaContractApi.PlayerSummary s : summaries.values()) {
+                                if (s.walletBalance != null) {
+                                    totalTokens += s.walletBalance.longValue();
+                                }
+                                if (s.championships != null) {
+                                    totalQd += s.championships.longValue();
+                                }
+                            }
+                            final String tokenStr = formatToken(totalTokens);
+                            final String qdStr = String.valueOf(totalQd);
+                            runOnUiThread(() -> {
+                                tvTokenCount.setText(tokenStr);
+                                tvQdCount.setText(qdStr);
+                            });
+                        } catch (Throwable t) {
+                            runOnUiThread(() -> appendLog("", "", "查询链上数据异常：" + t.getClass().getSimpleName()));
+                        }
+                    }).start();
+                }
             } catch (Exception e) {
                 runOnUiThread(() -> appendLog("", "", "❌刷新密钥列表异常：" + e.getMessage()));
             }
         }).start();
     }
 
-    /** 删除选中密钥，倒序删除 */
-    private void removeSelectedKeys() {
-        final List<Integer> deletePosList = new ArrayList<>();
-        for (int i = 0; i < keyListItemList.size(); i++) {
-            KeyListItem item = keyListItemList.get(i);
-            if (item.isChecked) {
-                deletePosList.add(i);
-            }
-        }
-        if (deletePosList.isEmpty()) {
-            new AlertDialog.Builder(this)
-                    .setMessage("请先在列表勾选需要删除的密钥")
-                    .setPositiveButton("知道了", null).show();
-            return;
-        }
-        new AlertDialog.Builder(this)
-                .setTitle("确认删除")
-                .setMessage("确定删除选中 " + deletePosList.size() + " 条密钥？该操作不可恢复！")
-                .setPositiveButton("确认删除", (d, w) -> new Thread(() -> {
-                    try {
-                        KeyStoreManager mgr = AppGlobal.getKeyStoreManager();
-                        for (int i = deletePosList.size() - 1; i >= 0; i--) {
-                            int pos = deletePosList.get(i);
-                            mgr.removeByIndex(pos);
-                        }
-                        runOnUiThread(() -> {
-                            appendLog("", "", "✅已删除选中 " + deletePosList.size() + " 条密钥");
-                            refreshCipherKeyList();
-                        });
-                    } catch (Exception e) {
-                        runOnUiThread(() -> appendLog("", "", "❌删除选中密钥异常：" + e.getMessage()));
-                    }
-                }).start())
-                .setNegativeButton("取消", null)
-                .show();
-    }
-
-    /**清空全部密钥 */
-    private void showConfirmClearAllKey() {
-        new AlertDialog.Builder(this)
-                .setTitle("⚠确认清空全部密钥")
-                .setMessage("将删除本地全部保存的密钥密文，不可恢复！")
-                .setPositiveButton("确认清空", (d, w) -> new Thread(() -> {
-                    try {
-                        KeyStoreManager mgr = AppGlobal.getKeyStoreManager();
-                        mgr.clearAllKeys();
-                        runOnUiThread(() -> {
-                            appendLog("", "", "✅全部密钥已清空");
-                            refreshCipherKeyList();
-                        });
-                    } catch (Exception e) {
-                        runOnUiThread(() -> appendLog("", "", "❌清空密钥异常：" + e.getMessage()));
-                    }
-                }).start())
-                .setNegativeButton("取消", null)
-                .show();
-    }
-
-    private void showConfirmClearLogDb() {
-        new Thread(() -> {
-            AppLogDbHelper.getInstance(MainActivity.this).clearAllLog();
-            runOnUiThread(() -> appendLog("", "", "✅数据库日志已全部清空"));
-        }).start();
-    }
-
-    /** 自动清除配置弹窗，分钟/小时/天 */
-    private void openSysScheduleDialog() {
-        AlertDialog.Builder builder = new AlertDialog.Builder(this);
-        final View view = LayoutInflater.from(this).inflate(R.layout.dialog_sys_auto_clear, null);
+    void openSysScheduleDialog() {
+        android.app.AlertDialog.Builder builder = new android.app.AlertDialog.Builder(this);
+        final View view = android.view.LayoutInflater.from(this).inflate(R.layout.dialog_sys_auto_clear, null);
         final Switch swAutoEnable = view.findViewById(R.id.sw_auto_enable);
-        final EditText etVal = view.findViewById(R.id.et_auto_clear_val);
-        final Spinner spUnit = view.findViewById(R.id.sp_time_unit);
+        final android.widget.EditText etVal = view.findViewById(R.id.et_auto_clear_val);
+        final android.widget.Spinner spUnit = view.findViewById(R.id.sp_time_unit);
         final TextView tvStatus = view.findViewById(R.id.tv_auto_clear_status);
         ArrayAdapter<String> unitAdapter = new ArrayAdapter<>(this, android.R.layout.simple_spinner_dropdown_item, unitArray);
         spUnit.setAdapter(unitAdapter);
-        //读取：开关状态 + 用户保存的时长（开关关闭时长也保留）
         boolean isEnable = spAppSetting.getBoolean("auto_clear_enable", false);
         long oldMs = spAppSetting.getLong("auto_clear_ms", 0);
-        //回填UI
         swAutoEnable.setChecked(isEnable);
         if (oldMs > 0) {
             if (oldMs >= 1000L * 60 * 60 * 24) {
@@ -684,178 +412,95 @@ public class MainActivity extends AppCompatActivity implements TaskLogCallback {
         }
         if(isEnable){
             tvStatus.setText("当前：已启用，到达时长会自动清除私钥");
-            etVal.setEnabled(true);
-            spUnit.setEnabled(true);
+            etVal.setEnabled(true); spUnit.setEnabled(true);
         }else{
             tvStatus.setText("当前：已禁用（配置已保存，不会校验清除；系统时间持续流逝）");
-            etVal.setEnabled(false);
-            spUnit.setEnabled(false);
+            etVal.setEnabled(false); spUnit.setEnabled(false);
         }
-        //开关监听
         swAutoEnable.setOnCheckedChangeListener((buttonView, checked) -> {
-            etVal.setEnabled(checked);
-            spUnit.setEnabled(checked);
-            if(checked){
-                tvStatus.setText("当前：已启用，到达时长会自动清除私钥");
-            }else{
-                tvStatus.setText("当前：已禁用（配置已保存，不会校验清除；系统时间持续流逝）");
-            }
+            etVal.setEnabled(checked); spUnit.setEnabled(checked);
+            tvStatus.setText(checked ? "当前：已启用，到达时长会自动清除私钥" : "当前：已禁用（配置已保存，不会校验清除；系统时间持续流逝）");
         });
-        final AlertDialog dialog = builder.setView(view)
+        final android.app.AlertDialog dialog = builder.setView(view)
                 .setPositiveButton("保存", (d, i) -> {})
                 .setNegativeButton("关闭", (d, i) -> d.dismiss())
                 .create();
         dialog.show();
-        dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
+        dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
             boolean newEnable = swAutoEnable.isChecked();
             if(!newEnable){
-                //====开关关闭：仅标记为禁用，【不抹除auto_clear_ms时长配置】====
-                spAppSetting.edit()
-                        .putBoolean("auto_clear_enable", false)
-                        .apply();
-                //取消WorkManager，但是auto_clear_ms保留原值
+                spAppSetting.edit().putBoolean("auto_clear_enable", false).apply();
                 WorkManager.getInstance(getApplicationContext()).cancelUniqueWork(WORK_AUTO_CLEAR);
                 appendLog("", "", "✅已禁用自动清除（配置已保留）");
                 dialog.dismiss();
                 return;
             }
-            //开关打开：需要有有效时长
             String valStr = etVal.getText().toString().trim();
             if(valStr.isEmpty()){
-                new AlertDialog.Builder(MainActivity.this)
-                        .setMessage("请输入时间数值，最小15！")
-                        .setPositiveButton("知道了",null)
-                        .show();
+                new android.app.AlertDialog.Builder(this).setMessage("请输入时间数值，最小15！").setPositiveButton("知道了",null).show();
                 return;
             }
             int val;
-            try {
-                val = Integer.parseInt(valStr);
-            } catch (Exception e) {
-                new AlertDialog.Builder(MainActivity.this).setMessage("请输入合法数字").setPositiveButton("OK", null).show();
+            try { val = Integer.parseInt(valStr); } catch (Exception e) {
+                new android.app.AlertDialog.Builder(this).setMessage("请输入合法数字").setPositiveButton("OK", null).show();
                 return;
             }
             int selPos = spUnit.getSelectedItemPosition();
-            long oneUnitMs;
-            long inputMinute;
-            if (selPos == 0) {
-                oneUnitMs = 60 * 1000L;
-                inputMinute = val;
-            } else if (selPos == 1) {
-                oneUnitMs = 60 * 60 * 1000L;
-                inputMinute = val * 60L;
-            } else {
-                oneUnitMs = 24 * 60 * 60 * 1000L;
-                inputMinute = val * 24 * 60L;
-            }
+            long oneUnitMs, inputMinute;
+            if (selPos == 0) { oneUnitMs = 60 * 1000L; inputMinute = val; }
+            else if (selPos == 1) { oneUnitMs = 60 * 60 * 1000L; inputMinute = val * 60L; }
+            else { oneUnitMs = 24 * 60 * 60 * 1000L; inputMinute = val * 24 * 60L; }
             if (inputMinute < MIN_ALLOW_MINUTE) {
-                new AlertDialog.Builder(MainActivity.this)
-                        .setTitle("输入限制")
-                        .setMessage("最小设置15分钟！")
-                        .setPositiveButton("确定", null).show();
+                new android.app.AlertDialog.Builder(this).setTitle("输入限制").setMessage("最小设置15分钟！").setPositiveButton("确定", null).show();
                 return;
             }
-            long totalMs = val * oneUnitMs;
-            long startTs = System.currentTimeMillis();
-            spAppSetting.edit()
-                    .putBoolean("auto_clear_enable", true)
-                    .putLong("auto_clear_ms", totalMs)
-                    .putLong("auto_clear_start_ts", startTs)
-                    .apply();
-            long periodMin = Math.max(inputMinute, MIN_ALLOW_MINUTE);
-            PeriodicWorkRequest req = new PeriodicWorkRequest.Builder(AutoClearWorker.class, periodMin, TimeUnit.MINUTES).build();
-            WorkManager.getInstance(getApplicationContext())
-                    .enqueueUniquePeriodicWork(WORK_AUTO_CLEAR, ExistingPeriodicWorkPolicy.UPDATE, req);
+            spAppSetting.edit().putBoolean("auto_clear_enable", true).putLong("auto_clear_ms", val * oneUnitMs).putLong("auto_clear_start_ts", System.currentTimeMillis()).apply();
+            PeriodicWorkRequest req = new PeriodicWorkRequest.Builder(AutoClearWorker.class, Math.max(inputMinute, MIN_ALLOW_MINUTE), TimeUnit.MINUTES).build();
+            WorkManager.getInstance(getApplicationContext()).enqueueUniquePeriodicWork(WORK_AUTO_CLEAR, ExistingPeriodicWorkPolicy.UPDATE, req);
             appendLog("", "", "✅自动清除设置完成：" + val + " " + unitArray[selPos]);
             dialog.dismiss();
         });
     }
 
-    private void showSecurityWarningDialog() {
-        new AlertDialog.Builder(this)
-                .setTitle("安全风险提醒")
-                .setMessage("1.本APP为工具，非硬件钱包\n2.Root设备禁止存放大额资产私钥\n3.解密密码仅内存使用，不会持久化保存\n4.自动清除受手机省电策略影响，APP打开会兜底执行")
-                .setPositiveButton("知道了", null)
-                .show();
-    }
-
-    // ============ TaskLogCallback接口实现，同时写数据库+UI ============
     @Override
     public void onLog(final String keyNo, final String type, final String msg) {
         String safeKeyNo = (keyNo == null || keyNo.trim().isEmpty()) ? null : keyNo.trim();
         String safeType = (type == null || type.trim().isEmpty()) ? null : type.trim();
-        final String finalMsg = msg;
-        Log.e("onLog","keyNo:"+keyNo+"type:"+type+"msg:"+msg);
         final long timeMs = System.currentTimeMillis();
         runOnUiThread(() -> {
             SimpleDateFormat sdf = new SimpleDateFormat("yyyy‑MM‑dd HH:mm:ss", Locale.getDefault());
             StringBuilder sb = new StringBuilder();
             sb.append("[").append(sdf.format(new Date(timeMs))).append("]");
-            if (safeKeyNo != null) {
-                sb.append("[").append(safeKeyNo).append("]");
-            }
-            sb.append(finalMsg);
-            String newLine = sb.toString() + "\n";
-            tvLog.setText(tvLog.getText() + newLine);
+            if (safeKeyNo != null) sb.append("[").append(safeKeyNo).append("]");
+            sb.append(msg);
+            tvLog.setText(tvLog.getText() + sb.toString() + "\n");
             scrollView.post(() -> scrollView.fullScroll(ScrollView.FOCUS_DOWN));
         });
-        new Thread(() -> {
-            AppLogDbHelper.getInstance(this).insertLog(safeKeyNo, safeType, finalMsg, timeMs);
-        }).start();
+        new Thread(() -> AppLogDbHelper.getInstance(this).insertLog(safeKeyNo, safeType, msg, timeMs)).start();
     }
 
-    /** 长按条目弹出排序菜单 */
-    private void showSortMenu(final int pos){
-        KeyListItem item = keyListItemList.get(pos);
-        android.app.AlertDialog.Builder builder = new android.app.AlertDialog.Builder(this);
-        builder.setTitle("操作："+ (item.userGroupNo!=null?item.userGroupNo:item.displayNo));
-        String[] menus;
-        if(pos == 0 && pos == keyListItemList.size()-1){
-            //只有1条，不能移动
-            menus = new String[]{"取消"};
-        }else if(pos == 0){
-            //第一条，只能下移
-            menus = new String[]{"下移","取消"};
-        }else if(pos == keyListItemList.size()-1){
-            //最后一条，只能上移
-            menus = new String[]{"上移","取消"};
-        }else{
-            menus = new String[]{"上移","下移","取消"};
-        }
-        builder.setItems(menus, (dialog, which) -> {
-            int newPos = pos;
-            if("上移".equals(menus[which])){
-                newPos = pos - 1;
-            }else if("下移".equals(menus[which])){
-                newPos = pos + 1;
-            }else{
-                return;
-            }
-            //内存集合交换位置
-            java.util.Collections.swap(keyListItemList, pos, newPos);
-            keyAdapter.notifyDataSetChanged();
-            //✅同步保存自定义排序id序列到SP
-            List<Long> newSortIdList = new ArrayList<>();
-            for(KeyListItem li : keyListItemList){
-                newSortIdList.add(li.keyId);
-            }
-            KeyStoreManager mgr = AppGlobal.getKeyStoreManager();
-            mgr.saveCustomSortIdList(newSortIdList);
-            refreshCheckedStatText();
-        });
-        builder.show();
-    }
-
-    public void appendLog(String unusedKeyNo, String unusedType, String msg) {
+    void appendLog(String unusedKeyNo, String unusedType, String msg) {
         onLog(unusedKeyNo, unusedType, msg);
+    }
+
+    interface PasswordCallback {
+        void onInputPwd(char[] pwd);
+    }
+
+    MainDialogHelper getDialogHelper() { return dialogHelper; }
+
+    private String formatToken(long weiAmount) {
+        if (weiAmount == 0) return "0";
+        java.math.BigDecimal wei = java.math.BigDecimal.valueOf(weiAmount);
+        java.math.BigDecimal divisor = java.math.BigDecimal.TEN.pow(18);
+        java.math.BigDecimal result = wei.divide(divisor, 2, java.math.RoundingMode.DOWN);
+        return result.toPlainString();
     }
 
     @Override
     protected void onDestroy() {
         super.onDestroy();
-        if (mPopupWindow != null && mPopupWindow.isShowing()) {
-            mPopupWindow.dismiss();
-        }
+        menuHelper.dismissPopup();
         if (tempUserCryptoKey != null) {
             Arrays.fill(tempUserCryptoKey, (char) 0);
             tempUserCryptoKey = null;
@@ -865,7 +510,161 @@ public class MainActivity extends AppCompatActivity implements TaskLogCallback {
     @Override
     protected void onResume() {
         super.onResume();
-        //每次切回页面执行自动清除校验，锁屏点亮回到页面也会触发
         checkAutoClearBoot();
+        refreshCipherKeyList();
+        loadTodayStatus();
+    }
+
+    @Override
+    public void onBatchResult(java.util.Map<String, ArenaContractApi.PlayerSummary> summaries) {
+        new Thread(() -> {
+            try {
+                AppLogDbHelper db = AppLogDbHelper.getInstance(this);
+                String today = new SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(new Date());
+
+                java.util.Set<String> failedKeyNos = new java.util.HashSet<>();
+                List<FailureLogItem> failList = db.queryFailureLog(today);
+                for (FailureLogItem f : failList) {
+                    failedKeyNos.add(f.keyNo);
+                }
+
+                final java.util.Map<String, ArenaContractApi.PlayerSummary> safeSummaries =
+                        summaries != null ? summaries : new java.util.HashMap<>();
+
+                for (KeyListItem item : keyListItemList) {
+                    if (!item.enabled || item.address == null) continue;
+                    String keyNo = (item.customCode != null && !item.customCode.isEmpty())
+                            ? item.customCode : item.displayNo;
+                    boolean failed = failedKeyNos.contains(keyNo);
+                    int totalQd = 0, todayQd = 0, todayEnter = 0;
+                    long tokens = 0;
+                    ArenaContractApi.PlayerSummary s = safeSummaries.get(item.address);
+                    if (s != null) {
+                        if (s.championships != null) totalQd = s.championships.intValue();
+                        if (s.entriesToday != null) todayEnter = s.entriesToday.intValue();
+                        if (s.walletBalance != null) tokens = s.walletBalance.longValue();
+                    }
+                    db.upsertDailyStatus(item.keyId, keyNo, today, totalQd, todayQd, todayEnter, tokens, failed);
+                }
+                runOnUiThread(() -> loadTodayStatus());
+            } catch (Exception ignored) {}
+        }).start();
+    }
+
+    @Override
+    public void onKeyFailure(String keyNo, String failType, String reason) {
+        new Thread(() -> {
+            try {
+                String today = new SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(new Date());
+                AppLogDbHelper.getInstance(this).insertFailure(0, keyNo, today, failType, reason);
+                runOnUiThread(() -> loadTodayStatus());
+            } catch (Exception ignored) {}
+        }).start();
+    }
+
+    private void loadTodayStatus() {
+        new Thread(() -> {
+            try {
+                String today = new SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(new Date());
+                AppLogDbHelper db = AppLogDbHelper.getInstance(this);
+                List<DailyStatusItem> statusList = db.queryDailyStatus(today);
+                List<FailureLogItem> failList = db.queryFailureLog(today);
+                runOnUiThread(() -> {
+                    dailyStatusList.clear();
+                    dailyStatusList.addAll(statusList);
+                    dailyStatusAdapter.notifyDataSetChanged();
+                    tvEmptyStatus.setVisibility(statusList.isEmpty() ? View.VISIBLE : View.GONE);
+
+                    failureLogList.clear();
+                    failureLogList.addAll(failList);
+                    failureLogAdapter.notifyDataSetChanged();
+                    tvEmptyFailure.setVisibility(failList.isEmpty() ? View.VISIBLE : View.GONE);
+                });
+            } catch (Exception ignored) {}
+        }).start();
+    }
+
+    class DailyStatusAdapter extends RecyclerView.Adapter<DailyStatusAdapter.VH> {
+        @NonNull
+        @Override
+        public VH onCreateViewHolder(@NonNull ViewGroup parent, int viewType) {
+            View v = LayoutInflater.from(parent.getContext()).inflate(R.layout.item_daily_status, parent, false);
+            return new VH(v);
+        }
+
+        @Override
+        public void onBindViewHolder(@NonNull VH holder, int position) {
+            DailyStatusItem item = dailyStatusList.get(position);
+            holder.tvSeq.setText(String.valueOf(position + 1));
+            holder.tvKeyNo.setText(item.keyNo);
+            holder.tvTotalQd.setText(String.valueOf(item.totalQd));
+            holder.tvTodayQd.setText(String.valueOf(item.todayQd));
+            holder.tvTodayEnter.setText(String.valueOf(item.todayEnter));
+            if (item.isFailed) {
+                holder.tvStatusBadge.setVisibility(View.VISIBLE);
+                holder.tvStatusBadge.setText("失败");
+                holder.tvStatusBadge.setBackgroundResource(R.drawable.bg_status_badge_fail);
+                holder.itemRoot.setBackgroundColor(0xFFFFFBFB);
+            } else {
+                holder.tvStatusBadge.setVisibility(View.VISIBLE);
+                holder.tvStatusBadge.setText("正常");
+                holder.tvStatusBadge.setBackgroundResource(R.drawable.bg_status_badge);
+                holder.itemRoot.setBackgroundColor(0xFFFFFFFF);
+            }
+        }
+
+        @Override
+        public int getItemCount() {
+            return dailyStatusList.size();
+        }
+
+        class VH extends RecyclerView.ViewHolder {
+            TextView tvSeq, tvKeyNo, tvTotalQd, tvTodayQd, tvTodayEnter, tvStatusBadge;
+            View itemRoot;
+            VH(View v) {
+                super(v);
+                itemRoot = v.findViewById(R.id.item_root);
+                tvSeq = v.findViewById(R.id.tv_seq);
+                tvKeyNo = v.findViewById(R.id.tv_key_no);
+                tvTotalQd = v.findViewById(R.id.tv_total_qd);
+                tvTodayQd = v.findViewById(R.id.tv_today_qd);
+                tvTodayEnter = v.findViewById(R.id.tv_today_enter);
+                tvStatusBadge = v.findViewById(R.id.tv_status_badge);
+            }
+        }
+    }
+
+    class FailureLogAdapter extends RecyclerView.Adapter<FailureLogAdapter.VH> {
+        @NonNull
+        @Override
+        public VH onCreateViewHolder(@NonNull ViewGroup parent, int viewType) {
+            View v = LayoutInflater.from(parent.getContext()).inflate(R.layout.item_failure_log, parent, false);
+            return new VH(v);
+        }
+
+        @Override
+        public void onBindViewHolder(@NonNull VH holder, int position) {
+            FailureLogItem item = failureLogList.get(position);
+            holder.tvKeyNo.setText(item.keyNo);
+            holder.tvFailType.setText(item.failType);
+            holder.tvReason.setText(item.reason);
+            holder.tvTime.setText(new SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(new Date(item.timeMs)));
+        }
+
+        @Override
+        public int getItemCount() {
+            return failureLogList.size();
+        }
+
+        class VH extends RecyclerView.ViewHolder {
+            TextView tvKeyNo, tvFailType, tvReason, tvTime;
+            VH(View v) {
+                super(v);
+                tvKeyNo = v.findViewById(R.id.tv_key_no);
+                tvFailType = v.findViewById(R.id.tv_fail_type);
+                tvReason = v.findViewById(R.id.tv_reason);
+                tvTime = v.findViewById(R.id.tv_time);
+            }
+        }
     }
 }
