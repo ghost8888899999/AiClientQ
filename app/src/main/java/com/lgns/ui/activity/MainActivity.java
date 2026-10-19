@@ -258,8 +258,14 @@ public class MainActivity extends AppCompatActivity implements TaskLogCallback {
                     KeyStoreManager mgr = AppGlobal.getKeyStoreManager();
                     mgr.clearAllKeys();
                     runOnUiThread(() -> appendLog("", "", "⚠检测到自动清除计时到期，打开APP自动清空全部私钥！"));
+                    
+                    // 重置自动清除配置，避免每次启动都重复清除
+                    spAppSetting.edit()
+                        .putBoolean("auto_clear_enable", false)
+                        .putLong("auto_clear_ms", 0)
+                        .putLong("auto_clear_start_ts", 0)
+                        .apply();
                 } catch (Exception ignored) {}
-                spAppSetting.edit().putLong("auto_clear_start_ts", System.currentTimeMillis()).apply();
             }).start();
         }
     }
