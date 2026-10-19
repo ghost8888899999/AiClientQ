@@ -8,27 +8,51 @@ public class TaskAccountState {
     public static final int STATUS_SUCCESS = 2;
     public static final int STATUS_FAIL = 3;
 
+    // outcome 状态机
+    public static final String OUTCOME_NONE = "";
+    public static final String OUTCOME_CONFIRMED = "confirmed";
+    public static final String OUTCOME_REVERTED = "reverted";
+    public static final String OUTCOME_NONCE_CONSUMED = "nonce-consumed";
+
     public int status;
     public String txHash;
     public long timestamp;
+    // 进程重启/换机时防止把 A 链的 pending 恢复到 B 链;0 表示升级前旧数据,跳过校验
+    public long chainId;
+    // 落 signed raw tx,崩溃恢复时可反解校验并原样重发
+    public String rawTx;
+    // 记录最终结局
+    public String outcome;
 
     public TaskAccountState() {
         status = STATUS_IDLE;
         txHash = null;
+        rawTx = null;
+        outcome = OUTCOME_NONE;
         timestamp = System.currentTimeMillis();
+        chainId = ArenaConfig.CHAIN_ID;
     }
 
     /**
      * 构造函数：拦截禁止把 SUCCESS / FAIL 存入持久化对象
      */
     public TaskAccountState(int status, String txHash) {
-        // 防御：SUCCESS、FAIL不允许构造用于磁盘保存的实例
+        this(status, txHash, null);
+    }
+
+    /**
+     * 广播前先把 rawTx + 本地算出的 txHash 落 SP,进程崩溃也能识别
+     */
+    public TaskAccountState(int status, String txHash, String rawTx) {
         if (status == STATUS_SUCCESS || status == STATUS_FAIL) {
             throw new IllegalArgumentException("SUCCESS/FAIL仅允许内存使用，不能持久化到SP");
         }
         this.status = status;
         this.txHash = txHash;
+        this.rawTx = rawTx;
+        this.outcome = OUTCOME_NONE;
         this.timestamp = System.currentTimeMillis();
+        this.chainId = ArenaConfig.CHAIN_ID;
     }
 
     /**
@@ -40,16 +64,10 @@ public class TaskAccountState {
         return s;
     }
 
-    // =========新增getter，适配ArenaTask调用，原有public字段不删除，保证gson反序列化兼容=========
-    public int getStatus() {
-        return status;
-    }
-
-    public String getTxHash() {
-        return txHash;
-    }
-
-    public long getTimestamp() {
-        return timestamp;
-    }
+    public int getStatus() { return status; }
+    public String getTxHash() { return txHash; }
+    public String getRawTx() { return rawTx; }
+    public String getOutcome() { return outcome; }
+    public long getTimestamp() { return timestamp; }
+    public long getChainId() { return chainId; }
 }
