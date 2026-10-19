@@ -20,7 +20,7 @@
         tools:targetApi="31">
 
         <activity
-            android:name=".MainActivity"
+            android:name=".ui.activity.MainActivity"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
@@ -29,19 +29,24 @@
         </activity>
 
         <activity
-            android:name=".GroupManageActivity"
+            android:name=".ui.activity.GroupManageActivity"
             android:exported="false"
             android:label="分组管理" />
 
         <activity
-            android:name=".PrivateKeyManageActivity"
+            android:name=".ui.activity.PrivateKeyManageActivity"
             android:exported="false"
             android:label="私钥管理" />
 
         <activity
-            android:name=".LogViewActivity"
+            android:name=".ui.activity.LogViewActivity"
             android:exported="false"
             android:label="运行日志" />
+
+        <activity
+            android:name=".ui.activity.ChampionshipStatsActivity"
+            android:exported="false"
+            android:label="锦标赛统计" />
 
     </application>
 </manifest>

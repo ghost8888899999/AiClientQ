@@ -110,12 +110,30 @@
                 android:fontFamily="monospace" />
         </LinearLayout>
 
-        <TextView
-            style="@style/DialogSubtitleStyle"
-            android:layout_width="wrap_content"
+        <LinearLayout
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="16dp"
-            android:text="加解密密码（仅本次会话生效）" />
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:layout_marginTop="16dp">
+
+            <TextView
+                android:id="@+id/tv_user_crypto_key"
+                style="@style/DialogSubtitleStyle"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="加解密密码" />
+
+            <ImageButton
+                android:id="@+id/iv_crypto_help"
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:contentDescription="密码安全说明"
+                android:src="@drawable/ic_help_svg"
+                android:padding="4dp" />
+        </LinearLayout>
 
         <RelativeLayout
             android:layout_width="match_parent"
@@ -137,7 +155,7 @@
                 android:layout_height="wrap_content"
                 android:layout_toEndOf="@id/iv_lock_icon"
                 android:layout_toStartOf="@id/iv_eye_toggle"
-                android:hint="输入加解密Key"
+                android:hint="输入加解密Key,建议7位字母+数字组合及以上"
                 android:inputType="textPassword"
                 android:textSize="14sp"
                 android:paddingEnd="4dp" />

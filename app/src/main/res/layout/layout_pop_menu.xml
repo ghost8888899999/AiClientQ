@@ -44,6 +44,7 @@
         android:orientation="vertical"
         android:visibility="gone">
         <TextView android:id="@+id/menu_add_key" style="@style/popup_menu_item"/>
+        <TextView android:id="@+id/menu_batch_fund" style="@style/popup_menu_item"/>
     </LinearLayout>
 
     <!-- 分组管理 -->
@@ -118,7 +119,6 @@
         android:orientation="vertical"
         android:visibility="gone">
         <TextView android:id="@+id/menu_view_log" style="@style/popup_menu_item"/>
-        <TextView android:id="@+id/menu_clear_log_db" style="@style/popup_menu_item"/>
     </LinearLayout>
 
     <!-- 自动清除配置 -->

@@ -34,7 +34,28 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:textSize="12sp"
-            android:textColor="#757575" />
+            android:textColor="#757575"
+            android:layout_marginEnd="8dp" />
+
+        <Button
+            android:id="@+id/btn_clear_log"
+            android:layout_width="wrap_content"
+            android:layout_height="36dp"
+            android:text="清空日志"
+            android:textSize="12sp"
+            android:paddingStart="12dp"
+            android:paddingEnd="12dp" />
+
+        <View android:layout_width="8dp" android:layout_height="0dp" />
+
+        <Button
+            android:id="@+id/btn_init_db"
+            android:layout_width="wrap_content"
+            android:layout_height="36dp"
+            android:text="初始化数据库"
+            android:textSize="12sp"
+            android:paddingStart="12dp"
+            android:paddingEnd="12dp" />
     </LinearLayout>
 
     <TextView

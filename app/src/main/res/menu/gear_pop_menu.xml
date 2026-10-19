@@ -13,7 +13,6 @@
 
     <item android:title="日志管理" android:enabled="false"/>
     <item android:id="@+id/menu_view_log" android:title="查看日志(最新优先)"/>
-    <item android:id="@+id/menu_clear_log_db" android:title="清空数据库全部日志"/>
 
     <item android:title="自动清除配置" android:enabled="false"/>
     <item android:id="@+id/menu_sys_schedule_setting" android:title="自动清除配置"/>
