@@ -3,55 +3,94 @@
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:orientation="vertical"
-    android:padding="16dp">
-
-    <TextView
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="自动清除私钥配置"
-        android:textSize="16sp" />
-
-    <TextView
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="⚠注意：系统WorkManager最小15分钟；受手机省电策略影响，可能延迟；APP打开会兜底校验超时自动清空"
-        android:textColor="#D32F2F"
-        android:layout_marginTop="4dp" />
-
-    <!-- 新增开关，放在时间输入行上方，原有布局全部保留不动 -->
-    <Switch
-        android:id="@+id/sw_auto_enable"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="状态开关"
-        android:layout_marginTop="12dp"/>
+    android:paddingStart="24dp"
+    android:paddingEnd="24dp"
+    android:paddingTop="8dp"
+    android:paddingBottom="16dp">
 
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="horizontal"
-        android:layout_marginTop="12dp">
+        android:gravity="center_vertical">
+
+        <ImageView
+            android:layout_width="28dp"
+            android:layout_height="28dp"
+            android:src="@drawable/ic_timer_svg"
+            android:layout_marginEnd="10dp" />
+
+        <TextView
+            style="@style/DialogTitleStyle"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="自动清除配置" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:layout_marginTop="10dp"
+        android:background="#FFF8E1"
+        android:padding="10dp">
+
+        <ImageView
+            android:layout_width="18dp"
+            android:layout_height="18dp"
+            android:src="@drawable/ic_warning_svg"
+            android:layout_marginEnd="8dp" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="系统最短15分钟触发；受省电策略影响可能延迟；打开APP会立即校验并清除"
+            android:textColor="#E65100"
+            android:textSize="12sp" />
+    </LinearLayout>
+
+    <Switch
+        android:id="@+id/sw_auto_enable"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="启用自动清除"
+        android:layout_marginTop="16dp"
+        android:textSize="14sp"
+        android:textColor="#212121" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:layout_marginTop="16dp">
 
         <EditText
             android:id="@+id/et_auto_clear_val"
+            style="@style/DialogInputStyle"
             android:layout_width="80dp"
             android:layout_height="wrap_content"
             android:hint="数值"
-            android:inputType="number" />
+            android:inputType="number"
+            android:gravity="center"
+            android:textSize="16sp" />
 
         <Spinner
             android:id="@+id/sp_time_unit"
             android:layout_width="0dp"
-            android:layout_height="wrap_content"
+            android:layout_height="44dp"
             android:layout_weight="1"
-            android:layout_marginStart="8dp" />
+            android:layout_marginStart="12dp" />
     </LinearLayout>
 
     <TextView
         android:id="@+id/tv_auto_clear_status"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
+        android:layout_marginTop="12dp"
         android:text="当前：关闭自动清除"
-        android:layout_marginTop="8dp" />
+        android:textSize="13sp"
+        android:textColor="#757575" />
 
 </LinearLayout>

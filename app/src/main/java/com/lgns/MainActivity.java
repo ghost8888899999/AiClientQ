@@ -49,7 +49,7 @@ public class MainActivity extends AppCompatActivity implements TaskLogCallback {
     private ImageButton btnSettingGear;
     private TextView btnSecurityWarn;
     private TextView tvTokenCount, tvQdCount, tvEnabledCount;
-    private Button btnBatchEnter, btnBatchClaim, btnFullWorkflow, btnResetTask;
+    private Button btnBatchEnter, btnBatchClaim, btnFullWorkflow;
     private TextView tvLog;
     private ScrollView scrollView;
     private LinearLayout layoutLogHeader;
@@ -76,9 +76,6 @@ public class MainActivity extends AppCompatActivity implements TaskLogCallback {
         rvFailureList = findViewById(R.id.rv_failure_list);
         tvEmptyStatus = findViewById(R.id.tv_empty_status);
         tvEmptyFailure = findViewById(R.id.tv_empty_failure);
-
-        tabLayout.addTab(tabLayout.newTab().setText("当日状态"));
-        tabLayout.addTab(tabLayout.newTab().setText("失败列表"));
 
         tabLayout.addOnTabSelectedListener(new TabLayout.OnTabSelectedListener() {
             @Override
@@ -139,7 +136,6 @@ public class MainActivity extends AppCompatActivity implements TaskLogCallback {
         btnBatchEnter = findViewById(R.id.btn_batch_enter);
         btnBatchClaim = findViewById(R.id.btn_batch_claim);
         btnFullWorkflow = findViewById(R.id.btn_full_workflow);
-        btnResetTask = findViewById(R.id.btn_reset_task);
         tvLog = findViewById(R.id.tv_log);
         scrollView = findViewById(R.id.scrollView);
         layoutLogHeader = findViewById(R.id.layout_log_header);
@@ -211,12 +207,6 @@ public class MainActivity extends AppCompatActivity implements TaskLogCallback {
                     Arrays.fill(pwdCharArray, (char) 0);
                 }
             }).start());
-        });
-
-        btnResetTask.setOnClickListener(v -> {
-            Log.d("UI_CLICK","点击【重置任务进度】");
-            ArenaTask.resetTaskProgress(getApplicationContext());
-            appendLog("", "", "✅任务进度已重置");
         });
     }
 

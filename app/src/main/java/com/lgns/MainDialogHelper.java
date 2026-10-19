@@ -27,11 +27,15 @@ public class MainDialogHelper {
         this.activity = activity;
     }
 
+    private AlertDialog.Builder styledDialog() {
+        return new AlertDialog.Builder(activity, R.style.AppDialog);
+    }
+
     // ========== 锦标赛统计弹窗 ==========
     public void showChampionshipStatsDialog() {
         List<KeyListItem> selectedList = activity.getSelectedKeyItem();
         if (selectedList.isEmpty()) {
-            new AlertDialog.Builder(activity)
+            styledDialog()
                     .setMessage("请先在列表中勾选要查询的账号")
                     .setPositiveButton("知道了", null)
                     .show();
@@ -53,7 +57,7 @@ public class MainDialogHelper {
         }
 
         if (missingCount > 0 && addrs.isEmpty()) {
-            new AlertDialog.Builder(activity)
+            styledDialog()
                     .setTitle("地址未生成")
                     .setMessage("所选账号均为旧密钥，没有地址信息。\n\n请删除旧密钥后重新添加（添加时会自动保存地址），\n或使用菜单「补全密钥地址」输入密码一次性迁移。")
                     .setPositiveButton("知道了", null)
@@ -62,7 +66,7 @@ public class MainDialogHelper {
         }
 
         if (missingCount > 0) {
-            new AlertDialog.Builder(activity)
+            styledDialog()
                     .setMessage(missingCount + " 个旧密钥无地址已跳过，查询 " + addrs.size() + " 个")
                     .setPositiveButton("继续", null)
                     .show();
@@ -90,13 +94,13 @@ public class MainDialogHelper {
                 }
                 sb.append("\n合计: ").append(grandTotal).append("场 赢").append(grandWins).append("场");
                 String showText = sb.toString();
-                activity.runOnUiThread(() -> new AlertDialog.Builder(activity)
+                activity.runOnUiThread(() -> styledDialog()
                         .setTitle("锦标赛统计")
                         .setMessage(showText)
                         .setPositiveButton("关闭", null)
                         .show());
             } catch (Exception e) {
-                activity.runOnUiThread(() -> new AlertDialog.Builder(activity)
+                activity.runOnUiThread(() -> styledDialog()
                         .setMessage("查询失败：" + Web3AndroidUtil.safeMessage(e))
                         .setPositiveButton("知道了", null)
                         .show());
@@ -130,13 +134,13 @@ public class MainDialogHelper {
                 activity.runOnUiThread(() -> {
                     activity.appendLog("", "", "✅已为 " + count + " 个旧密钥补全地址");
                     activity.refreshCipherKeyList();
-                    new AlertDialog.Builder(activity)
+                    styledDialog()
                             .setMessage("已为 " + count + " 个密钥补全地址")
                             .setPositiveButton("知道了", null)
                             .show();
                 });
             } catch (Exception e) {
-                activity.runOnUiThread(() -> new AlertDialog.Builder(activity)
+                activity.runOnUiThread(() -> styledDialog()
                         .setMessage("迁移失败：" + Web3AndroidUtil.safeMessage(e))
                         .setPositiveButton("知道了", null)
                         .show());
@@ -148,7 +152,7 @@ public class MainDialogHelper {
 
     // ========== 添加密钥弹窗 ==========
     public void showAddKeyDialog() {
-        AlertDialog.Builder builder = new AlertDialog.Builder(activity);
+        AlertDialog.Builder builder = styledDialog();
         View view = LayoutInflater.from(activity).inflate(R.layout.dialog_add_key, null);
         Spinner spGroupNo = view.findViewById(R.id.sp_group_no);
         EditText etPk1 = view.findViewById(R.id.et_pk_part1);
@@ -187,14 +191,14 @@ public class MainDialogHelper {
             String fullPrivateKey = (part1 + part2).trim();
             String userKeyStr = etUserCrypto.getText().toString().trim();
             if (groupNoInput.isEmpty()) {
-                new AlertDialog.Builder(activity)
+                styledDialog()
                         .setMessage("请选择分组！")
                         .setPositiveButton("知道了", null)
                         .show();
                 return;
             }
             if (fullPrivateKey.isEmpty()) {
-                new AlertDialog.Builder(activity)
+                styledDialog()
                         .setMessage("密钥内容不能为空！")
                         .setPositiveButton("知道了", null)
                         .show();
@@ -220,43 +224,15 @@ public class MainDialogHelper {
         });
     }
 
-    // ========== 查看日志弹窗 ==========
+    // ========== 查看日志 ==========
     public void showViewLogDialog() {
-        new Thread(() -> {
-            String showText;
-            try {
-                List<TaskLogItem> logList = AppLogDbHelper.getInstance(activity).queryAllLogDesc();
-                SimpleDateFormat sdf = new SimpleDateFormat("yyyy‑MM‑dd HH:mm:ss", Locale.getDefault());
-                StringBuilder sb = new StringBuilder();
-                for (TaskLogItem item : logList) {
-                    String timeStr = sdf.format(new Date(item.timeMs));
-                    sb.append("[").append(timeStr).append("]");
-                    if(item.keyNo != null){
-                        sb.append("[").append(item.keyNo).append("]");
-                    }
-                    sb.append(item.content);
-                    sb.append("\n");
-                }
-                showText = sb.length() == 0 ? "暂无日志记录" : sb.toString();
-            } catch (Exception e) {
-                showText = "读取日志异常：" + e.getMessage();
-            }
-            final String finalShow = showText;
-            activity.runOnUiThread(() -> {
-                AlertDialog.Builder builder = new AlertDialog.Builder(activity);
-                View v = LayoutInflater.from(activity).inflate(R.layout.dialog_view_log, null);
-                android.widget.TextView tvLogContent = v.findViewById(R.id.tv_dialog_log_content);
-                tvLogContent.setText(finalShow);
-                builder.setView(v);
-                builder.setPositiveButton("关闭", null);
-                builder.show();
-            });
-        }).start();
+        android.content.Intent intent = new android.content.Intent(activity, LogViewActivity.class);
+        activity.startActivity(intent);
     }
 
     // ========== 解密密码弹窗 ==========
     public void showDecryptPasswordDialog(final MainActivity.PasswordCallback callback) {
-        final AlertDialog.Builder builder = new AlertDialog.Builder(activity);
+        final AlertDialog.Builder builder = styledDialog();
         final View view = LayoutInflater.from(activity).inflate(R.layout.dialog_decrypt_password, null);
         final EditText etPwd = view.findViewById(R.id.et_decrypt_pwd);
         builder.setView(view);
@@ -288,7 +264,7 @@ public class MainDialogHelper {
                         dialog.dismiss();
                         callback.onInputPwd(pwdCharArray);
                     } else {
-                        new AlertDialog.Builder(activity)
+                        styledDialog()
                                 .setTitle("密码错误")
                                 .setMessage("解密密码校验失败，请核对密码后重新输入！")
                                 .setPositiveButton("知道了", null)
@@ -303,10 +279,10 @@ public class MainDialogHelper {
 
     // ========== 安全提醒弹窗 ==========
     public void showSecurityWarningDialog() {
-        new AlertDialog.Builder(activity)
+        styledDialog()
                 .setTitle("安全风险提醒")
-                .setMessage("1.本APP为工具，非硬件钱包\n2.Root设备禁止存放大额资产私钥\n3.解密密码仅内存使用，不会持久化保存\n4.自动清除受手机省电策略影响，APP打开会兜底执行")
-                .setPositiveButton("知道了", null)
+                .setMessage("1. 本APP仅为链上操作工具，不是硬件钱包，请勿存放大额资产私钥\n\n2. 手机若已Root，任何APP都可能读取私钥，存在被盗风险\n\n3. 解密密码仅在运行时使用，关闭APP后即清除，不会保存在手机中\n\n4. 私钥会自动清除，若手机开启了省电/后台限制，清除时间可能延迟，重新打开APP会立即清除")
+                .setPositiveButton("我知道了", null)
                 .show();
     }
 
@@ -320,8 +296,8 @@ public class MainDialogHelper {
 
     // ========== 清空密钥确认 ==========
     public void showConfirmClearAllKey() {
-        new AlertDialog.Builder(activity)
-                .setTitle("⚠确认清空全部密钥")
+        styledDialog()
+                .setTitle("确认清空全部密钥")
                 .setMessage("将删除本地全部保存的密钥密文，不可恢复！")
                 .setPositiveButton("确认清空", (d, w) -> new Thread(() -> {
                     try {
@@ -349,12 +325,12 @@ public class MainDialogHelper {
             }
         }
         if (deletePosList.isEmpty()) {
-            new AlertDialog.Builder(activity)
+            styledDialog()
                     .setMessage("请先在列表勾选需要删除的密钥")
                     .setPositiveButton("知道了", null).show();
             return;
         }
-        new AlertDialog.Builder(activity)
+        styledDialog()
                 .setTitle("确认删除")
                 .setMessage("确定删除选中 " + deletePosList.size() + " 条密钥？该操作不可恢复！")
                 .setPositiveButton("确认删除", (d, w) -> new Thread(() -> {

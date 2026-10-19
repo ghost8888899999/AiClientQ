@@ -21,3 +21,4 @@
 #-renamesourcefileattribute SourceFile
 -dontwarn org.slf4j.impl.StaticLoggerBinder
 -dontwarn org.slf4j.**
+-dontwarn groovy.lang.GroovyShell

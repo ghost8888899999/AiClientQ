@@ -13,7 +13,7 @@
         android:layout_height="wrap_content"
         android:orientation="horizontal"
         android:gravity="center_vertical"
-        android:padding="16dp"
+        android:padding="10dp"
         android:background="#FFFFFF"
         android:elevation="2dp">
 
@@ -53,7 +53,7 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="horizontal"
-        android:padding="12dp"
+        android:padding="0dp"
         android:background="#FFFFFF"
         android:elevation="1dp">
 
@@ -146,9 +146,25 @@
         android:layout_width="match_parent"
         android:layout_height="48dp"
         android:background="#FFFFFF"
+        app:tabMode="fixed"
+        app:tabGravity="fill"
+        app:tabMaxWidth="0dp"
         app:tabIndicatorColor="#1976D2"
         app:tabSelectedTextColor="#1976D2"
-        app:tabTextColor="#757575" />
+        app:tabTextColor="#757575">
+
+        <com.google.android.material.tabs.TabItem
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="当日状态" />
+
+        <com.google.android.material.tabs.TabItem
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="失败列表" />
+    </com.google.android.material.tabs.TabLayout>
 
     <!-- 当日状态表头（始终显示） -->
     <LinearLayout
@@ -256,67 +272,57 @@
         android:layout_height="wrap_content"
         android:orientation="horizontal"
         android:paddingStart="8dp"
-        android:paddingEnd="16dp"
+        android:paddingEnd="8dp"
         android:paddingTop="8dp"
         android:paddingBottom="8dp"
         android:background="#FFFFFF"
         android:elevation="2dp">
 
-        <Button
+        <com.google.android.material.button.MaterialButton
             android:id="@+id/btn_batch_enter"
             android:layout_width="0dp"
-            android:layout_height="44dp"
+            android:layout_height="40dp"
             android:layout_weight="1"
-            android:backgroundTint="#1976D2"
+            app:backgroundTint="#1976D2"
             android:textColor="#ffffff"
-            android:text="🎯 入场"
-            android:textSize="13sp" />
+            android:text="批量入场"
+            android:textSize="12sp"
+            app:icon="@drawable/ic_enter_svg"
+            app:iconGravity="textStart"
+            app:iconSize="16dp"
+            app:iconPadding="4dp" />
 
-        <View android:layout_width="6dp" android:layout_height="0dp" />
+        <View android:layout_width="4dp" android:layout_height="0dp" />
 
-        <Button
+        <com.google.android.material.button.MaterialButton
             android:id="@+id/btn_batch_claim"
             android:layout_width="0dp"
-            android:layout_height="44dp"
+            android:layout_height="40dp"
             android:layout_weight="1"
-            android:backgroundTint="#388E3C"
+            app:backgroundTint="#388E3C"
             android:textColor="#ffffff"
-            android:text="领取"
-            android:textSize="13sp" />
-    </LinearLayout>
+            android:text="批量领取"
+            android:textSize="12sp"
+            app:icon="@drawable/ic_claim_svg"
+            app:iconGravity="textStart"
+            app:iconSize="16dp"
+            app:iconPadding="4dp" />
 
-    <LinearLayout
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:orientation="horizontal"
-        android:paddingStart="4dp"
-        android:paddingEnd="16dp"
-        android:paddingTop="8dp"
-        android:paddingBottom="8dp"
-        android:background="#FFFFFF"
-        android:elevation="2dp">
+        <View android:layout_width="4dp" android:layout_height="0dp" />
 
-        <Button
+        <com.google.android.material.button.MaterialButton
             android:id="@+id/btn_full_workflow"
             android:layout_width="0dp"
-            android:layout_height="44dp"
+            android:layout_height="40dp"
             android:layout_weight="1"
-            android:backgroundTint="#7B1FA2"
+            app:backgroundTint="#7B1FA2"
             android:textColor="#ffffff"
-            android:text="⚡ 完整流程"
-            android:textSize="13sp" />
-
-        <View android:layout_width="6dp" android:layout_height="0dp" />
-
-        <Button
-            android:id="@+id/btn_reset_task"
-            android:layout_width="0dp"
-            android:layout_height="44dp"
-            android:layout_weight="1"
-            android:backgroundTint="#757575"
-            android:textColor="#ffffff"
-            android:text=" 重置"
-            android:textSize="13sp" />
+            android:text="完整流程"
+            android:textSize="12sp"
+            app:icon="@drawable/ic_workflow_svg"
+            app:iconGravity="textStart"
+            app:iconSize="16dp"
+            app:iconPadding="4dp" />
     </LinearLayout>
 
     <!-- 日志区 -->

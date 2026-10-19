@@ -38,5 +38,10 @@
             android:exported="false"
             android:label="私钥管理" />
 
+        <activity
+            android:name=".LogViewActivity"
+            android:exported="false"
+            android:label="运行日志" />
+
     </application>
 </manifest>
