@@ -45,8 +45,8 @@ public class ArenaSquadTask {
         Web3j web3j = null;
         try {
             web3j = Web3AndroidUtil.dialAny();
-            callback.onLog("", "SQUAD", "\n--------Squad 整批入场 · 节点=" + Web3AndroidUtil.currentRpcUrl()
-                    + " · 合约=" + squadAddr.substring(0, 10) + "...--------");
+            callback.onLog("", "SQUAD", "\nSquad 整批入场 · 节点=" + Web3AndroidUtil.currentRpcUrl()
+                    + " · 合约=" + squadAddr.substring(0, 10) + "...");
 
             ECKeyPair masterKeyPair = Web3AndroidUtil.pkToKeyPair(masterPk);
             String masterAddr = Web3AndroidUtil.getAddress(masterKeyPair).toLowerCase();
@@ -140,8 +140,8 @@ public class ArenaSquadTask {
         Web3j web3j = null;
         try {
             web3j = Web3AndroidUtil.dialAny();
-            callback.onLog("", "SQUAD", "\n--------Squad 整批收割 · 节点=" + Web3AndroidUtil.currentRpcUrl()
-                    + " · 合约=" + squadAddr.substring(0, 10) + "...--------");
+            callback.onLog("", "SQUAD", "\nSquad 整批收割 · 节点=" + Web3AndroidUtil.currentRpcUrl()
+                    + " · 合约=" + squadAddr.substring(0, 10) + "...");
 
             ECKeyPair masterKeyPair = Web3AndroidUtil.pkToKeyPair(masterPk);
             String masterAddr = Web3AndroidUtil.getAddress(masterKeyPair).toLowerCase();
@@ -241,7 +241,7 @@ public class ArenaSquadTask {
         Web3j web3j = null;
         try {
             web3j = Web3AndroidUtil.dialAny();
-            callback.onLog("", "DELEGATE", "\n--------EIP-7702 委托 · 目标=" + squadAddr.substring(0, 10) + "...--------");
+            callback.onLog("", "DELEGATE", "\nEIP-7702 委托 · 目标=" + squadAddr.substring(0, 10) + "...");
 
             ECKeyPair masterKeyPair = Web3AndroidUtil.pkToKeyPair(masterPk);
             String masterAddr = Web3AndroidUtil.getAddress(masterKeyPair).toLowerCase();

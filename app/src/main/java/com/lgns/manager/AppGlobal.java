@@ -3,6 +3,7 @@ package com.lgns.manager;
 import android.content.Context;
 
 import com.lgns.model.ArenaConfig;
+import com.lgns.task.TaskLogCallback;
 
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -13,6 +14,7 @@ import java.util.concurrent.atomic.AtomicLong;
 public class AppGlobal {
     private static KeyStoreManager sKeyStoreManager;
     private static volatile Context sAppCtx;
+    private static TaskLogCallback sLogCallback; // 添加日志回调
 
     // 空闲自动上锁
     private static final AtomicLong LAST_ACTIVE_TS = new AtomicLong(System.currentTimeMillis());
@@ -49,6 +51,18 @@ public class AppGlobal {
 
     /** 上层注册空闲回调(如:清空 sessionCryptoKey、禁用批量按钮) */
     public static void setOnIdleLock(Runnable cb) { onIdleLock = cb; }
+
+    // 添加日志回调设置方法
+    public static void setLogCallback(TaskLogCallback callback) {
+        sLogCallback = callback;
+    }
+
+    // 添加配置更改日志方法
+    public static void logConfigChange(String msg) {
+        if (sLogCallback != null) {
+            sLogCallback.onLog(null, "CONFIG", msg);
+        }
+    }
 
     private static synchronized void startIdleLockLoopIfNeeded() {
         if (idleScheduler != null) return;

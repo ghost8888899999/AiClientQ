@@ -8,13 +8,12 @@ import android.widget.ArrayAdapter;
 import android.widget.EditText;
 import android.widget.ImageButton;
 import android.widget.Spinner;
-import android.widget.Switch;
 import android.widget.TextView;
 
+import com.lgns.batch.BatchFundTask;
 import com.lgns.manager.AppGlobal;
 import com.lgns.manager.AppLogDbHelper;
 import com.lgns.service.AutoClearWorker;
-import com.lgns.service.AutoFundService;
 import com.lgns.model.KeyListItem;
 import com.lgns.manager.KeyStoreManager;
 import com.lgns.R;
@@ -38,13 +37,13 @@ public class MainDialogHelper {
         return new AlertDialog.Builder(activity, R.style.AppDialog);
     }
 
-    // ========== 锦标赛统计 ==========
+    // 锦标赛统计
     public void showChampionshipStatsDialog() {
         List<KeyListItem> selectedList = activity.getSelectedKeyItem();
         if (selectedList.isEmpty()) {
             styledDialog()
-                    .setMessage("请先勾选要查询的账号")
-                    .setPositiveButton("知道了", null)
+                    .setMessage(R.string.dialog_select_accounts)
+                    .setPositiveButton(R.string.btn_ok, null)
                     .show();
             return;
         }
@@ -65,9 +64,9 @@ public class MainDialogHelper {
 
         if (missingCount > 0 && addrs.isEmpty()) {
             styledDialog()
-                    .setTitle("地址未生成")
-                    .setMessage("所选账号均为旧密钥，没有地址信息。\n\n请使用菜单「补全密钥地址」输入密码一次性迁移。")
-                    .setPositiveButton("知道了", null)
+                    .setTitle(R.string.dialog_no_addr_title)
+                    .setMessage(R.string.dialog_no_addr_msg)
+                    .setPositiveButton(R.string.btn_ok, null)
                     .show();
             return;
         }
@@ -80,7 +79,7 @@ public class MainDialogHelper {
         activity.startActivity(intent);
     }
 
-    // ========== 一键为旧密钥补全地址 ==========
+    // 一键为旧密钥补全地址
     public void showMigrateAddressesDialog() {
         showDecryptPasswordDialog(pwdCharArray -> new Thread(() -> {
             try {
@@ -100,17 +99,17 @@ public class MainDialogHelper {
                 mgr.saveKeyEntryList(entries);
                 final int count = migrated;
                 activity.runOnUiThread(() -> {
-                    activity.appendLog("", "", "已为 " + count + " 个旧密钥补全地址");
+                    activity.appendLog("", "", activity.getString(R.string.migrate_success_fmt, count));
                     activity.refreshCipherKeyList();
                     styledDialog()
-                            .setMessage("已为 " + count + " 个密钥补全地址")
-                            .setPositiveButton("知道了", null)
+                            .setMessage(activity.getString(R.string.migrate_success_fmt, count))
+                            .setPositiveButton(R.string.btn_ok, null)
                             .show();
                 });
             } catch (Exception e) {
                 activity.runOnUiThread(() -> styledDialog()
-                        .setMessage("迁移失败：" + Web3AndroidUtil.safeMessage(e))
-                        .setPositiveButton("知道了", null)
+                        .setMessage(activity.getString(R.string.migrate_fail_fmt, Web3AndroidUtil.safeMessage(e)))
+                        .setPositiveButton(R.string.btn_ok, null)
                         .show());
             } finally {
                 Arrays.fill(pwdCharArray, (char) 0);
@@ -118,7 +117,7 @@ public class MainDialogHelper {
         }).start());
     }
 
-    // ========== 添加密钥弹窗 ==========
+    // 添加密钥弹窗
     public void showAddKeyDialog() {
         AlertDialog.Builder builder = styledDialog();
         View view = LayoutInflater.from(activity).inflate(R.layout.dialog_add_key, null);
@@ -130,15 +129,9 @@ public class MainDialogHelper {
         ImageButton ivCryptoHelp = view.findViewById(R.id.iv_crypto_help);
 
         ivCryptoHelp.setOnClickListener(v -> styledDialog()
-                .setTitle("密码安全说明")
-                .setMessage("若设备丢失，黑客可拿到加密数据离线暴力破解：\n\n" +
-                        "6 位纯数字 → 约 3~14 小时可破解 ❌\n\n" +
-                        "7 位纯数字 → 约 1~6 天可破解 ❌\n\n" +
-                        "7 位字母+数字 → 约 1100 年 ✅\n\n" +
-                        "8 位字母+数字 → 约 10 万年 ✅✅\n\n" +
-                        "10 位混合 → 千万年级别 ✅✅✅\n\n" +
-                        "建议：至少 7 位字母+数字组合，越长越安全。\n密码仅在内存中使用，关闭 APP 即清除。")
-                .setPositiveButton("知道了", null)
+                .setTitle(R.string.dialog_security_title)
+                .setMessage(R.string.dialog_security_msg)
+                .setPositiveButton(R.string.btn_ok, null)
                 .show());
 
         List<String> groups = activity.loadGroupList();
@@ -161,8 +154,8 @@ public class MainDialogHelper {
             }
         });
         builder.setView(view);
-        builder.setPositiveButton("确认添加", null);
-        builder.setNegativeButton("取消", null);
+        builder.setPositiveButton(R.string.btn_add_confirm, null);
+        builder.setNegativeButton(R.string.btn_cancel, null);
         AlertDialog dialog = builder.create();
         dialog.show();
         dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
@@ -173,15 +166,15 @@ public class MainDialogHelper {
             String userKeyStr = etUserCrypto.getText().toString().trim();
             if (groupNoInput.isEmpty()) {
                 styledDialog()
-                        .setMessage("请选择分组！")
-                        .setPositiveButton("知道了", null)
+                        .setMessage(R.string.dialog_select_group)
+                        .setPositiveButton(R.string.btn_ok, null)
                         .show();
                 return;
             }
             if (fullPrivateKey.isEmpty()) {
                 styledDialog()
-                        .setMessage("密钥内容不能为空！")
-                        .setPositiveButton("知道了", null)
+                        .setMessage(R.string.dialog_key_empty)
+                        .setPositiveButton(R.string.btn_ok, null)
                         .show();
                 return;
             }
@@ -205,20 +198,20 @@ public class MainDialogHelper {
         });
     }
 
-    // ========== 查看日志 ==========
+    // 查看日志
     public void showViewLogDialog() {
         android.content.Intent intent = new android.content.Intent(activity, LogViewActivity.class);
         activity.startActivity(intent);
     }
 
-    // ========== 解密密码弹窗 ==========
+    // 解密密码弹窗
     public void showDecryptPasswordDialog(final MainActivity.PasswordCallback callback) {
         final AlertDialog.Builder builder = styledDialog();
         final View view = LayoutInflater.from(activity).inflate(R.layout.dialog_decrypt_password, null);
         final EditText etPwd = view.findViewById(R.id.et_decrypt_pwd);
         builder.setView(view);
-        builder.setPositiveButton("确认", null);
-        builder.setNegativeButton("取消", null);
+        builder.setPositiveButton(R.string.btn_confirm, null);
+        builder.setNegativeButton(R.string.btn_cancel, null);
         final AlertDialog dialog = builder.create();
         dialog.show();
 
@@ -246,9 +239,9 @@ public class MainDialogHelper {
                         callback.onInputPwd(pwdCharArray);
                     } else {
                         styledDialog()
-                                .setTitle("密码错误")
-                                .setMessage("解密密码校验失败，请核对密码后重新输入！")
-                                .setPositiveButton("知道了", null)
+                                .setTitle(R.string.dialog_pwd_error_title)
+                                .setMessage(R.string.dialog_pwd_error_msg)
+                                .setPositiveButton(R.string.btn_ok, null)
                                 .show();
                     }
                 });
@@ -258,16 +251,16 @@ public class MainDialogHelper {
         dialog.getButton(AlertDialog.BUTTON_NEGATIVE).setOnClickListener(v -> dialog.dismiss());
     }
 
-    // ========== 安全提醒弹窗 ==========
+    // 安全提醒弹窗
     public void showSecurityWarningDialog() {
         styledDialog()
-                .setTitle("安全风险提醒")
-                .setMessage("1. 本APP仅为链上操作工具，不是硬件钱包，请勿存放大额资产私钥\n\n2. 手机若已Root，任何APP都可能读取私钥，存在被盗风险\n\n3. 解密密码仅在运行时使用，关闭APP后即清除，不会保存在手机中\n\n4. 私钥会自动清除，若手机开启了省电/后台限制，清除时间可能延迟，重新打开APP会立即清除")
-                .setPositiveButton("我知道了", null)
+                .setTitle(R.string.dialog_security_warn_title)
+                .setMessage(R.string.dialog_security_warn_msg)
+                .setPositiveButton(R.string.btn_got_it, null)
                 .show();
     }
 
-    // ========== 清空日志确认 ==========
+    // 清空日志确认
     public void showConfirmClearLogDb() {
         new Thread(() -> {
             AppLogDbHelper.getInstance(activity).clearAllLog();
@@ -275,28 +268,29 @@ public class MainDialogHelper {
         }).start();
     }
 
-    // ========== 清空密钥确认 ==========
+    // 清空密钥确认
     public void showConfirmClearAllKey() {
         styledDialog()
-                .setTitle("确认清空全部密钥")
-                .setMessage("将删除本地全部保存的密钥密文，不可恢复！")
-                .setPositiveButton("确认清空", (d, w) -> new Thread(() -> {
+                .setTitle(R.string.dialog_clear_all_title)
+                .setMessage(R.string.dialog_clear_all_msg)
+                .setPositiveButton(R.string.btn_clear_confirm, (d, w) -> new Thread(() -> {
                     try {
                         KeyStoreManager mgr = AppGlobal.getKeyStoreManager();
                         mgr.clearAllKeys();
                         activity.runOnUiThread(() -> {
-                            activity.appendLog("", "", "全部密钥已清空");
+                            activity.appendLog("", "", activity.getString(R.string.log_keys_cleared));
                             activity.refreshCipherKeyList();
                         });
                     } catch (Exception e) {
-                        activity.runOnUiThread(() -> activity.appendLog("", "", "错误：清空密钥异常：" + e.getMessage()));
+                        activity.runOnUiThread(() -> activity.appendLog("", "",
+                                activity.getString(R.string.log_clear_error_fmt, e.getMessage())));
                     }
                 }).start())
-                .setNegativeButton("取消", null)
+                .setNegativeButton(R.string.btn_cancel, null)
                 .show();
     }
 
-    // ========== 删除选中密钥 ==========
+    // 删除选中密钥
     public void removeSelectedKeys() {
         final List<Integer> deletePosList = new ArrayList<>();
         for (int i = 0; i < activity.keyListItemList.size(); i++) {
@@ -307,14 +301,14 @@ public class MainDialogHelper {
         }
         if (deletePosList.isEmpty()) {
             styledDialog()
-                    .setMessage("请先勾选需要删除的密钥")
-                    .setPositiveButton("知道了", null).show();
+                    .setMessage(R.string.dialog_select_delete)
+                    .setPositiveButton(R.string.btn_ok, null).show();
             return;
         }
         styledDialog()
-                .setTitle("确认删除")
-                .setMessage("确定删除选中 " + deletePosList.size() + " 条密钥？该操作不可恢复！")
-                .setPositiveButton("确认删除", (d, w) -> new Thread(() -> {
+                .setTitle(R.string.dialog_delete_title)
+                .setMessage(activity.getString(R.string.dialog_delete_msg_fmt, deletePosList.size()))
+                .setPositiveButton(R.string.btn_delete_confirm, (d, w) -> new Thread(() -> {
                     try {
                         KeyStoreManager mgr = AppGlobal.getKeyStoreManager();
                         for (int i = deletePosList.size() - 1; i >= 0; i--) {
@@ -322,41 +316,42 @@ public class MainDialogHelper {
                             mgr.removeByIndex(pos);
                         }
                         activity.runOnUiThread(() -> {
-                            activity.appendLog("", "", "已删除选中 " + deletePosList.size() + " 条密钥");
+                            activity.appendLog("", "", activity.getString(R.string.log_deleted_fmt, deletePosList.size()));
                             activity.refreshCipherKeyList();
                         });
                     } catch (Exception e) {
-                        activity.runOnUiThread(() -> activity.appendLog("", "", "删除选中密钥异常：" + e.getMessage()));
+                        activity.runOnUiThread(() -> activity.appendLog("", "",
+                                activity.getString(R.string.log_delete_error_fmt, e.getMessage())));
                     }
                 }).start())
-                .setNegativeButton("取消", null)
+                .setNegativeButton(R.string.btn_cancel, null)
                 .show();
     }
 
-    // ========== 批量充值弹窗 ==========
+    // 批量充值弹窗
     public void showBatchFundDialog() {
         new Thread(() -> {
             try {
-                AutoFundService.FundPreviewResult preview = AutoFundService.queryFundPreview(
+                BatchFundTask.FundPreviewResult preview = BatchFundTask.queryFundPreview(
                         activity.getEnabledKeyItems());
 
                 if (!preview.hasMaster) {
                     activity.runOnUiThread(() -> styledDialog()
-                            .setTitle("未设置主号")
-                            .setMessage("请先在私钥管理中编辑某个私钥，勾选「设为主号」")
-                            .setPositiveButton("知道了", null)
+                            .setTitle(R.string.master_not_set_title)
+                            .setMessage(R.string.master_not_set_msg)
+                            .setPositiveButton(R.string.btn_ok, null)
                             .show());
                     return;
                 }
 
-                final AutoFundService.FundPreviewResult fPreview = preview;
+                final BatchFundTask.FundPreviewResult fPreview = preview;
 
                 activity.runOnUiThread(() -> {
                     if (!fPreview.needsFunding()) {
                         styledDialog()
-                                .setTitle("批量充值")
-                                .setMessage("所有账号余额均 ≥ 100，无需充值")
-                                .setPositiveButton("知道了", null)
+                                .setTitle(R.string.fund_no_need_title)
+                                .setMessage(R.string.fund_no_need_msg)
+                                .setPositiveButton(R.string.btn_ok, null)
                                 .show();
                         return;
                     }
@@ -372,28 +367,28 @@ public class MainDialogHelper {
                             .append(fPreview.getTotalNeededFormatted()).append(" fLGNS");
 
                     styledDialog()
-                            .setTitle("批量充值确认")
+                            .setTitle(R.string.fund_confirm_title)
                             .setMessage(sb.toString())
-                            .setPositiveButton("确认充值", (d, w) -> {
+                            .setPositiveButton(R.string.btn_fund_confirm, (d, w) -> {
                                 showDecryptPasswordDialog(pwdCharArray -> new Thread(() -> {
                                     try {
-                                        AutoFundService.executeAutoFund(
+                                        BatchFundTask.executeAutoFund(
                                                 activity.getEnabledKeyItems(), pwdCharArray, activity);
                                     } catch (Exception e) {
                                         activity.runOnUiThread(() -> activity.appendLog("", "FUND",
-                                                "❌ 批量充值失败: " + Web3AndroidUtil.safeMessage(e)));
+                                                activity.getString(R.string.fund_query_fail, Web3AndroidUtil.safeMessage(e))));
                                     } finally {
                                         Arrays.fill(pwdCharArray, (char) 0);
                                     }
                                 }).start());
                             })
-                            .setNegativeButton("取消", null)
+                            .setNegativeButton(R.string.btn_cancel, null)
                             .show();
                 });
             } catch (Exception e) {
                 activity.runOnUiThread(() -> styledDialog()
-                        .setMessage("查询失败: " + Web3AndroidUtil.safeMessage(e))
-                        .setPositiveButton("知道了", null)
+                        .setMessage(activity.getString(R.string.fund_query_fail, Web3AndroidUtil.safeMessage(e)))
+                        .setPositiveButton(R.string.btn_ok, null)
                         .show());
             }
         }).start();

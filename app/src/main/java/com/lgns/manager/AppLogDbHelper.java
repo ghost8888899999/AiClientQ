@@ -12,6 +12,7 @@ import com.lgns.model.FailureLogItem;
 import com.lgns.task.TaskLogItem;
 
 import java.util.ArrayList;
+import java.util.Date;
 import java.util.List;
 
 public class AppLogDbHelper extends SQLiteOpenHelper {
@@ -455,5 +456,35 @@ public class AppLogDbHelper extends SQLiteOpenHelper {
         cv.put(COL_KM_KEY, key);
         cv.put(COL_KM_VALUE, value);
         getWritableDatabase().insertWithOnConflict(TABLE_KEY_META, null, cv, SQLiteDatabase.CONFLICT_REPLACE);
+    }
+
+    // 删除指定时间之前的日志
+    public int deleteLogsOlderThan(long timestamp) {
+        SQLiteDatabase db = getWritableDatabase();
+        String whereClause = COL_TIME + " < ?";
+        String[] whereArgs = {String.valueOf(timestamp)};
+        int deletedRows = db.delete(TABLE_LOG, whereClause, whereArgs);
+        Log.d("AppLogDbHelper", "删除了 " + deletedRows + " 条旧日志 (时间 < " + new Date(timestamp) + ")");
+        return deletedRows;
+    }
+
+    // 删除指定时间之前的当日状态数据
+    public int deleteDailyStatusOlderThan(long timestamp) {
+        SQLiteDatabase db = getWritableDatabase();
+        String whereClause = COL_DS_UPDATED + " < ?";
+        String[] whereArgs = {String.valueOf(timestamp)};
+        int deletedRows = db.delete(TABLE_DAILY_STATUS, whereClause, whereArgs);
+        Log.d("AppLogDbHelper", "删除了 " + deletedRows + " 条旧状态数据 (时间 < " + new Date(timestamp) + ")");
+        return deletedRows;
+    }
+
+    // 删除指定时间之前的失败日志
+    public int deleteFailureLogsOlderThan(long timestamp) {
+        SQLiteDatabase db = getWritableDatabase();
+        String whereClause = COL_FL_TIME + " < ?";
+        String[] whereArgs = {String.valueOf(timestamp)};
+        int deletedRows = db.delete(TABLE_FAILURE_LOG, whereClause, whereArgs);
+        Log.d("AppLogDbHelper", "删除了 " + deletedRows + " 条旧失败日志 (时间 < " + new Date(timestamp) + ")");
+        return deletedRows;
     }
 }

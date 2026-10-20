@@ -1,5 +1,8 @@
 package com.lgns.model;
 
+import android.content.Context;
+import android.content.SharedPreferences;
+
 import java.math.BigInteger;
 
 public class ArenaConfig {
@@ -48,4 +51,43 @@ public class ArenaConfig {
 
     // Pending 状态超过该时长仍未回执,且账户当前 nonce > 记录 nonce → 判为 nonce-consumed
     public static final long PENDING_STALE_SEC = 5 * 60L;
+
+    // 自动清除私钥
+    public static boolean autoClearEnable = false;
+    public static int autoClearIntervalValue = 1; // 默认1
+    public static int autoClearIntervalUnitIndex = 1; // 0=分钟,1=小时,2=天
+
+    // 入场模式
+    public static int playModeIndex = 0; // 0=能打就打,1=按排名打,2=固定人数
+
+    // 自动清除日志
+    public static int logClearIntervalValue = 1; // 默认1天
+    public static int logClearIntervalUnitIndex = 2; // 0=分钟,1=小时,2=天
+
+    // 保存配置
+    public static void saveConfig(Context context) {
+        SharedPreferences sp = context.getSharedPreferences("config", Context.MODE_PRIVATE);
+        SharedPreferences.Editor editor = sp.edit();
+
+        editor.putBoolean("auto_clear_enable", autoClearEnable);
+        editor.putInt("auto_clear_interval_value", autoClearIntervalValue);
+        editor.putInt("auto_clear_interval_unit_index", autoClearIntervalUnitIndex);
+        editor.putInt("play_mode_index", playModeIndex);
+        editor.putInt("log_clear_interval_value", logClearIntervalValue);
+        editor.putInt("log_clear_interval_unit_index", logClearIntervalUnitIndex);
+
+        editor.apply();
+    }
+
+    // 加载配置
+    public static void loadConfig(Context context) {
+        SharedPreferences sp = context.getSharedPreferences("config", Context.MODE_PRIVATE);
+
+        autoClearEnable = sp.getBoolean("auto_clear_enable", false);
+        autoClearIntervalValue = sp.getInt("auto_clear_interval_value", 1);
+        autoClearIntervalUnitIndex = sp.getInt("auto_clear_interval_unit_index", 1);
+        playModeIndex = sp.getInt("play_mode_index", 0);
+        logClearIntervalValue = sp.getInt("log_clear_interval_value", 1);
+        logClearIntervalUnitIndex = sp.getInt("log_clear_interval_unit_index", 2);
+    }
 }

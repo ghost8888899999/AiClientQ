@@ -139,7 +139,7 @@ public class AutoFundService {
                 }
 
                 if (callback != null) {
-                    callback.onLog("", "FUND", "--------批量充值完成，继续入场--------");
+                    callback.onLog("", "FUND", "批量充值完成，继续入场");
                 }
             } finally {
                 try {

@@ -20,13 +20,16 @@ import com.lgns.model.ArenaConfig;
 import com.lgns.model.DailyStatusItem;
 import com.lgns.model.FailureLogItem;
 import com.lgns.model.KeyListItem;
-import com.lgns.task.ArenaTask;
-import com.lgns.service.AutoFundService;
+import com.lgns.batch.BatchFundTask;
+import com.lgns.batch.BatchEnterTask;
+import com.lgns.batch.BatchClaimTask;
+import com.lgns.batch.BatchWorkflowTask;
 import com.lgns.ui.adapter.DailyStatusAdapter;
 import com.lgns.ui.adapter.FailureLogAdapter;
 import com.lgns.manager.KeyStoreManager;
 import com.lgns.helper.MainDialogHelper;
 import com.lgns.helper.MainMenuHelper;
+import com.lgns.helper.MainDataLoader;
 import com.lgns.R;
 import com.lgns.task.TaskLogCallback;
 import com.lgns.util.Web3AndroidUtil;
@@ -48,7 +51,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 
-public class MainActivity extends AppCompatActivity implements TaskLogCallback {
+public class MainActivity extends AppCompatActivity implements TaskLogCallback, BatchFundTask.ButtonStateController {
     public static final int MODE_FLEXIBLE = 0;
     public static final int MODE_TOGETHER = 1;
     private int currentPlayMode;
@@ -63,7 +66,7 @@ public class MainActivity extends AppCompatActivity implements TaskLogCallback {
     private ImageButton btnSettingGear;
     private TextView btnSecurityWarn;
     private TextView tvTokenCount, tvQdCount, tvEnabledCount;
-    private Button btnBatchFund, btnBatchEnter, btnBatchClaim, btnFullWorkflow;
+    private LinearLayout btnBatchFund, btnBatchEnter, btnBatchClaim, btnFullWorkflow;
     private TextView tvLog;
     private ScrollView scrollView;
     private LinearLayout layoutLogHeader;
@@ -103,7 +106,7 @@ public class MainActivity extends AppCompatActivity implements TaskLogCallback {
                 } else {
                     rvDailyStatus.setVisibility(View.GONE);
                     rvFailureList.setVisibility(View.VISIBLE);
-                    tvEmptyStatus.setVisibility(View.GONE);
+                    tvEmptyFailure.setVisibility(View.GONE);
                 }
                 loadTodayStatus();
             }
@@ -140,9 +143,11 @@ public class MainActivity extends AppCompatActivity implements TaskLogCallback {
         bindViews();
         setupButtonEvents();
         setupGearMenu();
-        setupListViewCheckListener();
         checkAutoClearBoot();
         setupIdleLockCallback();
+
+        // 注册 AppGlobal 的日志回调
+        AppGlobal.setLogCallback(this);
 
         new Thread(() -> {
             try {
@@ -183,88 +188,93 @@ public class MainActivity extends AppCompatActivity implements TaskLogCallback {
         });
         scrollView.setVisibility(View.VISIBLE);
 
-        btnBatchFund.setOnClickListener(v -> {
-            if (isTaskRunning) {
-                android.widget.Toast.makeText(this, "任务执行中，请勿重复点击", android.widget.Toast.LENGTH_SHORT).show();
-                return;
-            }
-            showBatchFundDialog();
-        });
+        btnBatchFund.setOnClickListener(v -> handleBatchFundClick());
+        btnBatchEnter.setOnClickListener(v -> handleBatchEnterClick());
+        btnBatchClaim.setOnClickListener(v -> handleBatchClaimClick());
+        btnFullWorkflow.setOnClickListener(v -> handleFullWorkflowClick());
+    }
 
-        btnBatchEnter.setOnClickListener(v -> {
-            if (isTaskRunning) {
-                android.widget.Toast.makeText(this, "任务执行中，请勿重复点击", android.widget.Toast.LENGTH_SHORT).show();
-                return;
-            }
-            List<KeyListItem> enabledList = getEnabledKeyItems();
-            if (enabledList.isEmpty()) {
-                android.widget.Toast.makeText(this, "没有启用的私钥，请先在私钥管理中启用", android.widget.Toast.LENGTH_SHORT).show();
-                return;
-            }
-            Log.d("UI_CLICK","点击【批量入场】按钮");
-            setTaskButtonsEnabled(false);
-            dialogHelper.showDecryptPasswordDialog(pwdCharArray -> new Thread(() -> {
-                try {
-                    ArenaTask.batchEnterAllResume(getApplicationContext(), this, currentPlayMode, enabledList, pwdCharArray);
-                } catch (Exception e) {
-                    runOnUiThread(() -> appendLog("", "ENTER", "批量入场外层异常：" + e.getMessage()));
-                    Log.e("BATCH_ENTER","异常",e);
-                } finally {
-                    Arrays.fill(pwdCharArray, (char) 0);
-                    runOnUiThread(() -> setTaskButtonsEnabled(true));
-                }
-            }).start());
-        });
+    private void handleBatchFundClick() {
+        if (isTaskRunning) {
+            android.widget.Toast.makeText(this, "任务执行中，请勿重复点击", android.widget.Toast.LENGTH_SHORT).show();
+            return;
+        }
+        dialogHelper.showBatchFundDialog();
+    }
 
-        btnBatchClaim.setOnClickListener(v -> {
-            if (isTaskRunning) {
-                android.widget.Toast.makeText(this, "任务执行中，请勿重复点击", android.widget.Toast.LENGTH_SHORT).show();
-                return;
+    private void handleBatchEnterClick() {
+        if (isTaskRunning) {
+            android.widget.Toast.makeText(this, "任务执行中，请勿重复点击", android.widget.Toast.LENGTH_SHORT).show();
+            return;
+        }
+        List<KeyListItem> enabledList = getEnabledKeyItems();
+        if (enabledList.isEmpty()) {
+            android.widget.Toast.makeText(this, "没有启用的私钥，请先在私钥管理中启用", android.widget.Toast.LENGTH_SHORT).show();
+            return;
+        }
+        Log.d("UI_CLICK", "点击【批量入场】按钮");
+        setTaskButtonsEnabled(false);
+        dialogHelper.showDecryptPasswordDialog(pwdCharArray -> new Thread(() -> {
+            try {
+                BatchEnterTask.batchEnterAllResume(getApplicationContext(), this, currentPlayMode, enabledList, pwdCharArray);
+            } catch (Exception e) {
+                runOnUiThread(() -> appendLog("", "ENTER", "批量入场外层异常：" + e.getMessage()));
+                Log.e("BATCH_ENTER", "异常", e);
+            } finally {
+                Arrays.fill(pwdCharArray, (char) 0);
+                runOnUiThread(() -> setTaskButtonsEnabled(true));
             }
-            List<KeyListItem> enabledList = getEnabledKeyItems();
-            if (enabledList.isEmpty()) {
-                android.widget.Toast.makeText(this, "没有启用的私钥，请先在私钥管理中启用", android.widget.Toast.LENGTH_SHORT).show();
-                return;
-            }
-            Log.d("UI_CLICK","点击【批量领取】按钮");
-            setTaskButtonsEnabled(false);
-            dialogHelper.showDecryptPasswordDialog(pwdCharArray -> new Thread(() -> {
-                try {
-                    ArenaTask.batchClaimAllResume(getApplicationContext(), this, currentPlayMode, enabledList, pwdCharArray);
-                } catch (Exception e) {
-                    runOnUiThread(() -> appendLog("", "CLAIM", "错误：批量领取外层异常：" + e.getMessage()));
-                    Log.e("BATCH_CLAIM","异常",e);
-                } finally {
-                    Arrays.fill(pwdCharArray, (char) 0);
-                    runOnUiThread(() -> setTaskButtonsEnabled(true));
-                }
-            }).start());
-        });
+        }).start());
+    }
 
-        btnFullWorkflow.setOnClickListener(v -> {
-            if (isTaskRunning) {
-                android.widget.Toast.makeText(this, "任务执行中，请勿重复点击", android.widget.Toast.LENGTH_SHORT).show();
-                return;
+    private void handleBatchClaimClick() {
+        if (isTaskRunning) {
+            android.widget.Toast.makeText(this, "任务执行中，请勿重复点击", android.widget.Toast.LENGTH_SHORT).show();
+            return;
+        }
+        List<KeyListItem> enabledList = getEnabledKeyItems();
+        if (enabledList.isEmpty()) {
+            android.widget.Toast.makeText(this, "没有启用的私钥，请先在私钥管理中启用", android.widget.Toast.LENGTH_SHORT).show();
+            return;
+        }
+        Log.d("UI_CLICK", "点击【批量领取】按钮");
+        setTaskButtonsEnabled(false);
+        dialogHelper.showDecryptPasswordDialog(pwdCharArray -> new Thread(() -> {
+            try {
+                BatchClaimTask.batchClaimAllResume(getApplicationContext(), this, currentPlayMode, enabledList, pwdCharArray);
+            } catch (Exception e) {
+                runOnUiThread(() -> appendLog("", "CLAIM", "错误：批量领取外层异常：" + e.getMessage()));
+                Log.e("BATCH_CLAIM", "异常", e);
+            } finally {
+                Arrays.fill(pwdCharArray, (char) 0);
+                runOnUiThread(() -> setTaskButtonsEnabled(true));
             }
-            List<KeyListItem> enabledList = getEnabledKeyItems();
-            if (enabledList.isEmpty()) {
-                android.widget.Toast.makeText(this, "没有启用的私钥，请先在私钥管理中启用", android.widget.Toast.LENGTH_SHORT).show();
-                return;
+        }).start());
+    }
+
+    private void handleFullWorkflowClick() {
+        if (isTaskRunning) {
+            android.widget.Toast.makeText(this, "任务执行中，请勿重复点击", android.widget.Toast.LENGTH_SHORT).show();
+            return;
+        }
+        List<KeyListItem> enabledList = getEnabledKeyItems();
+        if (enabledList.isEmpty()) {
+            android.widget.Toast.makeText(this, "没有启用的私钥，请先在私钥管理中启用", android.widget.Toast.LENGTH_SHORT).show();
+            return;
+        }
+        Log.d("UI_CLICK", "点击【完整工作流】按钮");
+        setTaskButtonsEnabled(false);
+        dialogHelper.showDecryptPasswordDialog(pwdCharArray -> new Thread(() -> {
+            try {
+                BatchWorkflowTask.fullArenaWorkflowResume(getApplicationContext(), this, 2, currentPlayMode, enabledList, pwdCharArray);
+            } catch (Exception e) {
+                runOnUiThread(() -> appendLog("", "", "完整工作流外层异常：" + e.getMessage()));
+                Log.e("FULL_WORKFLOW", "异常", e);
+            } finally {
+                Arrays.fill(pwdCharArray, (char) 0);
+                runOnUiThread(() -> setTaskButtonsEnabled(true));
             }
-            Log.d("UI_CLICK","点击【完整工作流】按钮");
-            setTaskButtonsEnabled(false);
-            dialogHelper.showDecryptPasswordDialog(pwdCharArray -> new Thread(() -> {
-                try {
-                    ArenaTask.fullArenaWorkflowResume(getApplicationContext(), this, 2, currentPlayMode, enabledList, pwdCharArray);
-                } catch (Exception e) {
-                    runOnUiThread(() -> appendLog("", "", "完整工作流外层异常：" + e.getMessage()));
-                    Log.e("FULL_WORKFLOW","异常",e);
-                } finally {
-                    Arrays.fill(pwdCharArray, (char) 0);
-                    runOnUiThread(() -> setTaskButtonsEnabled(true));
-                }
-            }).start());
-        });
+        }).start());
     }
 
     private void setTaskButtonsEnabled(boolean enabled) {
@@ -286,9 +296,6 @@ public class MainActivity extends AppCompatActivity implements TaskLogCallback {
         btnSettingGear.setOnClickListener(v -> menuHelper.showCollapseMenu(v));
     }
 
-    private void setupListViewCheckListener() {
-    }
-
     private void checkAutoClearBoot() {
         boolean enable = spAppSetting.getBoolean("auto_clear_enable", false);
         long saveTotalMs = spAppSetting.getLong("auto_clear_ms", 0);
@@ -302,13 +309,12 @@ public class MainActivity extends AppCompatActivity implements TaskLogCallback {
                     KeyStoreManager mgr = AppGlobal.getKeyStoreManager();
                     mgr.clearAllKeys();
                     runOnUiThread(() -> appendLog("", "", "警告：检测到自动清除计时到期，打开 APP 自动清空全部私钥！"));
-                    
-                    // 重置自动清除配置，避免每次启动都重复清除
+
                     spAppSetting.edit()
-                        .putBoolean("auto_clear_enable", false)
-                        .putLong("auto_clear_ms", 0)
-                        .putLong("auto_clear_start_ts", 0)
-                        .apply();
+                            .putBoolean("auto_clear_enable", false)
+                            .putLong("auto_clear_ms", 0)
+                            .putLong("auto_clear_start_ts", 0)
+                            .apply();
                 } catch (Exception ignored) {}
             }).start();
         }
@@ -333,7 +339,6 @@ public class MainActivity extends AppCompatActivity implements TaskLogCallback {
         }));
     }
 
-    // 获取启用的密钥列表
     public List<KeyListItem> getEnabledKeyItems() {
         List<KeyListItem> enabled = new ArrayList<>();
         for (KeyListItem item : keyListItemList) {
@@ -372,275 +377,8 @@ public class MainActivity extends AppCompatActivity implements TaskLogCallback {
     }
 
     public void refreshCipherKeyList() {
-        new Thread(() -> {
-            try {
-                KeyStoreManager mgr = AppGlobal.getKeyStoreManager();
-                List<KeyStoreManager.KeyEntry> originEntryList = mgr.loadKeyEntryList();
-
-                List<KeyStoreManager.KeyEntry> unique = new ArrayList<>();
-                for (KeyStoreManager.KeyEntry e : originEntryList) {
-                    boolean dup = false;
-                    for (KeyStoreManager.KeyEntry u : unique) {
-                        if (u.id == e.id) { dup = true; break; }
-                    }
-                    if (!dup) unique.add(e);
-                }
-                originEntryList = unique;
-
-                List<Long> customSortIds = mgr.getCustomSortIdList();
-                List<KeyStoreManager.KeyEntry> sortedEntryList = new ArrayList<>();
-                for(Long sortId : customSortIds){
-                    for(KeyStoreManager.KeyEntry e : originEntryList){
-                        if(e.id == sortId){ sortedEntryList.add(e); break; }
-                    }
-                }
-                for(KeyStoreManager.KeyEntry e : originEntryList){
-                    boolean exist = false;
-                    for(KeyStoreManager.KeyEntry s : sortedEntryList){
-                        if(s.id == e.id){ exist = true; break; }
-                    }
-                    if(!exist) sortedEntryList.add(e);
-                }
-                keyListItemList.clear();
-                for (int i = 0; i < sortedEntryList.size(); i++) {
-                    KeyStoreManager.KeyEntry entry = sortedEntryList.get(i);
-                    KeyListItem item = new KeyListItem();
-                    item.keyId = entry.id;
-                    item.seqNo = i + 1;
-                    item.displayNo = String.format(Locale.getDefault(), "%03d", entry.id);
-                    item.cipherText = entry.cipherText;
-                    item.address = entry.address;
-                    item.isUsable = true;
-                    item.isChecked = true;
-                    item.customCode = entry.customCode;
-                    item.groupNo = entry.groupNo;
-                    item.enabled = entry.enabled;
-                    keyListItemList.add(item);
-                }
-                runOnUiThread(() -> {
-                    int enabledCount = 0;
-                    for (KeyListItem item : keyListItemList) {
-                        if (item.enabled) enabledCount++;
-                    }
-                    tvEnabledCount.setText(String.valueOf(enabledCount));
-                    tvTokenCount.setText("0");
-                    tvQdCount.setText("0");
-                });
-
-                List<KeyListItem> enabledItems = getEnabledKeyItems();
-                if (!enabledItems.isEmpty()) {
-                    new Thread(() -> {
-                        try {
-                            Web3j web3j = Web3AndroidUtil.dialAny();
-                            List<String> addrs = new ArrayList<>();
-                            for (KeyListItem item : enabledItems) {
-                                if (item.address != null && !item.address.isEmpty()) {
-                                    addrs.add(item.address);
-                                }
-                            }
-                            if (addrs.isEmpty()) {
-                                try { web3j.shutdown(); } catch (Exception ignore) {}
-                                return;
-                            }
-                            Map<String, ArenaContractApi.PlayerSummary> summaries =
-                                    ArenaContractApi.callPlayerSummaryBatch(web3j, addrs);
-                            try { web3j.shutdown(); } catch (Exception ignore) {}
-
-                            long totalTokens = 0;
-                            long totalQd = 0;
-                            for (ArenaContractApi.PlayerSummary s : summaries.values()) {
-                                if (s.walletBalance != null) {
-                                    totalTokens += s.walletBalance.longValue();
-                                }
-                                if (s.championships != null) {
-                                    totalQd += s.championships.longValue();
-                                }
-                            }
-                            final String tokenStr = formatToken(totalTokens);
-                            final String qdStr = String.valueOf(totalQd);
-                            runOnUiThread(() -> {
-                                tvTokenCount.setText(tokenStr);
-                                tvQdCount.setText(qdStr);
-                            });
-                        } catch (Throwable t) {
-                            runOnUiThread(() -> appendLog("", "", "查询链上数据异常：" + t.getClass().getSimpleName()));
-                        }
-                    }).start();
-                }
-            } catch (Exception e) {
-                runOnUiThread(() -> appendLog("", "", "错误：刷新密钥列表异常：" + e.getMessage()));
-            }
-        }).start();
-    }
-
-
-    public void showBatchFundDialog() {
-        if (isTaskRunning) {
-            android.widget.Toast.makeText(this, "任务执行中，请勿重复点击", android.widget.Toast.LENGTH_SHORT).show();
-            return;
-        }
-        setTaskButtonsEnabled(false);
-        new Thread(() -> {
-            try {
-                KeyStoreManager mgr = AppGlobal.getKeyStoreManager();
-                long masterId = mgr.getMasterAccountId();
-                if (masterId < 0) {
-                    runOnUiThread(() -> {
-                        dialogHelper.styledDialog()
-                                .setTitle("未设置主号")
-                                .setMessage("请先在私钥管理中编辑某个私钥，勾选「设为主号」")
-                                .setPositiveButton("知道了", (d, w) -> setTaskButtonsEnabled(true))
-                                .setOnCancelListener(d -> setTaskButtonsEnabled(true))
-                                .show();
-                    });
-                    return;
-                }
-
-                KeyStoreManager.KeyEntry masterEntry = null;
-                List<KeyStoreManager.KeyEntry> allEntries = mgr.loadKeyEntryList();
-                for (KeyStoreManager.KeyEntry e : allEntries) {
-                    if (e.id == masterId) { masterEntry = e; break; }
-                }
-                if (masterEntry == null || masterEntry.address == null) {
-                    runOnUiThread(() -> {
-                        dialogHelper.styledDialog()
-                                .setMessage("主号信息异常，请重新设置")
-                                .setPositiveButton("知道了", (d, w) -> setTaskButtonsEnabled(true))
-                                .setOnCancelListener(d -> setTaskButtonsEnabled(true))
-                                .show();
-                    });
-                    return;
-                }
-
-                final KeyStoreManager.KeyEntry fMasterEntry = masterEntry;
-
-                Web3j web3j = Web3AndroidUtil.dialAny();
-                try {
-                    BigInteger masterBalance = ArenaContractApi.callErc20Balance(web3j, masterEntry.address);
-                    BigDecimal masterBalF = new BigDecimal(masterBalance)
-                            .divide(new BigDecimal(BigInteger.TEN.pow(18)), 2, java.math.RoundingMode.HALF_UP);
-
-                    List<String> needFundAddrs = new ArrayList<>();
-                    List<String> needFundLabels = new ArrayList<>();
-                    BigInteger totalNeeded = BigInteger.ZERO;
-
-                    for (KeyListItem item : getEnabledKeyItems()) {
-                        if (item.address == null || item.address.equalsIgnoreCase(masterEntry.address)) continue;
-                        BigInteger bal = ArenaContractApi.callErc20Balance(web3j, item.address);
-                        if (bal.compareTo(ArenaConfig.ENTRY_FEE) < 0) {
-                            BigInteger diff = ArenaConfig.ENTRY_FEE.subtract(bal);
-                            totalNeeded = totalNeeded.add(diff);
-                            String no = (item.customCode != null && !item.customCode.isEmpty())
-                                    ? item.customCode : item.displayNo;
-                            BigDecimal balF = new BigDecimal(bal)
-                                    .divide(new BigDecimal(BigInteger.TEN.pow(18)), 2, java.math.RoundingMode.HALF_UP);
-                            needFundAddrs.add(item.address);
-                            needFundLabels.add(no + " (余额:" + balF + ")");
-                        }
-                    }
-
-                    final List<String> fAddrs = needFundAddrs;
-                    final List<String> fLabels = needFundLabels;
-                    final BigInteger fTotal = totalNeeded;
-                    final String fMasterAddr = masterEntry.address;
-                    final BigDecimal fMasterBal = masterBalF;
-                    final BigDecimal fTotalF = new BigDecimal(fTotal)
-                            .divide(new BigDecimal(BigInteger.TEN.pow(18)), 2, java.math.RoundingMode.HALF_UP);
-
-                    runOnUiThread(() -> {
-                        if (fAddrs.isEmpty()) {
-                            dialogHelper.styledDialog()
-                                    .setTitle("批量充值")
-                                    .setMessage("所有账号余额均 ≥ 100，无需充值")
-                                    .setPositiveButton("知道了", (d, w) -> setTaskButtonsEnabled(true))
-                                    .setOnCancelListener(d -> setTaskButtonsEnabled(true))
-                                    .show();
-                            return;
-                        }
-
-                        StringBuilder sb = new StringBuilder();
-                        sb.append("主号: ").append(fMasterAddr.substring(0, 10)).append("...\n");
-                        sb.append("主号余额: ").append(fMasterBal).append(" fLGNS\n\n");
-                        sb.append("以下账号需要补齐到 100：\n");
-                        for (int i = 0; i < fLabels.size(); i++) {
-                            sb.append("  ").append(i + 1).append(". ").append(fLabels.get(i)).append("\n");
-                        }
-                        sb.append("\n共 ").append(fAddrs.size()).append(" 个账号，需转入合计 ")
-                                .append(fTotalF).append(" fLGNS");
-
-                        dialogHelper.styledDialog()
-                                .setTitle("批量充值确认")
-                                .setMessage(sb.toString())
-                                .setPositiveButton("确认充值", (d, w) -> {
-                                    dialogHelper.showDecryptPasswordDialog(pwdCharArray -> new Thread(() -> {
-                                        try {
-                                            KeyStoreManager ksMgr = AppGlobal.getKeyStoreManager();
-                                            String masterPk = ksMgr.decryptCipherText(fMasterEntry.cipherText, pwdCharArray);
-                                            ECKeyPair masterKeyPair = Web3AndroidUtil.pkToKeyPair(masterPk);
-                                            String masterAddr = Web3AndroidUtil.getAddress(masterKeyPair);
-
-                                            Web3j w3 = Web3AndroidUtil.dialAny();
-                                            BigInteger gasPrice = w3.ethGasPrice().send().getGasPrice();
-                                            BigInteger nonce = w3.ethGetTransactionCount(masterAddr,
-                                                    DefaultBlockParameterName.PENDING).send().getTransactionCount();
-
-                                            for (int i = 0; i < fAddrs.size(); i++) {
-                                                if (Web3AndroidUtil.isCancelRequested()) break;
-                                                String addr = fAddrs.get(i);
-                                                final int index = i;
-                                                BigInteger bal = ArenaContractApi.callErc20Balance(w3, addr);
-                                                if (bal.compareTo(ArenaConfig.ENTRY_FEE) >= 0) {
-                                                    final String label = fLabels.get(index);
-                                                    runOnUiThread(() -> appendLog("", "FUND",
-                                                            "➖ " + label + " 余额已够,跳过"));
-                                                    continue;
-                                                }
-                                                BigInteger diff = ArenaConfig.ENTRY_FEE.subtract(bal);
-                                                try {
-                                                    ArenaContractApi.doErc20Transfer(w3, masterKeyPair,
-                                                            addr, diff, nonce, gasPrice);
-                                                    nonce = nonce.add(BigInteger.ONE);
-                                                    final String label = fLabels.get(index);
-                                                    final BigDecimal amount = new BigDecimal(diff).divide(
-                                                            new BigDecimal(BigInteger.TEN.pow(18)),
-                                                            2, java.math.RoundingMode.HALF_UP);
-                                                    runOnUiThread(() -> appendLog("", "FUND",
-                                                            "✅ " + label + " 转入 " + amount + " fLGNS"));
-                                                } catch (Exception e) {
-                                                    final String label = fLabels.get(index);
-                                                    runOnUiThread(() -> appendLog("", "FUND",
-                                                            "❌ " + label + " 转账失败: " +
-                                                                    Web3AndroidUtil.safeMessage(e)));
-                                                }
-                                            }
-                                            runOnUiThread(() -> appendLog("", "FUND",
-                                                    "--------批量充值结束--------"));
-                                        } catch (Exception e) {
-                                            runOnUiThread(() -> appendLog("", "FUND",
-                                                    "❌ 批量充值失败: " + Web3AndroidUtil.safeMessage(e)));
-                                        } finally {
-                                            Arrays.fill(pwdCharArray, (char) 0);
-                                            runOnUiThread(() -> setTaskButtonsEnabled(true));
-                                        }
-                                    }).start());
-                                })
-                                .setNegativeButton("取消", (d, w) -> setTaskButtonsEnabled(true))
-                                .setOnCancelListener(d -> setTaskButtonsEnabled(true))
-                                .show();
-                    });
-                } finally {
-                    web3j.shutdown();
-                }
-            } catch (Exception e) {
-                runOnUiThread(() -> {
-                    dialogHelper.styledDialog()
-                            .setMessage("查询失败: " + Web3AndroidUtil.safeMessage(e))
-                            .setPositiveButton("知道了", (d, w) -> setTaskButtonsEnabled(true))
-                            .setOnCancelListener(d -> setTaskButtonsEnabled(true))
-                            .show();
-                });
-            }
-        }).start();
+        MainDataLoader.refreshCipherKeyList(this, this, keyListItemList,
+                tvEnabledCount, tvTokenCount, tvQdCount);
     }
 
     @Override
@@ -660,8 +398,8 @@ public class MainActivity extends AppCompatActivity implements TaskLogCallback {
         new Thread(() -> AppLogDbHelper.getInstance(this).insertLog(safeKeyNo, safeType, msg, timeMs)).start();
     }
 
-    public void appendLog(String unusedKeyNo, String unusedType, String msg) {
-        onLog(unusedKeyNo, unusedType, msg);
+    public void appendLog(String keyNo, String type, String msg) {
+        onLog(keyNo, type, msg);
     }
 
     public interface PasswordCallback {
@@ -670,12 +408,14 @@ public class MainActivity extends AppCompatActivity implements TaskLogCallback {
 
     public MainDialogHelper getDialogHelper() { return dialogHelper; }
 
-    private String formatToken(long weiAmount) {
-        if (weiAmount == 0) return "0";
-        java.math.BigDecimal wei = java.math.BigDecimal.valueOf(weiAmount);
-        java.math.BigDecimal divisor = java.math.BigDecimal.TEN.pow(18);
-        java.math.BigDecimal result = wei.divide(divisor, 2, java.math.RoundingMode.DOWN);
-        return result.toPlainString();
+    @Override
+    public boolean isRunning() {
+        return isTaskRunning;
+    }
+
+    @Override
+    public void setRunning(boolean running) {
+        setTaskButtonsEnabled(!running);
     }
 
     @Override
@@ -694,7 +434,7 @@ public class MainActivity extends AppCompatActivity implements TaskLogCallback {
         checkAutoClearBoot();
         refreshCipherKeyList();
         loadTodayStatus();
-        android.util.Log.d("MainActivity", "onResume: loadTodayStatus called");
+        Log.d("MainActivity", "onResume: loadTodayStatus called");
     }
 
     @Override
@@ -748,11 +488,11 @@ public class MainActivity extends AppCompatActivity implements TaskLogCallback {
         new Thread(() -> {
             try {
                 String today = new SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(new Date());
-                android.util.Log.d("MainActivity", "loadTodayStatus: querying date=" + today);
+                Log.d("MainActivity", "loadTodayStatus: querying date=" + today);
                 AppLogDbHelper db = AppLogDbHelper.getInstance(this);
                 List<DailyStatusItem> statusList = db.queryDailyStatus(today);
                 List<FailureLogItem> failList = db.queryFailureLog(today);
-                android.util.Log.d("MainActivity", "loadTodayStatus: statusCount=" + statusList.size() + ", failCount=" + failList.size());
+                Log.d("MainActivity", "loadTodayStatus: statusCount=" + statusList.size() + ", failCount=" + failList.size());
                 runOnUiThread(() -> {
                     dailyStatusAdapter.setItemList(statusList);
                     dailyStatusAdapter.notifyDataSetChanged();
@@ -769,7 +509,7 @@ public class MainActivity extends AppCompatActivity implements TaskLogCallback {
                     }
                 });
             } catch (Exception e) {
-                android.util.Log.e("MainActivity", "loadTodayStatus error", e);
+                Log.e("MainActivity", "loadTodayStatus error", e);
             }
         }).start();
     }

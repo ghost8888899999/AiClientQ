@@ -1,156 +1,143 @@
 package com.lgns.ui.activity;
 
-import android.content.SharedPreferences;
 import android.os.Bundle;
+import android.util.Log;
 import android.view.View;
-import android.widget.ArrayAdapter;
 import android.widget.EditText;
-import android.widget.ImageButton;
-import android.widget.LinearLayout;
 import android.widget.Spinner;
-import android.widget.Switch;
 import android.widget.TextView;
 import android.widget.Toast;
 
 import androidx.appcompat.app.AppCompatActivity;
-import androidx.work.ExistingPeriodicWorkPolicy;
-import androidx.work.PeriodicWorkRequest;
-import androidx.work.WorkManager;
+import androidx.appcompat.widget.SwitchCompat;
 
 import com.lgns.R;
-import com.lgns.service.AutoClearWorker;
-
-import java.util.concurrent.TimeUnit;
+import com.lgns.model.ArenaConfig;  // 修复导入路径
+import com.lgns.manager.AppLogDbHelper;
+import com.lgns.manager.AppGlobal;
 
 public class AutoClearConfigActivity extends AppCompatActivity {
 
-    private static final String[] UNIT_ARRAY = {"分钟", "小时", "天"};
-    private static final long MIN_ALLOW_MINUTE = 15;
-    private static final String WORK_AUTO_CLEAR = "work_auto_clear_task";
-
-    private SharedPreferences spAppSetting;
-    private Switch swAutoEnable;
-    private EditText etVal;
-    private Spinner spUnit;
-    private TextView tvStatus;
-    private LinearLayout layoutTimeSetting;
+    private SwitchCompat swAutoEnable;  // 使用 SwitchCompat
+    private EditText etAutoClearVal;
+    private Spinner spTimeUnit;
+    private Spinner spPlayMode;  // 确保这里是 Spinner 类型
+    private EditText etLogClearVal;
+    private Spinner spLogTimeUnit;
+    private TextView btnSave;  // 使用 TextView
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_auto_clear);
 
-        spAppSetting = getSharedPreferences("app_setting", MODE_PRIVATE);
-
-        swAutoEnable = findViewById(R.id.sw_auto_enable);
-        etVal = findViewById(R.id.et_auto_clear_val);
-        spUnit = findViewById(R.id.sp_time_unit);
-        tvStatus = findViewById(R.id.tv_auto_clear_status);
-        layoutTimeSetting = findViewById(R.id.layout_time_setting);
-        TextView btnSave = findViewById(R.id.btn_save_auto_clear);
-        ImageButton btnBack = findViewById(R.id.btn_back);
-
-        ArrayAdapter<String> unitAdapter = new ArrayAdapter<>(this, R.layout.layout_spinner_item, UNIT_ARRAY);
-        unitAdapter.setDropDownViewResource(R.layout.layout_spinner_dropdown_item);
-        spUnit.setAdapter(unitAdapter);
-
-        loadCurrentConfig();
-
-        btnBack.setOnClickListener(v -> finish());
-
-        swAutoEnable.setOnCheckedChangeListener((buttonView, checked) -> {
-            etVal.setEnabled(checked);
-            spUnit.setEnabled(checked);
-            layoutTimeSetting.setAlpha(checked ? 1.0f : 0.5f);
-            updateStatusText(checked);
-        });
-
-        btnSave.setOnClickListener(v -> saveConfig());
+        initViews();
+        loadConfigs();
     }
 
-    private void loadCurrentConfig() {
-        boolean isEnable = spAppSetting.getBoolean("auto_clear_enable", false);
-        long oldMs = spAppSetting.getLong("auto_clear_ms", 0);
-
-        swAutoEnable.setChecked(isEnable);
-        if (oldMs > 0) {
-            if (oldMs >= 1000L * 60 * 60 * 24) {
-                etVal.setText(String.valueOf(oldMs / (1000L * 60 * 60 * 24)));
-                spUnit.setSelection(2);
-            } else if (oldMs >= 1000L * 60 * 60) {
-                etVal.setText(String.valueOf(oldMs / (1000L * 60 * 60)));
-                spUnit.setSelection(1);
-            } else {
-                etVal.setText(String.valueOf(oldMs / (1000L * 60)));
-                spUnit.setSelection(0);
-            }
-        }
-
-        etVal.setEnabled(isEnable);
-        spUnit.setEnabled(isEnable);
-        layoutTimeSetting.setAlpha(isEnable ? 1.0f : 0.5f);
-        updateStatusText(isEnable);
+    private void initViews() {
+        // 绑定返回按钮并设置点击事件
+        findViewById(R.id.btn_back).setOnClickListener(v -> onBackPressed());
+        swAutoEnable = findViewById(R.id.sw_auto_enable);  // SwitchCompat
+        etAutoClearVal = findViewById(R.id.et_auto_clear_val);
+        spTimeUnit = findViewById(R.id.sp_time_unit);
+        spPlayMode = findViewById(R.id.sp_play_mode);  // Spinner
+        etLogClearVal = findViewById(R.id.et_log_clear_val);
+        spLogTimeUnit = findViewById(R.id.sp_log_time_unit);
+        btnSave = findViewById(R.id.btn_save_auto_clear);  // TextView
+        btnSave.setOnClickListener(v -> saveConfigs());
     }
 
-    private void updateStatusText(boolean enabled) {
-        if (enabled) {
-            tvStatus.setText("已启用，到达时长会自动清除私钥");
-            tvStatus.setTextColor(0xFF4CAF50);
-        } else {
-            tvStatus.setText("已关闭（配置已保存，不会校验清除）");
-            tvStatus.setTextColor(0xFF9E9E9E);
-        }
+    private void loadConfigs() {
+        ArenaConfig.loadConfig(this); // 确保加载最新配置
+        swAutoEnable.setChecked(ArenaConfig.autoClearEnable);
+        etAutoClearVal.setText(String.valueOf(ArenaConfig.autoClearIntervalValue));
+        spTimeUnit.setSelection(ArenaConfig.autoClearIntervalUnitIndex);
+        spPlayMode.setSelection(ArenaConfig.playModeIndex);  // 正确使用 Spinner
+        etLogClearVal.setText(String.valueOf(ArenaConfig.logClearIntervalValue));
+        spLogTimeUnit.setSelection(ArenaConfig.logClearIntervalUnitIndex);
     }
 
-    private void saveConfig() {
-        boolean newEnable = swAutoEnable.isChecked();
-        if (!newEnable) {
-            spAppSetting.edit().putBoolean("auto_clear_enable", false).apply();
-            WorkManager.getInstance(getApplicationContext()).cancelUniqueWork(WORK_AUTO_CLEAR);
-            Toast.makeText(this, "已禁用自动清除", Toast.LENGTH_SHORT).show();
-            updateStatusText(false);
-            return;
-        }
-
-        String valStr = etVal.getText().toString().trim();
-        if (valStr.isEmpty()) {
-            Toast.makeText(this, "请输入时间数值，最小15", Toast.LENGTH_SHORT).show();
-            return;
-        }
-
-        int val;
+    private void saveConfigs() {
         try {
-            val = Integer.parseInt(valStr);
-        } catch (Exception e) {
-            Toast.makeText(this, "请输入合法数字", Toast.LENGTH_SHORT).show();
-            return;
+            int intervalValue = Integer.parseInt(etAutoClearVal.getText().toString());
+            if (intervalValue <= 0) {
+                Toast.makeText(this, "清除间隔必须大于0", Toast.LENGTH_SHORT).show();
+                return;
+            }
+
+            int logIntervalValue = Integer.parseInt(etLogClearVal.getText().toString());
+            if (logIntervalValue <= 0) {
+                Toast.makeText(this, "日志清除间隔必须大于0", Toast.LENGTH_SHORT).show();
+                return;
+            }
+
+            ArenaConfig.autoClearEnable = swAutoEnable.isChecked();
+            ArenaConfig.autoClearIntervalValue = intervalValue;
+            ArenaConfig.autoClearIntervalUnitIndex = spTimeUnit.getSelectedItemPosition();
+            ArenaConfig.playModeIndex = spPlayMode.getSelectedItemPosition();  // 正确使用 Spinner
+            ArenaConfig.logClearIntervalValue = logIntervalValue;
+            ArenaConfig.logClearIntervalUnitIndex = spLogTimeUnit.getSelectedItemPosition();
+
+            ArenaConfig.saveConfig(this);
+            
+            // 创建配置日志信息
+            String configLog = "系统配置已保存: " +
+                    "自动清除=" + (ArenaConfig.autoClearEnable ? "开启" : "关闭") + ", " +
+                    "清除间隔=" + ArenaConfig.autoClearIntervalValue + " " + getTimeUnitText(ArenaConfig.autoClearIntervalUnitIndex) + ", " +
+                    "入场模式=" + getPlayModeText(ArenaConfig.playModeIndex) + ", " +
+                    "日志清除=" + ArenaConfig.logClearIntervalValue + " " + getTimeUnitText(ArenaConfig.logClearIntervalUnitIndex);
+            
+            // 添加日志到数据库
+            AppLogDbHelper dbHelper = AppLogDbHelper.getInstance(this);
+            long result = dbHelper.insertLog(null, "CONFIG", configLog, System.currentTimeMillis());
+            if (result == -1) {
+                Log.e("AutoClearConfigActivity", "插入日志失败: " + configLog);
+            } else {
+                Log.d("AutoClearConfigActivity", "插入日志成功，ID: " + result + ", 内容: " + configLog);
+            }
+            
+            // 设置 AppGlobal 的日志回调（如果当前在 MainActivity 中）
+            AppGlobal.setLogCallback((keyNo, type, msg) -> {
+                // 在主线程中更新UI
+                runOnUiThread(() -> {
+                    Toast.makeText(AutoClearConfigActivity.this, msg, Toast.LENGTH_SHORT).show();
+                });
+            });
+            
+            // 尝试通过 AppGlobal 发送日志到主界面
+            AppGlobal.logConfigChange(configLog);
+            
+            // 显示 Toast 提示
+            Toast.makeText(this, "配置已保存", Toast.LENGTH_SHORT).show();
+            Log.d("AutoClearConfigActivity", configLog); // 添加日志记录
+            
+        } catch (NumberFormatException e) {
+            Toast.makeText(this, "请输入有效的数字", Toast.LENGTH_SHORT).show();
+            Log.e("AutoClearConfigActivity", "数字格式错误", e);
         }
+    }
 
-        int selPos = spUnit.getSelectedItemPosition();
-        long oneUnitMs, inputMinute;
-        if (selPos == 0) { oneUnitMs = 60 * 1000L; inputMinute = val; }
-        else if (selPos == 1) { oneUnitMs = 60 * 60 * 1000L; inputMinute = val * 60L; }
-        else { oneUnitMs = 24 * 60 * 60 * 1000L; inputMinute = val * 24 * 60L; }
-
-        if (inputMinute < MIN_ALLOW_MINUTE) {
-            Toast.makeText(this, "最小设置15分钟！", Toast.LENGTH_SHORT).show();
-            return;
+    // 辅助方法：获取时间单位文本
+    private String getTimeUnitText(int unitIndex) {
+        String[] timeUnits = getResources().getStringArray(R.array.time_unit_array);
+        if (unitIndex >= 0 && unitIndex < timeUnits.length) {
+            return timeUnits[unitIndex];
         }
+        return "小时"; // 默认值
+    }
 
-        spAppSetting.edit().putBoolean("auto_clear_enable", true)
-                .putLong("auto_clear_ms", val * oneUnitMs)
-                .putLong("auto_clear_start_ts", System.currentTimeMillis()).apply();
+    // 辅助方法：获取入场模式文本
+    private String getPlayModeText(int modeIndex) {
+        String[] playModes = getResources().getStringArray(R.array.play_mode_array);
+        if (modeIndex >= 0 && modeIndex < playModes.length) {
+            return playModes[modeIndex];
+        }
+        return "能打就打"; // 默认值
+    }
 
-        PeriodicWorkRequest req = new PeriodicWorkRequest.Builder(
-                AutoClearWorker.class,
-                Math.max(inputMinute, MIN_ALLOW_MINUTE),
-                TimeUnit.MINUTES).build();
-
-        WorkManager.getInstance(getApplicationContext())
-                .enqueueUniquePeriodicWork(WORK_AUTO_CLEAR,
-                        ExistingPeriodicWorkPolicy.UPDATE, req);
-
-        Toast.makeText(this, "自动清除设置完成：" + val + " " + UNIT_ARRAY[selPos], Toast.LENGTH_SHORT).show();
-        updateStatusText(true);
+    public void showCurrentStatus(View view) {
+        String status = ArenaConfig.autoClearEnable ? "已开启" : "已关闭";
+        Toast.makeText(this, "自动清除状态: " + status, Toast.LENGTH_SHORT).show();
     }
 }

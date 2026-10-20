@@ -1,523 +1,173 @@
 <?xml version="1.0" encoding="utf-8"?>
-<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="wrap_content"
     android:layout_height="wrap_content"
+    android:orientation="vertical"
     android:background="@drawable/popup_window_bg"
-    android:minWidth="240dp"
-    android:maxWidth="300dp"
-    android:scrollbars="none">
+    android:paddingTop="6dp"
+    android:paddingBottom="6dp">
 
     <LinearLayout
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:orientation="vertical"
-        android:padding="8dp">
+        android:id="@+id/menu_key_manage"
+        android:layout_width="wrap_content"
+        android:layout_height="44dp"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:clickable="true"
+        android:focusable="true"
+        android:background="?attr/selectableItemBackground"
+        android:paddingStart="16dp"
+        android:paddingEnd="16dp">
 
-        <!-- ===== 私钥管理 ===== -->
-        <LinearLayout
-            android:id="@+id/group_key_title"
-            android:layout_width="match_parent"
-            android:layout_height="42dp"
-            android:orientation="horizontal"
-            android:gravity="center_vertical"
-            android:clickable="true"
-            android:focusable="true"
-            android:background="@drawable/bg_menu_group_header"
-            android:paddingStart="12dp"
-            android:paddingEnd="8dp">
+        <ImageView
+            android:layout_width="18dp"
+            android:layout_height="18dp"
+            android:src="@drawable/ic_menu_key_svg" />
 
-            <ImageView
-                android:layout_width="20dp"
-                android:layout_height="20dp"
-                android:src="@drawable/ic_menu_key_svg"/>
-
-            <TextView
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:layout_marginStart="10dp"
-                android:text="私钥管理"
-                android:textColor="#1976D2"
-                android:textSize="14sp"
-                android:textStyle="bold"/>
-
-            <ImageView
-                android:id="@+id/iv_arrow_key"
-                android:layout_width="18dp"
-                android:layout_height="18dp"
-                android:src="@drawable/ic_arrow_expand_svg"/>
-        </LinearLayout>
-
-        <LinearLayout
-            android:id="@+id/group_key_container"
-            android:layout_width="match_parent"
+        <TextView
+            android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:orientation="vertical"
-            android:visibility="gone"
-            android:layout_marginStart="8dp"
-            android:layout_marginEnd="8dp">
-
-            <LinearLayout
-                android:id="@+id/menu_add_key"
-                android:layout_width="match_parent"
-                android:layout_height="40dp"
-                android:orientation="horizontal"
-                android:gravity="center_vertical"
-                android:clickable="true"
-                android:focusable="true"
-                android:background="@drawable/bg_menu_item_ripple"
-                android:paddingStart="12dp"
-                android:paddingEnd="8dp">
-
-                <ImageView
-                    android:layout_width="18dp"
-                    android:layout_height="18dp"
-                    android:src="@drawable/ic_menu_key_svg"/>
-
-                <TextView
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:layout_marginStart="12dp"
-                    android:textColor="#424242"
-                    android:textSize="14sp"/>
-            </LinearLayout>
-
-            <View android:layout_width="match_parent" android:layout_height="0.5dp" android:background="#F0F0F0"/>
-        </LinearLayout>
-
-        <View android:layout_width="match_parent" android:layout_height="6dp"/>
-
-        <!-- ===== 分组管理 ===== -->
-        <LinearLayout
-            android:id="@+id/group_mgmt_title"
-            android:layout_width="match_parent"
-            android:layout_height="42dp"
-            android:orientation="horizontal"
-            android:gravity="center_vertical"
-            android:clickable="true"
-            android:focusable="true"
-            android:background="@drawable/bg_menu_group_header"
-            android:paddingStart="12dp"
-            android:paddingEnd="8dp">
-
-            <ImageView
-                android:layout_width="20dp"
-                android:layout_height="20dp"
-                android:src="@drawable/ic_menu_group_svg"/>
-
-            <TextView
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:layout_marginStart="10dp"
-                android:text="分组管理"
-                android:textColor="#1976D2"
-                android:textSize="14sp"
-                android:textStyle="bold"/>
-
-            <ImageView
-                android:id="@+id/iv_arrow_mgmt"
-                android:layout_width="18dp"
-                android:layout_height="18dp"
-                android:src="@drawable/ic_arrow_expand_svg"/>
-        </LinearLayout>
-
-        <LinearLayout
-            android:id="@+id/group_mgmt_container"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="vertical"
-            android:visibility="gone"
-            android:layout_marginStart="8dp"
-            android:layout_marginEnd="8dp">
-
-            <LinearLayout
-                android:id="@+id/menu_add_group"
-                android:layout_width="match_parent"
-                android:layout_height="40dp"
-                android:orientation="horizontal"
-                android:gravity="center_vertical"
-                android:clickable="true"
-                android:focusable="true"
-                android:background="@drawable/bg_menu_item_ripple"
-                android:paddingStart="12dp"
-                android:paddingEnd="8dp">
-
-                <ImageView
-                    android:layout_width="18dp"
-                    android:layout_height="18dp"
-                    android:src="@drawable/ic_menu_group_svg"/>
-
-                <TextView
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:layout_marginStart="12dp"
-                    android:textColor="#424242"
-                    android:textSize="14sp"/>
-            </LinearLayout>
-
-            <View android:layout_width="match_parent" android:layout_height="0.5dp" android:background="#F0F0F0"/>
-        </LinearLayout>
-
-        <View android:layout_width="match_parent" android:layout_height="6dp"/>
-
-        <!-- ===== 日志管理 ===== -->
-        <LinearLayout
-            android:id="@+id/group_log_title"
-            android:layout_width="match_parent"
-            android:layout_height="42dp"
-            android:orientation="horizontal"
-            android:gravity="center_vertical"
-            android:clickable="true"
-            android:focusable="true"
-            android:background="@drawable/bg_menu_group_header"
-            android:paddingStart="12dp"
-            android:paddingEnd="8dp">
-
-            <ImageView
-                android:layout_width="20dp"
-                android:layout_height="20dp"
-                android:src="@drawable/ic_menu_log_svg"/>
-
-            <TextView
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:layout_marginStart="10dp"
-                android:text="日志管理"
-                android:textColor="#1976D2"
-                android:textSize="14sp"
-                android:textStyle="bold"/>
-
-            <ImageView
-                android:id="@+id/iv_arrow_log"
-                android:layout_width="18dp"
-                android:layout_height="18dp"
-                android:src="@drawable/ic_arrow_expand_svg"/>
-        </LinearLayout>
-
-        <LinearLayout
-            android:id="@+id/group_log_container"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="vertical"
-            android:visibility="gone"
-            android:layout_marginStart="8dp"
-            android:layout_marginEnd="8dp">
-
-            <LinearLayout
-                android:id="@+id/menu_view_log"
-                android:layout_width="match_parent"
-                android:layout_height="40dp"
-                android:orientation="horizontal"
-                android:gravity="center_vertical"
-                android:clickable="true"
-                android:focusable="true"
-                android:background="@drawable/bg_menu_item_ripple"
-                android:paddingStart="12dp"
-                android:paddingEnd="8dp">
-
-                <ImageView
-                    android:layout_width="18dp"
-                    android:layout_height="18dp"
-                    android:src="@drawable/ic_menu_eye_svg"/>
-
-                <TextView
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:layout_marginStart="12dp"
-                    android:textColor="#424242"
-                    android:textSize="14sp"/>
-            </LinearLayout>
-
-            <View android:layout_width="match_parent" android:layout_height="0.5dp" android:background="#F0F0F0"/>
-        </LinearLayout>
-
-        <View android:layout_width="match_parent" android:layout_height="6dp"/>
-
-        <!-- ===== 自动清除配置 ===== -->
-        <LinearLayout
-            android:id="@+id/group_auto_title"
-            android:layout_width="match_parent"
-            android:layout_height="42dp"
-            android:orientation="horizontal"
-            android:gravity="center_vertical"
-            android:clickable="true"
-            android:focusable="true"
-            android:background="@drawable/bg_menu_group_header"
-            android:paddingStart="12dp"
-            android:paddingEnd="8dp">
-
-            <ImageView
-                android:layout_width="20dp"
-                android:layout_height="20dp"
-                android:src="@drawable/ic_menu_timer_svg"/>
-
-            <TextView
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:layout_marginStart="10dp"
-                android:text="自动清除配置"
-                android:textColor="#1976D2"
-                android:textSize="14sp"
-                android:textStyle="bold"/>
-
-            <ImageView
-                android:id="@+id/iv_arrow_auto"
-                android:layout_width="18dp"
-                android:layout_height="18dp"
-                android:src="@drawable/ic_arrow_expand_svg"/>
-        </LinearLayout>
-
-        <LinearLayout
-            android:id="@+id/group_auto_container"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="vertical"
-            android:visibility="gone"
-            android:layout_marginStart="8dp"
-            android:layout_marginEnd="8dp">
-
-            <LinearLayout
-                android:id="@+id/menu_sys_schedule_setting"
-                android:layout_width="match_parent"
-                android:layout_height="40dp"
-                android:orientation="horizontal"
-                android:gravity="center_vertical"
-                android:clickable="true"
-                android:focusable="true"
-                android:background="@drawable/bg_menu_item_ripple"
-                android:paddingStart="12dp"
-                android:paddingEnd="8dp">
-
-                <ImageView
-                    android:layout_width="18dp"
-                    android:layout_height="18dp"
-                    android:src="@drawable/ic_menu_timer_svg"/>
-
-                <TextView
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:layout_marginStart="12dp"
-                    android:textColor="#424242"
-                    android:textSize="14sp"/>
-            </LinearLayout>
-
-            <View android:layout_width="match_parent" android:layout_height="0.5dp" android:background="#F0F0F0"/>
-        </LinearLayout>
-
-        <View android:layout_width="match_parent" android:layout_height="6dp"/>
-
-        <!-- ===== 竞技场入场模式 ===== -->
-        <LinearLayout
-            android:id="@+id/group_mode_title"
-            android:layout_width="match_parent"
-            android:layout_height="42dp"
-            android:orientation="horizontal"
-            android:gravity="center_vertical"
-            android:clickable="true"
-            android:focusable="true"
-            android:background="@drawable/bg_menu_group_header"
-            android:paddingStart="12dp"
-            android:paddingEnd="8dp">
-
-            <ImageView
-                android:layout_width="20dp"
-                android:layout_height="20dp"
-                android:src="@drawable/ic_menu_arena_svg"/>
-
-            <TextView
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:layout_marginStart="10dp"
-                android:text="竞技场入场模式"
-                android:textColor="#1976D2"
-                android:textSize="14sp"
-                android:textStyle="bold"/>
-
-            <ImageView
-                android:id="@+id/iv_arrow_mode"
-                android:layout_width="18dp"
-                android:layout_height="18dp"
-                android:src="@drawable/ic_arrow_expand_svg"/>
-        </LinearLayout>
-
-        <LinearLayout
-            android:id="@+id/group_mode_container"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="vertical"
-            android:visibility="gone"
-            android:layout_marginStart="8dp"
-            android:layout_marginEnd="8dp">
-
-            <LinearLayout
-                android:id="@+id/menu_mode_flexible"
-                android:layout_width="match_parent"
-                android:layout_height="40dp"
-                android:orientation="horizontal"
-                android:gravity="center_vertical"
-                android:clickable="true"
-                android:focusable="true"
-                android:background="@drawable/bg_menu_item_ripple"
-                android:paddingStart="12dp"
-                android:paddingEnd="8dp">
-
-                <ImageView
-                    android:id="@+id/iv_mode_check_flex"
-                    android:layout_width="18dp"
-                    android:layout_height="18dp"
-                    android:src="@drawable/ic_menu_check_svg"/>
-
-                <TextView
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:layout_marginStart="12dp"
-                    android:textColor="#424242"
-                    android:textSize="13sp"/>
-            </LinearLayout>
-
-            <View android:layout_width="match_parent" android:layout_height="0.5dp" android:background="#F0F0F0"/>
-
-            <LinearLayout
-                android:id="@+id/menu_mode_together"
-                android:layout_width="match_parent"
-                android:layout_height="40dp"
-                android:orientation="horizontal"
-                android:gravity="center_vertical"
-                android:clickable="true"
-                android:focusable="true"
-                android:background="@drawable/bg_menu_item_ripple"
-                android:paddingStart="12dp"
-                android:paddingEnd="8dp">
-
-                <ImageView
-                    android:id="@+id/iv_mode_check_together"
-                    android:layout_width="18dp"
-                    android:layout_height="18dp"
-                    android:src="@drawable/ic_menu_check_svg"/>
-
-                <TextView
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:layout_marginStart="12dp"
-                    android:textColor="#424242"
-                    android:textSize="13sp"/>
-            </LinearLayout>
-
-            <View android:layout_width="match_parent" android:layout_height="0.5dp" android:background="#F0F0F0"/>
-        </LinearLayout>
-
-        <View android:layout_width="match_parent" android:layout_height="6dp"/>
-
-        <!-- ===== 锦标赛统计 ===== -->
-        <LinearLayout
-            android:id="@+id/group_champ_title"
-            android:layout_width="match_parent"
-            android:layout_height="42dp"
-            android:orientation="horizontal"
-            android:gravity="center_vertical"
-            android:clickable="true"
-            android:focusable="true"
-            android:background="@drawable/bg_menu_group_header"
-            android:paddingStart="12dp"
-            android:paddingEnd="8dp">
-
-            <ImageView
-                android:layout_width="20dp"
-                android:layout_height="20dp"
-                android:src="@drawable/ic_menu_trophy_svg"/>
-
-            <TextView
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:layout_marginStart="10dp"
-                android:text="锦标赛统计"
-                android:textColor="#1976D2"
-                android:textSize="14sp"
-                android:textStyle="bold"/>
-
-            <ImageView
-                android:id="@+id/iv_arrow_champ"
-                android:layout_width="18dp"
-                android:layout_height="18dp"
-                android:src="@drawable/ic_arrow_expand_svg"/>
-        </LinearLayout>
-
-        <LinearLayout
-            android:id="@+id/group_champ_container"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="vertical"
-            android:visibility="gone"
-            android:layout_marginStart="8dp"
-            android:layout_marginEnd="8dp">
-
-            <LinearLayout
-                android:id="@+id/menu_championship_stats"
-                android:layout_width="match_parent"
-                android:layout_height="40dp"
-                android:orientation="horizontal"
-                android:gravity="center_vertical"
-                android:clickable="true"
-                android:focusable="true"
-                android:background="@drawable/bg_menu_item_ripple"
-                android:paddingStart="12dp"
-                android:paddingEnd="8dp">
-
-                <ImageView
-                    android:layout_width="18dp"
-                    android:layout_height="18dp"
-                    android:src="@drawable/ic_menu_trophy_svg"/>
-
-                <TextView
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:layout_marginStart="12dp"
-                    android:textColor="#424242"
-                    android:textSize="14sp"/>
-            </LinearLayout>
-
-            <View android:layout_width="match_parent" android:layout_height="0.5dp" android:background="#F0F0F0"/>
-
-            <LinearLayout
-                android:id="@+id/menu_migrate_addresses"
-                android:layout_width="match_parent"
-                android:layout_height="40dp"
-                android:orientation="horizontal"
-                android:gravity="center_vertical"
-                android:clickable="true"
-                android:focusable="true"
-                android:background="@drawable/bg_menu_item_ripple"
-                android:paddingStart="12dp"
-                android:paddingEnd="8dp">
-
-                <ImageView
-                    android:layout_width="18dp"
-                    android:layout_height="18dp"
-                    android:src="@drawable/ic_menu_migrate_svg"/>
-
-                <TextView
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:layout_marginStart="12dp"
-                    android:textColor="#424242"
-                    android:textSize="14sp"/>
-            </LinearLayout>
-
-            <View android:layout_width="match_parent" android:layout_height="0.5dp" android:background="#F0F0F0"/>
-        </LinearLayout>
-
+            android:layout_marginStart="12dp"
+            android:text="私钥管理"
+            android:textColor="#212121"
+            android:textSize="14sp" />
     </LinearLayout>
-</ScrollView>
+
+    <LinearLayout
+        android:id="@+id/menu_group_manage"
+        android:layout_width="wrap_content"
+        android:layout_height="44dp"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:clickable="true"
+        android:focusable="true"
+        android:background="?attr/selectableItemBackground"
+        android:paddingStart="16dp"
+        android:paddingEnd="16dp">
+
+        <ImageView
+            android:layout_width="18dp"
+            android:layout_height="18dp"
+            android:src="@drawable/ic_menu_group_svg" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="12dp"
+            android:text="分组管理"
+            android:textColor="#212121"
+            android:textSize="14sp" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:id="@+id/menu_view_log"
+        android:layout_width="wrap_content"
+        android:layout_height="44dp"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:clickable="true"
+        android:focusable="true"
+        android:background="?attr/selectableItemBackground"
+        android:paddingStart="16dp"
+        android:paddingEnd="16dp">
+
+        <ImageView
+            android:layout_width="18dp"
+            android:layout_height="18dp"
+            android:src="@drawable/ic_menu_log_svg" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="12dp"
+            android:text="日志管理"
+            android:textColor="#212121"
+            android:textSize="14sp" />
+    </LinearLayout>
+
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="0.5dp"
+        android:background="#F0F0F0"
+        android:layout_marginStart="16dp"
+        android:layout_marginEnd="16dp" />
+
+    <LinearLayout
+        android:id="@+id/menu_sys_config"
+        android:layout_width="wrap_content"
+        android:layout_height="44dp"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:clickable="true"
+        android:focusable="true"
+        android:background="?attr/selectableItemBackground"
+        android:paddingStart="16dp"
+        android:paddingEnd="16dp">
+
+        <ImageView
+            android:layout_width="18dp"
+            android:layout_height="18dp"
+            android:src="@drawable/ic_gear_svg" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="12dp"
+            android:text="系统配置"
+            android:textColor="#212121"
+            android:textSize="14sp" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:id="@+id/menu_championship_stats"
+        android:layout_width="wrap_content"
+        android:layout_height="44dp"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:clickable="true"
+        android:focusable="true"
+        android:background="?attr/selectableItemBackground"
+        android:paddingStart="16dp"
+        android:paddingEnd="16dp">
+
+        <ImageView
+            android:layout_width="18dp"
+            android:layout_height="18dp"
+            android:src="@drawable/ic_menu_trophy_svg" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="12dp"
+            android:text="锦标赛统计"
+            android:textColor="#212121"
+            android:textSize="14sp" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:id="@+id/menu_migrate_addresses"
+        android:layout_width="wrap_content"
+        android:layout_height="44dp"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:clickable="true"
+        android:focusable="true"
+        android:background="?attr/selectableItemBackground"
+        android:paddingStart="16dp"
+        android:paddingEnd="16dp">
+
+        <ImageView
+            android:layout_width="18dp"
+            android:layout_height="18dp"
+            android:src="@drawable/ic_menu_migrate_svg" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="12dp"
+            android:text="补全密钥地址"
+            android:textColor="#212121"
+            android:textSize="14sp" />
+    </LinearLayout>
+
+</LinearLayout>

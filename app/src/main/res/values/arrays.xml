@@ -5,4 +5,9 @@
         <item>小时</item>
         <item>天</item>
     </string-array>
+
+    <string-array name="play_mode_array">
+        <item>能打就打</item>
+        <item>等齐再打</item>
+    </string-array>
 </resources>

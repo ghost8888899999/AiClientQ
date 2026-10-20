@@ -277,67 +277,115 @@
         android:background="#FFFFFF"
         android:elevation="2dp">
 
-        <com.google.android.material.button.MaterialButton
+        <LinearLayout
             android:id="@+id/btn_batch_fund"
             android:layout_width="0dp"
             android:layout_height="40dp"
             android:layout_weight="1"
-            app:backgroundTint="#E65100"
-            android:textColor="#ffffff"
-            android:text="批量充值"
-            android:textSize="12sp"
-            app:icon="@drawable/ic_fund_svg"
-            app:iconGravity="textStart"
-            app:iconSize="16dp"
-            app:iconPadding="4dp" />
+            android:orientation="horizontal"
+            android:gravity="center"
+            android:background="@drawable/bg_btn_rounded"
+            android:backgroundTint="#E65100"
+            android:clickable="true"
+            android:focusable="true">
+
+            <ImageView
+                android:layout_width="16dp"
+                android:layout_height="16dp"
+                android:src="@drawable/ic_fund_svg"
+                android:layout_marginEnd="4dp" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="批量充值"
+                android:textColor="#ffffff"
+                android:textSize="13sp" />
+        </LinearLayout>
 
         <View android:layout_width="4dp" android:layout_height="0dp" />
 
-        <com.google.android.material.button.MaterialButton
+        <LinearLayout
             android:id="@+id/btn_batch_enter"
             android:layout_width="0dp"
             android:layout_height="40dp"
             android:layout_weight="1"
-            app:backgroundTint="#1976D2"
-            android:textColor="#ffffff"
-            android:text="批量入场"
-            android:textSize="12sp"
-            app:icon="@drawable/ic_enter_svg"
-            app:iconGravity="textStart"
-            app:iconSize="16dp"
-            app:iconPadding="4dp" />
+            android:orientation="horizontal"
+            android:gravity="center"
+            android:background="@drawable/bg_btn_rounded"
+            android:backgroundTint="#1976D2"
+            android:clickable="true"
+            android:focusable="true">
+
+            <ImageView
+                android:layout_width="16dp"
+                android:layout_height="16dp"
+                android:src="@drawable/ic_enter_svg"
+                android:layout_marginEnd="4dp" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="批量入场"
+                android:textColor="#ffffff"
+                android:textSize="13sp" />
+        </LinearLayout>
 
         <View android:layout_width="4dp" android:layout_height="0dp" />
 
-        <com.google.android.material.button.MaterialButton
+        <LinearLayout
             android:id="@+id/btn_batch_claim"
             android:layout_width="0dp"
             android:layout_height="40dp"
             android:layout_weight="1"
-            app:backgroundTint="#388E3C"
-            android:textColor="#ffffff"
-            android:text="批量领取"
-            android:textSize="12sp"
-            app:icon="@drawable/ic_claim_svg"
-            app:iconGravity="textStart"
-            app:iconSize="16dp"
-            app:iconPadding="4dp" />
+            android:orientation="horizontal"
+            android:gravity="center"
+            android:background="@drawable/bg_btn_rounded"
+            android:backgroundTint="#388E3C"
+            android:clickable="true"
+            android:focusable="true">
+
+            <ImageView
+                android:layout_width="16dp"
+                android:layout_height="16dp"
+                android:src="@drawable/ic_claim_svg"
+                android:layout_marginEnd="4dp" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="批量领取"
+                android:textColor="#ffffff"
+                android:textSize="13sp" />
+        </LinearLayout>
 
         <View android:layout_width="4dp" android:layout_height="0dp" />
 
-        <com.google.android.material.button.MaterialButton
+        <LinearLayout
             android:id="@+id/btn_full_workflow"
             android:layout_width="0dp"
             android:layout_height="40dp"
             android:layout_weight="1"
-            app:backgroundTint="#7B1FA2"
-            android:textColor="#ffffff"
-            android:text="完整流程"
-            android:textSize="12sp"
-            app:icon="@drawable/ic_workflow_svg"
-            app:iconGravity="textStart"
-            app:iconSize="16dp"
-            app:iconPadding="4dp" />
+            android:orientation="horizontal"
+            android:gravity="center"
+            android:background="@drawable/bg_btn_rounded"
+            android:backgroundTint="#7B1FA2"
+            android:clickable="true"
+            android:focusable="true">
+
+            <ImageView
+                android:layout_width="16dp"
+                android:layout_height="16dp"
+                android:src="@drawable/ic_workflow_svg"
+                android:layout_marginEnd="4dp" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="完整流程"
+                android:textColor="#ffffff"
+                android:textSize="13sp" />
+        </LinearLayout>
     </LinearLayout>
 
     <!-- 日志区 -->

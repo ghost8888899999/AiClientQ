@@ -12,8 +12,8 @@ import android.widget.EditText;
 import android.widget.ImageButton;
 import android.widget.LinearLayout;
 import android.widget.Spinner;
-import android.widget.Switch;
 import android.widget.TextView;
+import androidx.appcompat.widget.SwitchCompat;
 import android.widget.Toast;
 import android.widget.CheckBox;
 
@@ -586,7 +586,7 @@ public class PrivateKeyManageActivity extends AppCompatActivity {
 
     static class KeyVH extends RecyclerView.ViewHolder {
         TextView tvBadge, tvCode, tvAddr;
-        Switch swEnabled;
+        SwitchCompat swEnabled;
         ImageButton btnEdit, btnDelete;
 
         KeyVH(View v) {

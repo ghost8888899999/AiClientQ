@@ -1,3 +1,78 @@
 <resources>
     <string name="app_name">武灵助手</string>
+
+    <!-- 通用按钮 -->
+    <string name="btn_ok">知道了</string>
+    <string name="btn_got_it">我知道了</string>
+    <string name="btn_cancel">取消</string>
+    <string name="btn_confirm">确认</string>
+    <string name="btn_add_confirm">确认添加</string>
+    <string name="btn_delete_confirm">确认删除</string>
+    <string name="btn_clear_confirm">确认清空</string>
+    <string name="btn_fund_confirm">确认充值</string>
+
+    <!-- 通用提示 -->
+    <string name="task_running">任务执行中，请勿重复点击</string>
+    <string name="no_enabled_key">没有启用的私钥，请先在私钥管理中启用</string>
+
+    <!-- 主号相关 -->
+    <string name="master_not_set_title">未设置主号</string>
+    <string name="master_not_set_msg">请先在私钥管理中编辑某个私钥，勾选「设为主号」</string>
+    <string name="master_error_msg">主号信息异常，请重新设置</string>
+
+    <!-- 批量充值 -->
+    <string name="fund_no_need_title">批量充值</string>
+    <string name="fund_no_need_msg">所有账号余额均 ≥ 100，无需充值</string>
+    <string name="fund_confirm_title">批量充值确认</string>
+    <string name="fund_query_fail">查询失败: %s</string>
+
+    <!-- 锦标赛/地址迁移 -->
+    <string name="dialog_select_accounts">请先勾选要查询的账号</string>
+    <string name="dialog_no_addr_title">地址未生成</string>
+    <string name="dialog_no_addr_msg">所选账号均为旧密钥，没有地址信息。\n\n请使用菜单「补全密钥地址」输入密码一次性迁移。</string>
+    <string name="migrate_success_fmt">已为 %d 个密钥补全地址</string>
+    <string name="migrate_fail_fmt">迁移失败：%s</string>
+
+    <!-- 密码安全 -->
+    <string name="dialog_security_title">密码安全说明</string>
+    <string name="dialog_security_msg">设备丢失时，黑客可拿到加密数据离线暴力破解：\n\n6 位纯数字 → 约 3~14 小时可破解\n\n7 位纯数字 → 约 1~6 天可破解\n\n7 位字母+数字 → 约 1100 年\n\n8 位字母+数字 → 约 10 万年\n\n10 位混合 → 千万年级别\n\n建议：至少 7 位字母+数字组合，越长越安全。\n密码仅在内存中使用，关闭 APP 即清除。</string>
+
+    <!-- 添加密钥 -->
+    <string name="dialog_select_group">请选择分组！</string>
+    <string name="dialog_key_empty">密钥内容不能为空！</string>
+
+    <!-- 密码校验 -->
+    <string name="dialog_pwd_error_title">密码错误</string>
+    <string name="dialog_pwd_error_msg">解密密码校验失败，请核对密码后重新输入！</string>
+
+    <!-- 安全提醒 -->
+    <string name="dialog_security_warn_title">安全风险提醒</string>
+    <string name="dialog_security_warn_msg">1. 本APP仅为链上操作工具，不是硬件钱包，请勿存放大额资产私钥\n\n2. 手机若已Root，任何APP都可能读取私钥，存在被盗风险\n\n3. 解密密码仅在运行时使用，关闭APP后即清除，不会保存在手机中\n\n4. 配置私钥自动清除，若手机开启了省电/后台限制，清除时间可能延迟，重新打开APP会立即清除</string>
+
+    <!-- 清空密钥 -->
+    <string name="dialog_clear_all_title">确认清空全部密钥</string>
+    <string name="dialog_clear_all_msg">将删除本地全部保存的密钥密文，不可恢复！</string>
+
+    <!-- 删除密钥 -->
+    <string name="dialog_select_delete">请先勾选需要删除的密钥</string>
+    <string name="dialog_delete_title">确认删除</string>
+    <string name="dialog_delete_msg_fmt">确定删除选中 %d 条密钥？该操作不可恢复！</string>
+
+    <!-- 日志/状态 -->
+    <string name="log_db_cleared">数据库日志已全部清空</string>
+    <string name="log_keys_cleared">全部密钥已清空</string>
+    <string name="log_clear_error_fmt">错误：清空密钥异常：%s</string>
+    <string name="log_deleted_fmt">已删除选中 %d 条密钥</string>
+    <string name="log_delete_error_fmt">删除选中密钥异常：%s</string>
+
+    <!-- 入场模式 -->
+    <string name="mode_flexible_log">已切换入场模式：能打就打，自动过滤不可执行账号</string>
+    <string name="mode_together_log">已切换入场模式：等齐再打，全部模拟通过才提交交易</string>
+
+    <!-- 会话 -->
+    <string name="session_expired">会话已过期，请重新输入密码解锁</string>
+    <string name="session_restored">密码验证成功，会话已恢复</string>
+    <string name="pwd_verify_fail_fmt">错误：密码验证失败：%s</string>
+
+
 </resources>

@@ -28,7 +28,7 @@
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
-            android:text="运行日志"
+            android:text="操作日志"
             android:textColor="@color/white"
             android:textSize="18sp"
             android:textStyle="bold" />
@@ -40,6 +40,14 @@
             android:textSize="12sp"
             android:textColor="@color/white"
             android:layout_marginEnd="4dp" />
+
+        <ImageButton
+            android:id="@+id/btn_export_log"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:background="?android:attr/selectableItemBackgroundBorderless"
+            android:contentDescription="复制日志"
+            android:src="@drawable/ic_copy_svg" />
 
         <ImageButton
             android:id="@+id/btn_clear_log"
@@ -69,23 +77,12 @@
         android:textColor="@color/text_secondary"
         android:visibility="gone" />
 
-    <ScrollView
-        android:id="@+id/sv_log"
+    <androidx.recyclerview.widget.RecyclerView
+        android:id="@+id/rv_log"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:layout_below="@id/toolbar"
-        android:background="@color/bg_page"
-        android:padding="16dp">
-
-        <TextView
-            android:id="@+id/tv_log_content"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:textSize="12sp"
-            android:textColor="@color/text_primary"
-            android:lineSpacingExtra="3dp"
-            android:textIsSelectable="true"
-            android:fontFamily="monospace" />
-    </ScrollView>
+        android:background="@color/white"
+        android:clipToPadding="false" />
 
 </RelativeLayout>
