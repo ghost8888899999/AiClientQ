@@ -4,6 +4,7 @@ import android.app.AlertDialog;
 import android.os.Bundle;
 import android.view.View;
 import android.widget.Button;
+import android.widget.ImageButton;
 import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -26,12 +27,15 @@ public class LogViewActivity extends AppCompatActivity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_log_view);
 
+        ImageButton btnBack = findViewById(R.id.btn_back);
         TextView tvLogContent = findViewById(R.id.tv_log_content);
         TextView tvLogCount = findViewById(R.id.tv_log_count);
         TextView tvLogEmpty = findViewById(R.id.tv_log_empty);
         ScrollView svLog = findViewById(R.id.sv_log);
-        Button btnClearLog = findViewById(R.id.btn_clear_log);
-        Button btnInitDb = findViewById(R.id.btn_init_db);
+        ImageButton btnClearLog = findViewById(R.id.btn_clear_log);
+        ImageButton btnInitDb = findViewById(R.id.btn_init_db);
+
+        btnBack.setOnClickListener(v -> finish());
 
         loadLogs(tvLogContent, tvLogCount, tvLogEmpty, svLog);
 

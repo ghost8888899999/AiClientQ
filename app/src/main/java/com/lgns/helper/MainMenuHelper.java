@@ -6,6 +6,7 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.view.animation.RotateAnimation;
 import android.widget.ImageView;
+import android.widget.LinearLayout;
 import android.widget.PopupWindow;
 import android.widget.TextView;
 
@@ -70,13 +71,14 @@ public class MainMenuHelper {
 
         bindMenuItem(popView, R.id.menu_view_log, "查看日志(最新优先)", () -> activity.getDialogHelper().showViewLogDialog());
 
-        bindMenuItem(popView, R.id.menu_sys_schedule_setting, "自动清除配置", () -> activity.getDialogHelper().openSysScheduleDialog());
+        bindMenuItem(popView, R.id.menu_sys_schedule_setting, "自动清除配置", () -> {
+            activity.startActivity(new android.content.Intent(activity, com.lgns.ui.activity.AutoClearConfigActivity.class));
+        });
 
         setupModeMenu(popView);
 
         bindMenuItem(popView, R.id.menu_championship_stats, "查看锦标赛统计", () -> activity.getDialogHelper().showChampionshipStatsDialog());
         bindMenuItem(popView, R.id.menu_migrate_addresses, "补全密钥地址(旧数据迁移)", () -> activity.getDialogHelper().showMigrateAddressesDialog());
-        bindMenuItem(popView, R.id.menu_batch_fund, "批量充值(主号→队员)", () -> activity.showBatchFundDialog());
 
         mPopupWindow = new PopupWindow(popView, ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, true);
         mPopupWindow.setOutsideTouchable(true);
@@ -90,35 +92,44 @@ public class MainMenuHelper {
     }
 
     private void bindMenuItem(View popView, int menuId, String text, Runnable action) {
-        TextView tv = popView.findViewById(menuId);
+        LinearLayout itemLayout = popView.findViewById(menuId);
+        TextView tv = (TextView) itemLayout.getChildAt(1);
         tv.setText(text);
-        tv.setOnClickListener(v -> {
+        itemLayout.setOnClickListener(v -> {
             action.run();
             dismissPopup();
         });
     }
 
     private void setupModeMenu(View popView) {
-        TextView menuFlex = popView.findViewById(R.id.menu_mode_flexible);
-        TextView menuTogether = popView.findViewById(R.id.menu_mode_together);
+        LinearLayout menuFlex = popView.findViewById(R.id.menu_mode_flexible);
+        LinearLayout menuTogether = popView.findViewById(R.id.menu_mode_together);
+        ImageView ivCheckFlex = menuFlex.findViewById(R.id.iv_mode_check_flex);
+        ImageView ivCheckTogether = menuTogether.findViewById(R.id.iv_mode_check_together);
+        TextView tvFlex = (TextView) menuFlex.getChildAt(1);
+        TextView tvTogether = (TextView) menuTogether.getChildAt(1);
         int mode = spAppSetting.getInt("play_mode", MainActivity.MODE_FLEXIBLE);
 
         if (mode == MainActivity.MODE_FLEXIBLE) {
-            menuFlex.setText("● 能打就打(过滤不可执行账号)");
-            menuTogether.setText("  等齐再打(全部模拟通过才提交)");
+            tvFlex.setText("能打就打 (过滤不可执行账号)");
+            tvTogether.setText("等齐再打 (全部模拟通过才提交)");
+            ivCheckFlex.setColorFilter(0xFF4CAF50);
+            ivCheckTogether.setColorFilter(0xFFBDBDBD);
         } else {
-            menuFlex.setText("  能打就打(过滤不可执行账号)");
-            menuTogether.setText("● 等齐再打(全部模拟通过才提交)");
+            tvFlex.setText("能打就打 (过滤不可执行账号)");
+            tvTogether.setText("等齐再打 (全部模拟通过才提交)");
+            ivCheckFlex.setColorFilter(0xFFBDBDBD);
+            ivCheckTogether.setColorFilter(0xFF4CAF50);
         }
 
         menuFlex.setOnClickListener(v -> {
             spAppSetting.edit().putInt("play_mode", MainActivity.MODE_FLEXIBLE).apply();
-            activity.appendLog("", "", "✅已切换入场模式：能打就打，自动过滤不可执行账号");
+            activity.appendLog("", "", "已切换入场模式：能打就打，自动过滤不可执行账号");
             dismissPopup();
         });
         menuTogether.setOnClickListener(v -> {
             spAppSetting.edit().putInt("play_mode", MainActivity.MODE_TOGETHER).apply();
-            activity.appendLog("", "", "✅已切换入场模式：等齐再打，全部模拟通过才提交交易");
+            activity.appendLog("", "", "已切换入场模式：等齐再打，全部模拟通过才提交交易");
             dismissPopup();
         });
     }

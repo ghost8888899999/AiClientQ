@@ -54,20 +54,20 @@ public class ArenaContractApi {
      * Represents a summary of a player's game statistics and financial information.
      */
     public static class PlayerSummary {
-        public BigInteger walletBalance;
-        public BigInteger allowance;
-        public BigInteger prize;
-        public BigInteger inMatchDeposit;
-        public BigInteger arenaTotal;
-        public BigInteger battles;
-        public BigInteger championships;
-        public BigInteger jiaziTotalGranted;
-        public BigInteger jiaziReleased;
-        public BigInteger jiaziClaimable;
+        public BigInteger walletBalance = BigInteger.ZERO;
+        public BigInteger allowance = BigInteger.ZERO;
+        public BigInteger prize = BigInteger.ZERO;
+        public BigInteger inMatchDeposit = BigInteger.ZERO;
+        public BigInteger arenaTotal = BigInteger.ZERO;
+        public BigInteger battles = BigInteger.ZERO;
+        public BigInteger championships = BigInteger.ZERO;
+        public BigInteger jiaziTotalGranted = BigInteger.ZERO;
+        public BigInteger jiaziReleased = BigInteger.ZERO;
+        public BigInteger jiaziClaimable = BigInteger.ZERO;
         public boolean jiaziTruncated;
-        public BigInteger entriesToday;
-        public BigInteger entriesRemainingToday;
-        public BigInteger roundsFromPrize;
+        public BigInteger entriesToday = BigInteger.ZERO;
+        public BigInteger entriesRemainingToday = BigInteger.ZERO;
+        public BigInteger roundsFromPrize = BigInteger.ZERO;
         public boolean nextEntryFromPrize;
         public boolean seatedInCurrentRound;
     }
@@ -534,47 +534,58 @@ public class ArenaContractApi {
 
     private static PlayerSummary decodePlayerSummary(String hexValue) {
         PlayerSummary s = new PlayerSummary();
-        Log.d("RPC_DEBUG", "decodePlayerSummary 输入 hex 长度: " + (hexValue != null ? hexValue.length() : "null"));
-        try {
-            List<Type> dec = FunctionReturnDecoder.decode(hexValue, castOutputs(buildPlayerSummaryOutputs()));
-            Log.d("RPC_DEBUG", "decodePlayerSummary 解码后字段数: " + dec.size());
-            if (dec.size() < 16) {
-                Log.w("RPC_DEBUG", "decodePlayerSummary 字段数不足 16，返回默认值");
-                logRpcToDb(null, "decodePlayerSummary 字段数不足 16，实际: " + dec.size());
-                return s;
-            }
-            s.walletBalance = safeUint(dec, 0);
-            s.allowance = safeUint(dec, 1);
-            s.prize = safeUint(dec, 2);
-            s.inMatchDeposit = safeUint(dec, 3);
-            s.arenaTotal = safeUint(dec, 4);
-            s.battles = safeUint(dec, 5);
-            s.championships = safeUint(dec, 6);
-            s.jiaziTotalGranted = safeUint(dec, 7);
-            s.jiaziReleased = safeUint(dec, 8);
-            s.jiaziClaimable = safeUint(dec, 9);
-            s.jiaziTruncated = safeBool(dec, 10);
-            s.entriesToday = safeUint(dec, 11);
-            s.entriesRemainingToday = safeUint(dec, 12);
-            s.roundsFromPrize = safeUint(dec, 13);
-            s.nextEntryFromPrize = safeBool(dec, 14);
-            s.seatedInCurrentRound = safeBool(dec, 15);
-            String result = "wallet=" + s.walletBalance + ", prize=" + s.prize + ", remaining=" + s.entriesRemainingToday;
-            Log.d("RPC_DEBUG", "decodePlayerSummary 解析结果: " + result);
-            logRpcToDb(null, "decodePlayerSummary 解析结果: " + result);
-        } catch (Throwable t) {
-            Log.w("RPC_DEBUG", "decodePlayerSummary partial fail: " + t.getClass().getSimpleName() + " - " + t.getMessage());
-            logRpcToDb(null, "decodePlayerSummary 异常: " + t.getClass().getSimpleName() + " - " + t.getMessage());
+        String hex = Numeric.cleanHexPrefix(hexValue);
+        Log.d("RPC_DEBUG", "decodePlayerSummary 输入 hex 长度: " + (hex != null ? hex.length() : "null"));
+        logRpcToDb(null, "decodePlayerSummary 输入 hex 长度: " + (hex != null ? hex.length() : "null"));
+
+        if (hex == null || hex.length() < 1024) {
+            Log.w("RPC_DEBUG", "decodePlayerSummary hex 长度不足 1024，返回默认值");
+            logRpcToDb(null, "decodePlayerSummary hex 长度不足 1024，实际: " + (hex != null ? hex.length() : "null"));
+            return s;
         }
+
+        s.walletBalance = safeHexUint(hex, 0);
+        s.allowance = safeHexUint(hex, 1);
+        s.prize = safeHexUint(hex, 2);
+        s.inMatchDeposit = safeHexUint(hex, 3);
+        s.arenaTotal = safeHexUint(hex, 4);
+        s.battles = safeHexUint(hex, 5);
+        s.championships = safeHexUint(hex, 6);
+        s.jiaziTotalGranted = safeHexUint(hex, 7);
+        s.jiaziReleased = safeHexUint(hex, 8);
+        s.jiaziClaimable = safeHexUint(hex, 9);
+        s.jiaziTruncated = safeHexBool(hex, 10);
+        s.entriesToday = safeHexUint(hex, 11);
+        s.entriesRemainingToday = safeHexUint(hex, 12);
+        s.roundsFromPrize = safeHexUint(hex, 13);
+        s.nextEntryFromPrize = safeHexBool(hex, 14);
+        s.seatedInCurrentRound = safeHexBool(hex, 15);
+
+        String result = "wallet=" + s.walletBalance + ", prize=" + s.prize + ", remaining=" + s.entriesRemainingToday;
+        Log.d("RPC_DEBUG", "decodePlayerSummary 解析结果: " + result);
+        logRpcToDb(null, "decodePlayerSummary 解析结果: " + result);
         return s;
     }
 
-    private static BigInteger safeUint(List<Type> dec, int idx) {
-        try { return ((Uint256) dec.get(idx)).getValue(); } catch (Throwable t) { return BigInteger.ZERO; }
+    private static BigInteger safeHexUint(String hex, int fieldIndex) {
+        try {
+            int offset = fieldIndex * 64;
+            if (offset + 64 > hex.length()) return BigInteger.ZERO;
+            return new BigInteger(hex.substring(offset, offset + 64), 16);
+        } catch (Exception e) {
+            return BigInteger.ZERO;
+        }
     }
 
-    private static boolean safeBool(List<Type> dec, int idx) {
-        try { return ((Bool) dec.get(idx)).getValue(); } catch (Throwable t) { return false; }
+    private static boolean safeHexBool(String hex, int fieldIndex) {
+        try {
+            int offset = fieldIndex * 64;
+            if (offset + 64 > hex.length()) return false;
+            String word = hex.substring(offset, offset + 64);
+            return !"0000000000000000000000000000000000000000000000000000000000000000".equals(word);
+        } catch (Exception e) {
+            return false;
+        }
     }
 
     /**

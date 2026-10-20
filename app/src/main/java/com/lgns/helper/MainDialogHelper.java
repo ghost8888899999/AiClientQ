@@ -100,7 +100,7 @@ public class MainDialogHelper {
                 mgr.saveKeyEntryList(entries);
                 final int count = migrated;
                 activity.runOnUiThread(() -> {
-                    activity.appendLog("", "", "✅已为 " + count + " 个旧密钥补全地址");
+                    activity.appendLog("", "", "已为 " + count + " 个旧密钥补全地址");
                     activity.refreshCipherKeyList();
                     styledDialog()
                             .setMessage("已为 " + count + " 个密钥补全地址")
@@ -192,13 +192,13 @@ public class MainDialogHelper {
                     KeyStoreManager mgr = AppGlobal.getKeyStoreManager();
                     mgr.addPrivateKey(fullPrivateKey, activity.tempUserCryptoKey, userInputGroupNo);
                     activity.runOnUiThread(() -> {
-                        activity.appendLog(userInputGroupNo, "", "✅密钥添加完成");
+                        activity.appendLog(userInputGroupNo, "", "密钥添加完成");
                         activity.refreshCipherKeyList();
                         dialog.dismiss();
                     });
                 } catch (Exception e) {
                     activity.runOnUiThread(() -> {
-                        activity.appendLog("", "", "❌添加密钥失败：" + e.getMessage());
+                        activity.appendLog("", "", "错误：添加密钥失败：" + e.getMessage());
                     });
                 }
             }).start();
@@ -271,7 +271,7 @@ public class MainDialogHelper {
     public void showConfirmClearLogDb() {
         new Thread(() -> {
             AppLogDbHelper.getInstance(activity).clearAllLog();
-            activity.runOnUiThread(() -> activity.appendLog("", "", "✅数据库日志已全部清空"));
+            activity.runOnUiThread(() -> activity.appendLog("", "", "数据库日志已全部清空"));
         }).start();
     }
 
@@ -285,11 +285,11 @@ public class MainDialogHelper {
                         KeyStoreManager mgr = AppGlobal.getKeyStoreManager();
                         mgr.clearAllKeys();
                         activity.runOnUiThread(() -> {
-                            activity.appendLog("", "", "✅全部密钥已清空");
+                            activity.appendLog("", "", "全部密钥已清空");
                             activity.refreshCipherKeyList();
                         });
                     } catch (Exception e) {
-                        activity.runOnUiThread(() -> activity.appendLog("", "", "❌清空密钥异常：" + e.getMessage()));
+                        activity.runOnUiThread(() -> activity.appendLog("", "", "错误：清空密钥异常：" + e.getMessage()));
                     }
                 }).start())
                 .setNegativeButton("取消", null)
@@ -322,7 +322,7 @@ public class MainDialogHelper {
                             mgr.removeByIndex(pos);
                         }
                         activity.runOnUiThread(() -> {
-                            activity.appendLog("", "", "✅已删除选中 " + deletePosList.size() + " 条密钥");
+                            activity.appendLog("", "", "已删除选中 " + deletePosList.size() + " 条密钥");
                             activity.refreshCipherKeyList();
                         });
                     } catch (Exception e) {
@@ -397,111 +397,5 @@ public class MainDialogHelper {
                         .show());
             }
         }).start();
-    }
-
-    // ========== 自动清除配置弹窗 ==========
-    public void openSysScheduleDialog() {
-        final String[] unitArray = {"分钟", "小时", "天"};
-        final long MIN_ALLOW_MINUTE = 15;
-        
-        android.app.AlertDialog.Builder builder = new android.app.AlertDialog.Builder(activity);
-        final View view = android.view.LayoutInflater.from(activity).inflate(R.layout.dialog_sys_auto_clear, null);
-        final Switch swAutoEnable = view.findViewById(R.id.sw_auto_enable);
-        final android.widget.EditText etVal = view.findViewById(R.id.et_auto_clear_val);
-        final android.widget.Spinner spUnit = view.findViewById(R.id.sp_time_unit);
-        final TextView tvStatus = view.findViewById(R.id.tv_auto_clear_status);
-        
-        ArrayAdapter<String> unitAdapter = new ArrayAdapter<>(activity, android.R.layout.simple_spinner_dropdown_item, unitArray);
-        spUnit.setAdapter(unitAdapter);
-        
-        android.content.SharedPreferences spAppSetting = activity.getSharedPreferences("app_setting", android.content.Context.MODE_PRIVATE);
-        boolean isEnable = spAppSetting.getBoolean("auto_clear_enable", false);
-        long oldMs = spAppSetting.getLong("auto_clear_ms", 0);
-        
-        swAutoEnable.setChecked(isEnable);
-        if (oldMs > 0) {
-            if (oldMs >= 1000L * 60 * 60 * 24) {
-                etVal.setText(String.valueOf(oldMs / (1000L * 60 * 60 * 24)));
-                spUnit.setSelection(2);
-            } else if (oldMs >= 1000L * 60 * 60) {
-                etVal.setText(String.valueOf(oldMs / (1000L * 60 * 60)));
-                spUnit.setSelection(1);
-            } else {
-                etVal.setText(String.valueOf(oldMs / (1000L * 60)));
-                spUnit.setSelection(0);
-            }
-        }
-        
-        if(isEnable){
-            tvStatus.setText("当前：已启用，到达时长会自动清除私钥");
-            etVal.setEnabled(true); 
-            spUnit.setEnabled(true);
-        }else{
-            tvStatus.setText("当前：已禁用（配置已保存，不会校验清除；系统时间持续流逝）");
-            etVal.setEnabled(false); 
-            spUnit.setEnabled(false);
-        }
-        
-        swAutoEnable.setOnCheckedChangeListener((buttonView, checked) -> {
-            etVal.setEnabled(checked); 
-            spUnit.setEnabled(checked);
-            tvStatus.setText(checked ? "当前：已启用，到达时长会自动清除私钥" : "当前：已禁用（配置已保存，不会校验清除；系统时间持续流逝）");
-        });
-        
-        final android.app.AlertDialog dialog = builder.setView(view)
-                .setPositiveButton("保存", (d, i) -> {})
-                .setNegativeButton("关闭", (d, i) -> d.dismiss())
-                .create();
-        dialog.show();
-        
-        dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
-            boolean newEnable = swAutoEnable.isChecked();
-            if(!newEnable){
-                spAppSetting.edit().putBoolean("auto_clear_enable", false).apply();
-                androidx.work.WorkManager.getInstance(activity.getApplicationContext()).cancelUniqueWork("work_auto_clear_task");
-                activity.appendLog("", "", "✅已禁用自动清除（配置已保留）");
-                dialog.dismiss();
-                return;
-            }
-            
-            String valStr = etVal.getText().toString().trim();
-            if(valStr.isEmpty()){
-                new android.app.AlertDialog.Builder(activity).setMessage("请输入时间数值，最小15！").setPositiveButton("知道了",null).show();
-                return;
-            }
-            
-            int val;
-            try { val = Integer.parseInt(valStr); } catch (Exception e) {
-                new android.app.AlertDialog.Builder(activity).setMessage("请输入合法数字").setPositiveButton("OK", null).show();
-                return;
-            }
-            
-            int selPos = spUnit.getSelectedItemPosition();
-            long oneUnitMs, inputMinute;
-            if (selPos == 0) { oneUnitMs = 60 * 1000L; inputMinute = val; }
-            else if (selPos == 1) { oneUnitMs = 60 * 60 * 1000L; inputMinute = val * 60L; }
-            else { oneUnitMs = 24 * 60 * 60 * 1000L; inputMinute = val * 24 * 60L; }
-            
-            if (inputMinute < MIN_ALLOW_MINUTE) {
-                new android.app.AlertDialog.Builder(activity).setTitle("输入限制").setMessage("最小设置15分钟！").setPositiveButton("确定", null).show();
-                return;
-            }
-            
-            spAppSetting.edit().putBoolean("auto_clear_enable", true)
-                    .putLong("auto_clear_ms", val * oneUnitMs)
-                    .putLong("auto_clear_start_ts", System.currentTimeMillis()).apply();
-                    
-            androidx.work.PeriodicWorkRequest req = new androidx.work.PeriodicWorkRequest.Builder(
-                    AutoClearWorker.class,
-                    Math.max(inputMinute, MIN_ALLOW_MINUTE), 
-                    java.util.concurrent.TimeUnit.MINUTES).build();
-                    
-            androidx.work.WorkManager.getInstance(activity.getApplicationContext())
-                    .enqueueUniquePeriodicWork("work_auto_clear_task", 
-                            androidx.work.ExistingPeriodicWorkPolicy.UPDATE, req);
-                            
-            activity.appendLog("", "", "✅自动清除设置完成：" + val + " " + unitArray[selPos]);
-            dialog.dismiss();
-        });
     }
 }

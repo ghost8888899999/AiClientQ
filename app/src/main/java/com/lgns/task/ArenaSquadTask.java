@@ -29,14 +29,14 @@ public class ArenaSquadTask {
                                        List<KeyListItem> selectedList, char[] sessionCryptoKey,
                                        String masterPk, String squadAddr) throws Exception {
         if (selectedList.isEmpty()) {
-            callback.onLog("", "SQUAD", "⚠ 没有选中任何账号");
+            callback.onLog("", "SQUAD", "警告：没有选中任何账号");
             return;
         }
         KeyStoreManager ksMgr;
         try {
             ksMgr = AppGlobal.getKeyStoreManager();
         } catch (IllegalStateException e) {
-            callback.onLog("", "SQUAD", "❌ 密钥管理器未初始化");
+            callback.onLog("", "SQUAD", "错误：密钥管理器未初始化");
             return;
         }
         Web3AndroidUtil.resetCancel();
@@ -52,7 +52,7 @@ public class ArenaSquadTask {
             String masterAddr = Web3AndroidUtil.getAddress(masterKeyPair).toLowerCase();
 
             if (!SquadApi.isDelegated(web3j, masterAddr, squadAddr)) {
-                callback.onLog("", "SQUAD", "❌ 主号未委托到 Squad 合约,请先执行委托");
+                callback.onLog("", "SQUAD", "错误：主号未委托到 Squad 合约，请先执行委托");
                 return;
             }
 
@@ -66,31 +66,31 @@ public class ArenaSquadTask {
                     kp = null;
                 } catch (Exception e) {
                     String no = (item.customCode != null && !item.customCode.isEmpty()) ? item.customCode : item.displayNo;
-                    callback.onLog(no, "SQUAD", "✖ 解密失败:" + msgOf(e));
+                    callback.onLog(no, "SQUAD", "解密失败:" + msgOf(e));
                 }
             }
             if (memberAddrs.isEmpty()) {
-                callback.onLog("", "SQUAD", "❌ 没有有效账号");
+                callback.onLog("", "SQUAD", "错误：没有有效账号");
                 return;
             }
 
-            callback.onLog("", "SQUAD", "📋 共 " + memberAddrs.size() + " 个成员,开始整批入场");
+            callback.onLog("", "SQUAD", "共 " + memberAddrs.size() + " 个成员，开始整批入场");
 
-            callback.onLog("", "SQUAD", "🔍 整批模拟预览中...");
+            callback.onLog("", "SQUAD", "整批模拟预览中...");
             SquadApi.PlayPreview preview = SquadApi.preparePlay(
                     web3j, squadAddr, masterAddr, memberAddrs, false, callback);
 
             if (preview == null) {
-                callback.onLog("", "SQUAD", "❌ 整批模拟全部失败,无账号可入场");
+                callback.onLog("", "SQUAD", "错误：整批模拟全部失败，无账号可入场");
                 return;
             }
 
             List<String> playable = preview.who;
             if (playable.size() < memberAddrs.size()) {
-                callback.onLog("", "SQUAD", "⚠ 仅 " + playable.size() + "/" + memberAddrs.size()
-                        + " 个账号可入场,其余暂缓");
+                callback.onLog("", "SQUAD", "警告：仅 " + playable.size() + "/" + memberAddrs.size()
+                        + " 个账号可入场，其余暂缓");
             }
-            callback.onLog("", "SQUAD", "📝 主号补币 " + preview.funded + " · Gas " + preview.gas);
+            callback.onLog("", "SQUAD", "主号补币 " + preview.funded + " · Gas " + preview.gas);
 
             String playData = preview.data;
             BigInteger gasPrice = web3j.ethGasPrice().send().getGasPrice();
@@ -106,12 +106,12 @@ public class ArenaSquadTask {
                             (h, raw) -> { }),
                     null, null);
 
-            callback.onLog("", "SQUAD", "✅ 整批入场完成 " + playable.size() + "/" + memberAddrs.size()
+            callback.onLog("", "SQUAD", "整批入场完成 " + playable.size() + "/" + memberAddrs.size()
                     + " 个账号 txHash=" + receipt.getTransactionHash()
                     + " gas=" + receipt.getGasUsed());
 
         } catch (java.io.IOException dialFail) {
-            callback.onLog("", "SQUAD", "❌ " + ArenaConfig.RPC_URLS.length + " 个节点全不可达:" + msgOf(dialFail));
+            callback.onLog("", "SQUAD", "错误：" + ArenaConfig.RPC_URLS.length + " 个节点全不可达:" + msgOf(dialFail));
             throw dialFail;
         } finally {
             if (web3j != null) {
@@ -124,14 +124,14 @@ public class ArenaSquadTask {
                                          List<KeyListItem> selectedList, char[] sessionCryptoKey,
                                          String masterPk, String squadAddr) throws Exception {
         if (selectedList.isEmpty()) {
-            callback.onLog("", "SQUAD", "⚠ 没有选中任何账号");
+            callback.onLog("", "SQUAD", "警告：没有选中任何账号");
             return;
         }
         KeyStoreManager ksMgr;
         try {
             ksMgr = AppGlobal.getKeyStoreManager();
         } catch (IllegalStateException e) {
-            callback.onLog("", "SQUAD", "❌ 密钥管理器未初始化");
+            callback.onLog("", "SQUAD", "错误：密钥管理器未初始化");
             return;
         }
         Web3AndroidUtil.resetCancel();
@@ -147,7 +147,7 @@ public class ArenaSquadTask {
             String masterAddr = Web3AndroidUtil.getAddress(masterKeyPair).toLowerCase();
 
             if (!SquadApi.isDelegated(web3j, masterAddr, squadAddr)) {
-                callback.onLog("", "SQUAD", "❌ 主号未委托到 Squad 合约");
+                callback.onLog("", "SQUAD", "错误：主号未委托到 Squad 合约");
                 return;
             }
 
@@ -161,15 +161,15 @@ public class ArenaSquadTask {
                     kp = null;
                 } catch (Exception e) {
                     String no = (item.customCode != null && !item.customCode.isEmpty()) ? item.customCode : item.displayNo;
-                    callback.onLog(no, "SQUAD", "✖ 解密失败:" + msgOf(e));
+                    callback.onLog(no, "SQUAD", "解密失败:" + msgOf(e));
                 }
             }
             if (memberAddrs.isEmpty()) {
-                callback.onLog("", "SQUAD", "❌ 没有有效账号");
+                callback.onLog("", "SQUAD", "错误：没有有效账号");
                 return;
             }
 
-            callback.onLog("", "SQUAD", "📋 共 " + memberAddrs.size() + " 个成员,开始整批收割");
+            callback.onLog("", "SQUAD", "共 " + memberAddrs.size() + " 个成员，开始整批收割");
 
             for (int pass = 1; pass <= 5; pass++) {
                 if (Web3AndroidUtil.isCancelRequested()) break;
@@ -206,7 +206,7 @@ public class ArenaSquadTask {
                 callback.onLog("", "SQUAD", "主号余额: " + ov.masterBalance);
 
                 if (ov.masterBalance.compareTo(BigInteger.ZERO) <= 0) {
-                    callback.onLog("", "SQUAD", "✅ 收割完毕,主号无可收余额");
+                    callback.onLog("", "SQUAD", "收割完毕，主号无可收余额");
                     break;
                 }
                 if (pass < 5) {
@@ -216,7 +216,7 @@ public class ArenaSquadTask {
             }
 
         } catch (java.io.IOException dialFail) {
-            callback.onLog("", "SQUAD", "❌ 节点全不可达:" + msgOf(dialFail));
+            callback.onLog("", "SQUAD", "错误：节点全不可达:" + msgOf(dialFail));
             throw dialFail;
         } finally {
             if (web3j != null) {

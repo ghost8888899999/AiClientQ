@@ -29,7 +29,7 @@ public class AppGlobal {
 
     public static KeyStoreManager getKeyStoreManager() {
         if (sKeyStoreManager == null) {
-            throw new IllegalStateException("请先执行 initKeyManager 初始化密钥管理器");
+            throw new IllegalStateException("会话已过期，请重新输入密码解锁");
         }
         touch();
         return sKeyStoreManager;
@@ -37,7 +37,7 @@ public class AppGlobal {
 
     public static Context getAppContext() {
         if (sAppCtx == null) {
-            throw new IllegalStateException("AppGlobal 未初始化，请先执行 initKeyManager");
+            throw new IllegalStateException("应用未初始化，请重启 App");
         }
         return sAppCtx;
     }

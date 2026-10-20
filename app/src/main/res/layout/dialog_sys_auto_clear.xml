@@ -78,6 +78,7 @@
 
         <Spinner
             android:id="@+id/sp_time_unit"
+            style="@style/AppSpinner"
             android:layout_width="0dp"
             android:layout_height="44dp"
             android:layout_weight="1"

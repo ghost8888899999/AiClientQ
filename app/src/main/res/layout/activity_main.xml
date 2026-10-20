@@ -262,7 +262,7 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_gravity="center"
-            android:text="暂无失败记录 ✅"
+            android:text="暂无失败记录"
             android:textSize="14sp"
             android:textColor="#BDBDBD"
             android:visibility="gone" />
@@ -273,12 +273,25 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="horizontal"
-        android:paddingStart="8dp"
-        android:paddingEnd="8dp"
-        android:paddingTop="8dp"
-        android:paddingBottom="8dp"
+        android:padding="8dp"
         android:background="#FFFFFF"
         android:elevation="2dp">
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btn_batch_fund"
+            android:layout_width="0dp"
+            android:layout_height="40dp"
+            android:layout_weight="1"
+            app:backgroundTint="#E65100"
+            android:textColor="#ffffff"
+            android:text="批量充值"
+            android:textSize="12sp"
+            app:icon="@drawable/ic_fund_svg"
+            app:iconGravity="textStart"
+            app:iconSize="16dp"
+            app:iconPadding="4dp" />
+
+        <View android:layout_width="4dp" android:layout_height="0dp" />
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btn_batch_enter"
@@ -341,20 +354,26 @@
             android:layout_height="wrap_content"
             android:orientation="horizontal"
             android:gravity="center_vertical"
-            android:paddingStart="8dp"
-            android:paddingEnd="16dp"
-            android:paddingTop="8dp"
-            android:paddingBottom="8dp"
+            android:paddingStart="12dp"
+            android:paddingEnd="12dp"
+            android:paddingTop="10dp"
+            android:paddingBottom="10dp"
             android:clickable="true"
             android:focusable="true">
+
+            <ImageView
+                android:layout_width="16dp"
+                android:layout_height="16dp"
+                android:src="@drawable/ic_log_svg"
+                android:layout_marginEnd="6dp" />
 
             <TextView
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
-                android:text=" 运行日志"
+                android:text="运行日志"
                 android:textSize="13sp"
-                android:textColor="#616161"
+                android:textColor="#424242"
                 android:textStyle="bold" />
 
             <TextView
@@ -370,15 +389,16 @@
             android:id="@+id/scrollView"
             android:layout_width="match_parent"
             android:layout_height="150dp"
-            android:background="#263238"
-            android:padding="8dp">
+            android:background="#F8F9FA"
+            android:padding="12dp">
 
             <TextView
                 android:id="@+id/tv_log"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:textColor="#B0BEC5"
+                android:textColor="#37474F"
                 android:textSize="12sp"
+                android:lineSpacingExtra="3dp"
                 android:fontFamily="monospace" />
         </ScrollView>
     </LinearLayout>

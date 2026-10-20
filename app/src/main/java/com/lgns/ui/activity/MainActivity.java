@@ -63,7 +63,7 @@ public class MainActivity extends AppCompatActivity implements TaskLogCallback {
     private ImageButton btnSettingGear;
     private TextView btnSecurityWarn;
     private TextView tvTokenCount, tvQdCount, tvEnabledCount;
-    private Button btnBatchEnter, btnBatchClaim, btnFullWorkflow;
+    private Button btnBatchFund, btnBatchEnter, btnBatchClaim, btnFullWorkflow;
     private TextView tvLog;
     private ScrollView scrollView;
     private LinearLayout layoutLogHeader;
@@ -77,6 +77,9 @@ public class MainActivity extends AppCompatActivity implements TaskLogCallback {
     private TextView tvEmptyStatus, tvEmptyFailure;
     private DailyStatusAdapter dailyStatusAdapter;
     private FailureLogAdapter failureLogAdapter;
+
+    private volatile boolean isTaskRunning = false;
+    private int currentTabPosition = 0;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -92,12 +95,15 @@ public class MainActivity extends AppCompatActivity implements TaskLogCallback {
         tabLayout.addOnTabSelectedListener(new TabLayout.OnTabSelectedListener() {
             @Override
             public void onTabSelected(TabLayout.Tab tab) {
+                currentTabPosition = tab.getPosition();
                 if (tab.getPosition() == 0) {
                     rvDailyStatus.setVisibility(View.VISIBLE);
                     rvFailureList.setVisibility(View.GONE);
+                    tvEmptyFailure.setVisibility(View.GONE);
                 } else {
                     rvDailyStatus.setVisibility(View.GONE);
                     rvFailureList.setVisibility(View.VISIBLE);
+                    tvEmptyStatus.setVisibility(View.GONE);
                 }
                 loadTodayStatus();
             }
@@ -136,16 +142,17 @@ public class MainActivity extends AppCompatActivity implements TaskLogCallback {
         setupGearMenu();
         setupListViewCheckListener();
         checkAutoClearBoot();
+        setupIdleLockCallback();
 
         new Thread(() -> {
             try {
                 AppGlobal.initKeyManager(getApplicationContext());
                 runOnUiThread(() -> {
-                    appendLog("", "", "✅密钥管理器初始化完成");
+                    appendLog("", "", "密钥管理器初始化完成");
                     refreshCipherKeyList();
                 });
             } catch (Exception e) {
-                runOnUiThread(() -> appendLog("", "", "❌密钥管理器初始化失败:" + e.getMessage()));
+                runOnUiThread(() -> appendLog("", "", "错误：密钥管理器初始化失败:" + e.getMessage()));
             }
         }).start();
     }
@@ -156,6 +163,7 @@ public class MainActivity extends AppCompatActivity implements TaskLogCallback {
         tvTokenCount = findViewById(R.id.tv_token_count);
         tvQdCount = findViewById(R.id.tv_qd_count);
         tvEnabledCount = findViewById(R.id.tv_enabled_count);
+        btnBatchFund = findViewById(R.id.btn_batch_fund);
         btnBatchEnter = findViewById(R.id.btn_batch_enter);
         btnBatchClaim = findViewById(R.id.btn_batch_claim);
         btnFullWorkflow = findViewById(R.id.btn_full_workflow);
@@ -175,66 +183,102 @@ public class MainActivity extends AppCompatActivity implements TaskLogCallback {
         });
         scrollView.setVisibility(View.VISIBLE);
 
+        btnBatchFund.setOnClickListener(v -> {
+            if (isTaskRunning) {
+                android.widget.Toast.makeText(this, "任务执行中，请勿重复点击", android.widget.Toast.LENGTH_SHORT).show();
+                return;
+            }
+            showBatchFundDialog();
+        });
+
         btnBatchEnter.setOnClickListener(v -> {
+            if (isTaskRunning) {
+                android.widget.Toast.makeText(this, "任务执行中，请勿重复点击", android.widget.Toast.LENGTH_SHORT).show();
+                return;
+            }
             List<KeyListItem> enabledList = getEnabledKeyItems();
             if (enabledList.isEmpty()) {
                 android.widget.Toast.makeText(this, "没有启用的私钥，请先在私钥管理中启用", android.widget.Toast.LENGTH_SHORT).show();
                 return;
             }
             Log.d("UI_CLICK","点击【批量入场】按钮");
+            setTaskButtonsEnabled(false);
             dialogHelper.showDecryptPasswordDialog(pwdCharArray -> new Thread(() -> {
                 try {
-                    long masterId = AppGlobal.getKeyStoreManager().getMasterAccountId();
-                    if (masterId > 0) {
-                        appendLog("", "FUND", "检测到主号，先执行批量充值...");
-                        AutoFundService.executeAutoFund(enabledList, pwdCharArray, this);
-                    }
                     ArenaTask.batchEnterAllResume(getApplicationContext(), this, currentPlayMode, enabledList, pwdCharArray);
                 } catch (Exception e) {
-                    runOnUiThread(() -> appendLog("", "ENTER", "❌批量入场外层异常：" + e.getMessage()));
+                    runOnUiThread(() -> appendLog("", "ENTER", "批量入场外层异常：" + e.getMessage()));
                     Log.e("BATCH_ENTER","异常",e);
                 } finally {
                     Arrays.fill(pwdCharArray, (char) 0);
+                    runOnUiThread(() -> setTaskButtonsEnabled(true));
                 }
             }).start());
         });
 
         btnBatchClaim.setOnClickListener(v -> {
+            if (isTaskRunning) {
+                android.widget.Toast.makeText(this, "任务执行中，请勿重复点击", android.widget.Toast.LENGTH_SHORT).show();
+                return;
+            }
             List<KeyListItem> enabledList = getEnabledKeyItems();
             if (enabledList.isEmpty()) {
                 android.widget.Toast.makeText(this, "没有启用的私钥，请先在私钥管理中启用", android.widget.Toast.LENGTH_SHORT).show();
                 return;
             }
             Log.d("UI_CLICK","点击【批量领取】按钮");
+            setTaskButtonsEnabled(false);
             dialogHelper.showDecryptPasswordDialog(pwdCharArray -> new Thread(() -> {
                 try {
                     ArenaTask.batchClaimAllResume(getApplicationContext(), this, currentPlayMode, enabledList, pwdCharArray);
                 } catch (Exception e) {
-                    runOnUiThread(() -> appendLog("", "CLAIM", "❌批量领取外层异常：" + e.getMessage()));
+                    runOnUiThread(() -> appendLog("", "CLAIM", "错误：批量领取外层异常：" + e.getMessage()));
                     Log.e("BATCH_CLAIM","异常",e);
                 } finally {
                     Arrays.fill(pwdCharArray, (char) 0);
+                    runOnUiThread(() -> setTaskButtonsEnabled(true));
                 }
             }).start());
         });
 
         btnFullWorkflow.setOnClickListener(v -> {
+            if (isTaskRunning) {
+                android.widget.Toast.makeText(this, "任务执行中，请勿重复点击", android.widget.Toast.LENGTH_SHORT).show();
+                return;
+            }
             List<KeyListItem> enabledList = getEnabledKeyItems();
             if (enabledList.isEmpty()) {
                 android.widget.Toast.makeText(this, "没有启用的私钥，请先在私钥管理中启用", android.widget.Toast.LENGTH_SHORT).show();
                 return;
             }
             Log.d("UI_CLICK","点击【完整工作流】按钮");
+            setTaskButtonsEnabled(false);
             dialogHelper.showDecryptPasswordDialog(pwdCharArray -> new Thread(() -> {
                 try {
                     ArenaTask.fullArenaWorkflowResume(getApplicationContext(), this, 2, currentPlayMode, enabledList, pwdCharArray);
                 } catch (Exception e) {
-                    runOnUiThread(() -> appendLog("", "", "❌完整工作流外层异常：" + e.getMessage()));
+                    runOnUiThread(() -> appendLog("", "", "完整工作流外层异常：" + e.getMessage()));
                     Log.e("FULL_WORKFLOW","异常",e);
                 } finally {
                     Arrays.fill(pwdCharArray, (char) 0);
+                    runOnUiThread(() -> setTaskButtonsEnabled(true));
                 }
             }).start());
+        });
+    }
+
+    private void setTaskButtonsEnabled(boolean enabled) {
+        isTaskRunning = !enabled;
+        runOnUiThread(() -> {
+            btnBatchFund.setEnabled(enabled);
+            btnBatchEnter.setEnabled(enabled);
+            btnBatchClaim.setEnabled(enabled);
+            btnFullWorkflow.setEnabled(enabled);
+            float alpha = enabled ? 1.0f : 0.5f;
+            btnBatchFund.setAlpha(alpha);
+            btnBatchEnter.setAlpha(alpha);
+            btnBatchClaim.setAlpha(alpha);
+            btnFullWorkflow.setAlpha(alpha);
         });
     }
 
@@ -257,7 +301,7 @@ public class MainActivity extends AppCompatActivity implements TaskLogCallback {
                 try {
                     KeyStoreManager mgr = AppGlobal.getKeyStoreManager();
                     mgr.clearAllKeys();
-                    runOnUiThread(() -> appendLog("", "", "⚠检测到自动清除计时到期，打开APP自动清空全部私钥！"));
+                    runOnUiThread(() -> appendLog("", "", "警告：检测到自动清除计时到期，打开 APP 自动清空全部私钥！"));
                     
                     // 重置自动清除配置，避免每次启动都重复清除
                     spAppSetting.edit()
@@ -268,6 +312,25 @@ public class MainActivity extends AppCompatActivity implements TaskLogCallback {
                 } catch (Exception ignored) {}
             }).start();
         }
+    }
+
+    private void setupIdleLockCallback() {
+        AppGlobal.setOnIdleLock(() -> runOnUiThread(() -> {
+            appendLog("", "", "会话已过期，请重新输入密码解锁");
+            dialogHelper.showDecryptPasswordDialog(pwdCharArray -> new Thread(() -> {
+                try {
+                    AppGlobal.initKeyManager(getApplicationContext());
+                    runOnUiThread(() -> {
+                        appendLog("", "", "密码验证成功，会话已恢复");
+                        refreshCipherKeyList();
+                    });
+                } catch (Exception e) {
+                    runOnUiThread(() -> appendLog("", "", "错误：密码验证失败：" + e.getMessage()));
+                } finally {
+                    Arrays.fill(pwdCharArray, (char) 0);
+                }
+            }).start());
+        }));
     }
 
     // 获取启用的密钥列表
@@ -405,23 +468,31 @@ public class MainActivity extends AppCompatActivity implements TaskLogCallback {
                     }).start();
                 }
             } catch (Exception e) {
-                runOnUiThread(() -> appendLog("", "", "❌刷新密钥列表异常：" + e.getMessage()));
+                runOnUiThread(() -> appendLog("", "", "错误：刷新密钥列表异常：" + e.getMessage()));
             }
         }).start();
     }
 
 
     public void showBatchFundDialog() {
+        if (isTaskRunning) {
+            android.widget.Toast.makeText(this, "任务执行中，请勿重复点击", android.widget.Toast.LENGTH_SHORT).show();
+            return;
+        }
+        setTaskButtonsEnabled(false);
         new Thread(() -> {
             try {
                 KeyStoreManager mgr = AppGlobal.getKeyStoreManager();
                 long masterId = mgr.getMasterAccountId();
                 if (masterId < 0) {
-                    runOnUiThread(() -> dialogHelper.styledDialog()
-                            .setTitle("未设置主号")
-                            .setMessage("请先在私钥管理中编辑某个私钥，勾选「设为主号」")
-                            .setPositiveButton("知道了", null)
-                            .show());
+                    runOnUiThread(() -> {
+                        dialogHelper.styledDialog()
+                                .setTitle("未设置主号")
+                                .setMessage("请先在私钥管理中编辑某个私钥，勾选「设为主号」")
+                                .setPositiveButton("知道了", (d, w) -> setTaskButtonsEnabled(true))
+                                .setOnCancelListener(d -> setTaskButtonsEnabled(true))
+                                .show();
+                    });
                     return;
                 }
 
@@ -431,10 +502,13 @@ public class MainActivity extends AppCompatActivity implements TaskLogCallback {
                     if (e.id == masterId) { masterEntry = e; break; }
                 }
                 if (masterEntry == null || masterEntry.address == null) {
-                    runOnUiThread(() -> dialogHelper.styledDialog()
-                            .setMessage("主号信息异常，请重新设置")
-                            .setPositiveButton("知道了", null)
-                            .show());
+                    runOnUiThread(() -> {
+                        dialogHelper.styledDialog()
+                                .setMessage("主号信息异常，请重新设置")
+                                .setPositiveButton("知道了", (d, w) -> setTaskButtonsEnabled(true))
+                                .setOnCancelListener(d -> setTaskButtonsEnabled(true))
+                                .show();
+                    });
                     return;
                 }
 
@@ -478,7 +552,8 @@ public class MainActivity extends AppCompatActivity implements TaskLogCallback {
                             dialogHelper.styledDialog()
                                     .setTitle("批量充值")
                                     .setMessage("所有账号余额均 ≥ 100，无需充值")
-                                    .setPositiveButton("知道了", null)
+                                    .setPositiveButton("知道了", (d, w) -> setTaskButtonsEnabled(true))
+                                    .setOnCancelListener(d -> setTaskButtonsEnabled(true))
                                     .show();
                             return;
                         }
@@ -545,20 +620,25 @@ public class MainActivity extends AppCompatActivity implements TaskLogCallback {
                                                     "❌ 批量充值失败: " + Web3AndroidUtil.safeMessage(e)));
                                         } finally {
                                             Arrays.fill(pwdCharArray, (char) 0);
+                                            runOnUiThread(() -> setTaskButtonsEnabled(true));
                                         }
                                     }).start());
                                 })
-                                .setNegativeButton("取消", null)
+                                .setNegativeButton("取消", (d, w) -> setTaskButtonsEnabled(true))
+                                .setOnCancelListener(d -> setTaskButtonsEnabled(true))
                                 .show();
                     });
                 } finally {
                     web3j.shutdown();
                 }
             } catch (Exception e) {
-                runOnUiThread(() -> dialogHelper.styledDialog()
-                        .setMessage("查询失败: " + Web3AndroidUtil.safeMessage(e))
-                        .setPositiveButton("知道了", null)
-                        .show());
+                runOnUiThread(() -> {
+                    dialogHelper.styledDialog()
+                            .setMessage("查询失败: " + Web3AndroidUtil.safeMessage(e))
+                            .setPositiveButton("知道了", (d, w) -> setTaskButtonsEnabled(true))
+                            .setOnCancelListener(d -> setTaskButtonsEnabled(true))
+                            .show();
+                });
             }
         }).start();
     }
@@ -676,11 +756,17 @@ public class MainActivity extends AppCompatActivity implements TaskLogCallback {
                 runOnUiThread(() -> {
                     dailyStatusAdapter.setItemList(statusList);
                     dailyStatusAdapter.notifyDataSetChanged();
-                    tvEmptyStatus.setVisibility(statusList.isEmpty() ? View.VISIBLE : View.GONE);
-
                     failureLogAdapter.setItemList(failList);
                     failureLogAdapter.notifyDataSetChanged();
-                    tvEmptyFailure.setVisibility(failList.isEmpty() ? View.VISIBLE : View.GONE);
+
+                    tvEmptyStatus.setVisibility(View.GONE);
+                    tvEmptyFailure.setVisibility(View.GONE);
+
+                    if (currentTabPosition == 0) {
+                        if (statusList.isEmpty()) tvEmptyStatus.setVisibility(View.VISIBLE);
+                    } else {
+                        if (failList.isEmpty()) tvEmptyFailure.setVisibility(View.VISIBLE);
+                    }
                 });
             } catch (Exception e) {
                 android.util.Log.e("MainActivity", "loadTodayStatus error", e);

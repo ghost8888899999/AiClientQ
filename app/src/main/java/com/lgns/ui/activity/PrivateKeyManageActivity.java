@@ -332,35 +332,53 @@ public class PrivateKeyManageActivity extends AppCompatActivity {
         if (isCustomCodeUsed(customCode, -1)) {
             return "自定义编号已存在";
         }
-        return validatePrivateKey(fullKey);
+        String pkError = validatePrivateKey(fullKey);
+        if (pkError != null) {
+            return pkError;
+        }
+        String dupError = checkDuplicatePrivateKey(fullKey);
+        if (dupError != null) {
+            return dupError;
+        }
+        return null;
     }
 
     private String validatePrivateKey(String pk) {
-        String clean = pk.toLowerCase();
+        String clean = pk.trim().toLowerCase();
         if (clean.startsWith("0x")) clean = clean.substring(2);
         
-        if (clean.length() != 64) {
-            return "私钥长度错误：需要 64 个十六进制字符（当前 " + clean.length() + " 个）";
+        if (clean.isEmpty()) {
+            return "私钥内容不能为空";
         }
-        
         if (!clean.matches("[0-9a-f]+")) {
-            return "私钥格式错误：只能包含 0-9 和 a-f 字符";
+            return "私钥格式错误：只能包含 0-9 和 a-f 字符（可带 0x 前缀）";
         }
         
-        if (clean.matches("0+")) {
-            return "私钥无效：不能全为 0";
-        }
-        
+        return null;
+    }
+
+    private String checkDuplicatePrivateKey(String rawPrivateKey) {
         try {
-            java.math.BigInteger pkBig = new java.math.BigInteger(clean, 16);
-            java.math.BigInteger curveOrder = new java.math.BigInteger("FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141", 16);
-            if (pkBig.compareTo(curveOrder) >= 0) {
-                return "私钥超出有效范围";
+            String clean = rawPrivateKey.trim().toLowerCase();
+            if (clean.startsWith("0x")) clean = clean.substring(2);
+            
+            String newAddr = "0x" + org.web3j.crypto.Keys.getAddress(
+                    org.web3j.crypto.ECKeyPair.create(org.web3j.utils.Numeric.toBigInt(clean)));
+            
+            KeyStoreManager mgr = AppGlobal.getKeyStoreManager();
+            List<KeyStoreManager.KeyEntry> allKeys = mgr.loadKeyEntryList();
+            
+            for (KeyStoreManager.KeyEntry entry : allKeys) {
+                if (entry.address != null && entry.address.equalsIgnoreCase(newAddr)) {
+                    String label = entry.customCode.isEmpty() 
+                            ? String.format("%03d", entry.id) 
+                            : entry.customCode;
+                    return "私钥已存在！对应编号: " + label + "，地址: " + entry.address;
+                }
             }
-        } catch (NumberFormatException e) {
-            return "私钥解析失败：" + e.getMessage();
+        } catch (Exception e) {
+            return "私钥校验失败: " + e.getMessage();
         }
-        
         return null;
     }
 
@@ -414,28 +432,23 @@ public class PrivateKeyManageActivity extends AppCompatActivity {
                     boolean isMaster = cbMaster.isChecked();
                     entry.customCode = newCode.isEmpty() ? null : newCode;
                     entry.groupNo = newGroup;
-                    if (isMaster && fCurrentMasterId != entry.id) {
-                        AppGlobal.getKeyStoreManager().setMasterAccountId(entry.id);
-                        entry.enabled = false;
-                        // 持久化保存禁用状态
-                        new Thread(() -> {
-                            try {
-                                KeyStoreManager mgr = AppGlobal.getKeyStoreManager();
-                                List<KeyStoreManager.KeyEntry> all = mgr.loadKeyEntryList();
-                                for (KeyStoreManager.KeyEntry e : all) {
-                                    if (e.id == entry.id) {
-                                        e.enabled = false;
-                                        break;
-                                    }
-                                }
-                                mgr.saveKeyEntryList(all);
-                            } catch (Exception ignored) {}
-                        }).start();
-                        Toast.makeText(this, "已设为主号并自动禁用", Toast.LENGTH_SHORT).show();
-                    } else if (!isMaster && fCurrentMasterId == entry.id) {
-                        AppGlobal.getKeyStoreManager().setMasterAccountId(-1);
-                    }
-                    loadKeys();
+                    new Thread(() -> {
+                        try {
+                            KeyStoreManager mgr = AppGlobal.getKeyStoreManager();
+                            mgr.updateKeyEntry((int) entry.id, entry.customCode, entry.groupNo, entry.enabled);
+                            if (isMaster && fCurrentMasterId != entry.id) {
+                                mgr.setMasterAccountId(entry.id);
+                                mgr.updateKeyEntry((int) entry.id, entry.customCode, entry.groupNo, false);
+                                entry.enabled = false;
+                                runOnUiThread(() -> Toast.makeText(this, "已设为主号并自动禁用", Toast.LENGTH_SHORT).show());
+                            } else if (!isMaster && fCurrentMasterId == entry.id) {
+                                mgr.setMasterAccountId(-1);
+                            }
+                            runOnUiThread(() -> loadKeys());
+                        } catch (Exception e) {
+                            runOnUiThread(() -> Toast.makeText(this, "❌ 保存失败: " + e.getMessage(), Toast.LENGTH_SHORT).show());
+                        }
+                    }).start();
                 })
                 .setNegativeButton("取消", null);
         dialogBuilder.show();

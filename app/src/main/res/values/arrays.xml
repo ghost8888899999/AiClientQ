@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string-array name="time_unit_array">
+        <item>分钟</item>
+        <item>小时</item>
+        <item>天</item>
+    </string-array>
+</resources>

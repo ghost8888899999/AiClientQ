@@ -126,13 +126,13 @@ public class AutoFundService {
                                 2, java.math.RoundingMode.HALF_UP);
 
                         if (callback != null) {
-                            callback.onLog("", "FUND", "✅ " + label + " 转入 " + amount + " fLGNS");
+                            callback.onLog("", "FUND", label + " 转入 " + amount + " fLGNS");
                         }
                     } catch (Exception e) {
                         final String label = needFundLabels.get(index);
                         if (callback != null) {
                             callback.onLog("", "FUND",
-                                    "❌ " + label + " 转账失败: " +
+                                    "错误：" + label + " 转账失败: " +
                                             Web3AndroidUtil.safeMessage(e));
                         }
                     }
@@ -150,7 +150,7 @@ public class AutoFundService {
         } catch (Exception e) {
             if (callback != null) {
                 callback.onLog("", "FUND",
-                        "❌ 自动充值异常: " + Web3AndroidUtil.safeMessage(e));
+                        "错误：自动充值异常：" + Web3AndroidUtil.safeMessage(e));
             }
         }
     }

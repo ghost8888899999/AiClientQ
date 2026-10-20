@@ -696,14 +696,35 @@ public class ArenaTask {
 
     public static void fullArenaWorkflowResume(Context ctx, TaskLogCallback callback, int claimMaxRetry, int playMode,
                                                List<KeyListItem> selectedList, char[] sessionCryptoKey) throws Exception {
+
+        // ===== 第 1 步：批量充值 =====
+        callback.onLog("", "FUND", "========完整流程 - 第1步：批量充值========");
+        com.lgns.service.AutoFundService.executeAutoFund(selectedList, sessionCryptoKey, callback);
+
+        // 充值后等待交易上链确认（约 2~3 个区块）
+        callback.onLog("", "FUND", "⏳ 等待充值交易确认...");
+        Thread.sleep(20000);
+
+        // ===== 第 2 步：批量入场 =====
+        callback.onLog("", "ENTER", "========完整流程 - 第2步：批量入场========");
         batchEnterAllResume(ctx, callback, playMode, selectedList, sessionCryptoKey);
+
         if (Web3AndroidUtil.isCancelRequested()) {
-            callback.onLog("", "", "🛑 用户取消,跳过领取阶段");
+            callback.onLog("", "", " 用户取消,跳过领取阶段");
             enterFailedAddrSet.clear();
             return;
         }
+
+        // 入场后等待交易上链 + 游戏状态更新
+        callback.onLog("", "ENTER", "⏳ 等待入场交易确认及游戏状态更新...");
+        Thread.sleep(30000);
+
+        // ===== 第 3 步：批量领取 =====
+        callback.onLog("", "CLAIM", "========完整流程 - 第3步：批量领取========");
         batchClaimAllResume(ctx, callback, playMode, selectedList, sessionCryptoKey);
         enterFailedAddrSet.clear();
+
+        callback.onLog("", "", "========完整流程结束========");
     }
 
     public static void batchEnterAll(Context ctx, TaskLogCallback callback) throws Exception { /* 保留原版 */ }

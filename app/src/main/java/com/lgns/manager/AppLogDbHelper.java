@@ -16,7 +16,7 @@ import java.util.List;
 
 public class AppLogDbHelper extends SQLiteOpenHelper {
     private static final String DB_NAME = "app_log.db";
-    private static final int DB_VERSION = 5;
+    private static final int DB_VERSION = 6;
     private static AppLogDbHelper instance;
 
     public static final String TABLE_LOG = "task_log";
@@ -49,6 +49,20 @@ public class AppLogDbHelper extends SQLiteOpenHelper {
     public static final String COL_FL_TYPE = "fail_type";
     public static final String COL_FL_REASON = "fail_reason";
     public static final String COL_FL_TIME = "fail_time";
+
+    public static final String TABLE_KEY_ENTRY = "key_entry";
+    public static final String COL_KE_ID = "_id";
+    public static final String COL_KE_CUSTOM_CODE = "custom_code";
+    public static final String COL_KE_GROUP_NO = "group_no";
+    public static final String COL_KE_CIPHER_TEXT = "cipher_text";
+    public static final String COL_KE_ADDRESS = "address";
+    public static final String COL_KE_ENABLED = "enabled";
+    public static final String COL_KE_SORT_ORDER = "sort_order";
+    public static final String COL_KE_CREATED = "created_at";
+
+    public static final String TABLE_KEY_META = "key_meta";
+    public static final String COL_KM_KEY = "meta_key";
+    public static final String COL_KM_VALUE = "meta_value";
 
     private AppLogDbHelper(Context context) {
         super(context.getApplicationContext(), DB_NAME, null, DB_VERSION);
@@ -93,6 +107,18 @@ public class AppLogDbHelper extends SQLiteOpenHelper {
                 COL_FL_TYPE + " TEXT," +
                 COL_FL_REASON + " TEXT," +
                 COL_FL_TIME + " INTEGER NOT NULL);");
+        db.execSQL("CREATE TABLE IF NOT EXISTS " + TABLE_KEY_ENTRY + "(" +
+                COL_KE_ID + " INTEGER PRIMARY KEY," +
+                COL_KE_CUSTOM_CODE + " TEXT DEFAULT ''," +
+                COL_KE_GROUP_NO + " TEXT DEFAULT ''," +
+                COL_KE_CIPHER_TEXT + " TEXT NOT NULL," +
+                COL_KE_ADDRESS + " TEXT," +
+                COL_KE_ENABLED + " INTEGER DEFAULT 1," +
+                COL_KE_SORT_ORDER + " INTEGER DEFAULT 0," +
+                COL_KE_CREATED + " INTEGER NOT NULL);");
+        db.execSQL("CREATE TABLE IF NOT EXISTS " + TABLE_KEY_META + "(" +
+                COL_KM_KEY + " TEXT PRIMARY KEY," +
+                COL_KM_VALUE + " TEXT);");
     }
 
     @Override
@@ -136,6 +162,20 @@ public class AppLogDbHelper extends SQLiteOpenHelper {
         }
         if (oldVersion < 5) {
             try { db.execSQL("ALTER TABLE " + TABLE_DAILY_STATUS + " ADD COLUMN " + COL_DS_IS_FAILED + " INTEGER DEFAULT 0"); } catch (Exception ignored) {}
+        }
+        if (oldVersion < 6) {
+            db.execSQL("CREATE TABLE IF NOT EXISTS " + TABLE_KEY_ENTRY + "(" +
+                    COL_KE_ID + " INTEGER PRIMARY KEY," +
+                    COL_KE_CUSTOM_CODE + " TEXT DEFAULT ''," +
+                    COL_KE_GROUP_NO + " TEXT DEFAULT ''," +
+                    COL_KE_CIPHER_TEXT + " TEXT NOT NULL," +
+                    COL_KE_ADDRESS + " TEXT," +
+                    COL_KE_ENABLED + " INTEGER DEFAULT 1," +
+                    COL_KE_SORT_ORDER + " INTEGER DEFAULT 0," +
+                    COL_KE_CREATED + " INTEGER NOT NULL);");
+            db.execSQL("CREATE TABLE IF NOT EXISTS " + TABLE_KEY_META + "(" +
+                    COL_KM_KEY + " TEXT PRIMARY KEY," +
+                    COL_KM_VALUE + " TEXT);");
         }
     }
 
@@ -303,17 +343,15 @@ public class AppLogDbHelper extends SQLiteOpenHelper {
         return getWritableDatabase().delete(TABLE_LOG, null, null);
     }
 
-    // ========== 重建表（保留分组）==========
+    // ========== 重建表（保留分组和密钥）==========
     public void recreateTablesExceptGroups() {
         SQLiteDatabase db = getWritableDatabase();
         db.beginTransaction();
         try {
-            // 删除 task_log、daily_status、failure_log
             db.delete(TABLE_LOG, null, null);
             db.delete(TABLE_DAILY_STATUS, null, null);
             db.delete(TABLE_FAILURE_LOG, null, null);
             
-            // 重新创建表结构
             db.execSQL("DROP TABLE IF EXISTS " + TABLE_LOG);
             db.execSQL("DROP TABLE IF EXISTS " + TABLE_DAILY_STATUS);
             db.execSQL("DROP TABLE IF EXISTS " + TABLE_FAILURE_LOG);
@@ -324,5 +362,98 @@ public class AppLogDbHelper extends SQLiteOpenHelper {
         } finally {
             db.endTransaction();
         }
+    }
+
+    // ========== 密钥管理 CRUD ==========
+    public long insertKeyEntry(int id, String customCode, String groupNo, String cipherText, String address, boolean enabled, int sortOrder) {
+        ContentValues cv = new ContentValues();
+        cv.put(COL_KE_ID, id);
+        cv.put(COL_KE_CUSTOM_CODE, customCode != null ? customCode : "");
+        cv.put(COL_KE_GROUP_NO, groupNo != null ? groupNo : "");
+        cv.put(COL_KE_CIPHER_TEXT, cipherText);
+        cv.put(COL_KE_ADDRESS, address);
+        cv.put(COL_KE_ENABLED, enabled ? 1 : 0);
+        cv.put(COL_KE_SORT_ORDER, sortOrder);
+        cv.put(COL_KE_CREATED, System.currentTimeMillis());
+        return getWritableDatabase().insert(TABLE_KEY_ENTRY, null, cv);
+    }
+
+    public int deleteKeyEntry(int id) {
+        return getWritableDatabase().delete(TABLE_KEY_ENTRY, COL_KE_ID + "=?", new String[]{String.valueOf(id)});
+    }
+
+    public int updateKeyEntry(int id, String customCode, String groupNo, boolean enabled) {
+        ContentValues cv = new ContentValues();
+        cv.put(COL_KE_CUSTOM_CODE, customCode != null ? customCode : "");
+        cv.put(COL_KE_GROUP_NO, groupNo != null ? groupNo : "");
+        cv.put(COL_KE_ENABLED, enabled ? 1 : 0);
+        return getWritableDatabase().update(TABLE_KEY_ENTRY, cv, COL_KE_ID + "=?", new String[]{String.valueOf(id)});
+    }
+
+    public int updateKeyEntryAddress(int id, String address) {
+        ContentValues cv = new ContentValues();
+        cv.put(COL_KE_ADDRESS, address);
+        return getWritableDatabase().update(TABLE_KEY_ENTRY, cv, COL_KE_ID + "=?", new String[]{String.valueOf(id)});
+    }
+
+    public int updateKeyEntrySortOrder(int id, int sortOrder) {
+        ContentValues cv = new ContentValues();
+        cv.put(COL_KE_SORT_ORDER, sortOrder);
+        return getWritableDatabase().update(TABLE_KEY_ENTRY, cv, COL_KE_ID + "=?", new String[]{String.valueOf(id)});
+    }
+
+    public int clearAllKeyEntries() {
+        return getWritableDatabase().delete(TABLE_KEY_ENTRY, null, null);
+    }
+
+    public boolean keyEntryAddressExists(String address) {
+        if (address == null) return false;
+        Cursor cursor = getReadableDatabase().query(TABLE_KEY_ENTRY,
+                new String[]{COL_KE_ID}, COL_KE_ADDRESS + "=?", new String[]{address},
+                null, null, null, "1");
+        boolean exists = cursor.getCount() > 0;
+        cursor.close();
+        return exists;
+    }
+
+    public List<int[]> queryKeyEntryIdAndSort() {
+        List<int[]> list = new ArrayList<>();
+        Cursor cursor = getReadableDatabase().query(TABLE_KEY_ENTRY,
+                new String[]{COL_KE_ID, COL_KE_SORT_ORDER},
+                null, null, null, null, COL_KE_SORT_ORDER + " ASC");
+        while (cursor.moveToNext()) {
+            list.add(new int[]{
+                    (int) cursor.getLong(cursor.getColumnIndexOrThrow(COL_KE_ID)),
+                    cursor.getInt(cursor.getColumnIndexOrThrow(COL_KE_SORT_ORDER))
+            });
+        }
+        cursor.close();
+        return list;
+    }
+
+    public int getKeyEntryCount() {
+        Cursor cursor = getReadableDatabase().rawQuery("SELECT COUNT(*) FROM " + TABLE_KEY_ENTRY, null);
+        int count = 0;
+        if (cursor.moveToFirst()) count = cursor.getInt(0);
+        cursor.close();
+        return count;
+    }
+
+    // ========== key_meta CRUD ==========
+    public String getMetaValue(String key, String defaultValue) {
+        Cursor cursor = getReadableDatabase().query(TABLE_KEY_META,
+                new String[]{COL_KM_VALUE}, COL_KM_KEY + "=?", new String[]{key},
+                null, null, null, "1");
+        String val = defaultValue;
+        if (cursor.moveToFirst()) val = cursor.getString(cursor.getColumnIndexOrThrow(COL_KM_VALUE));
+        cursor.close();
+        return val;
+    }
+
+    public void putMetaValue(String key, String value) {
+        ContentValues cv = new ContentValues();
+        cv.put(COL_KM_KEY, key);
+        cv.put(COL_KM_VALUE, value);
+        getWritableDatabase().insertWithOnConflict(TABLE_KEY_META, null, cv, SQLiteDatabase.CONFLICT_REPLACE);
     }
 }

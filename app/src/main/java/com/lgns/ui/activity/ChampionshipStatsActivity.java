@@ -5,6 +5,7 @@ import android.graphics.Typeface;
 import android.os.Bundle;
 import android.view.Gravity;
 import android.view.View;
+import android.widget.ImageButton;
 import android.widget.LinearLayout;
 import android.widget.ProgressBar;
 import android.widget.TextView;
@@ -35,12 +36,15 @@ public class ChampionshipStatsActivity extends AppCompatActivity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_championship_stats);
 
+        ImageButton btnBack = findViewById(R.id.btn_back);
         pbLoading = findViewById(R.id.pb_loading);
         tvError = findViewById(R.id.tv_error);
         layoutTable = findViewById(R.id.layout_table);
         tableContainer = findViewById(R.id.table_container);
         tvSummary = findViewById(R.id.tv_summary);
         tvStatsCount = findViewById(R.id.tv_stats_count);
+
+        btnBack.setOnClickListener(v -> finish());
 
         List<String> addrs = getIntent().getStringArrayListExtra("addrs");
         List<String> labels = getIntent().getStringArrayListExtra("labels");

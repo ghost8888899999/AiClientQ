@@ -1,32 +1,36 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:orientation="vertical"
-    android:background="#FAFAFA">
+    android:background="@color/bg_page">
 
     <LinearLayout
+        android:id="@+id/toolbar"
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:orientation="horizontal"
+        android:layout_height="56dp"
+        android:layout_alignParentTop="true"
+        android:background="@color/primary"
+        android:elevation="4dp"
         android:gravity="center_vertical"
-        android:padding="16dp"
-        android:background="#FFFFFF"
-        android:elevation="2dp">
+        android:orientation="horizontal"
+        android:paddingStart="4dp"
+        android:paddingEnd="8dp">
 
-        <ImageView
-            android:layout_width="24dp"
-            android:layout_height="24dp"
-            android:src="@drawable/ic_log_svg"
-            android:layout_marginEnd="8dp" />
+        <ImageButton
+            android:id="@+id/btn_back"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:background="?android:attr/selectableItemBackgroundBorderless"
+            android:contentDescription="返回"
+            android:src="@drawable/ic_back_svg" />
 
         <TextView
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
             android:text="运行日志"
+            android:textColor="@color/white"
             android:textSize="18sp"
-            android:textColor="#212121"
             android:textStyle="bold" />
 
         <TextView
@@ -34,45 +38,43 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:textSize="12sp"
-            android:textColor="#757575"
-            android:layout_marginEnd="8dp" />
+            android:textColor="@color/white"
+            android:layout_marginEnd="4dp" />
 
-        <Button
+        <ImageButton
             android:id="@+id/btn_clear_log"
-            android:layout_width="wrap_content"
-            android:layout_height="36dp"
-            android:text="清空日志"
-            android:textSize="12sp"
-            android:paddingStart="12dp"
-            android:paddingEnd="12dp" />
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:background="?android:attr/selectableItemBackgroundBorderless"
+            android:contentDescription="清空日志"
+            android:src="@drawable/ic_trash_svg" />
 
-        <View android:layout_width="8dp" android:layout_height="0dp" />
-
-        <Button
+        <ImageButton
             android:id="@+id/btn_init_db"
-            android:layout_width="wrap_content"
-            android:layout_height="36dp"
-            android:text="初始化数据库"
-            android:textSize="12sp"
-            android:paddingStart="12dp"
-            android:paddingEnd="12dp" />
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:background="?android:attr/selectableItemBackgroundBorderless"
+            android:contentDescription="初始化数据库"
+            android:src="@drawable/ic_database_svg" />
     </LinearLayout>
 
     <TextView
         android:id="@+id/tv_log_empty"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
+        android:layout_below="@id/toolbar"
         android:gravity="center"
         android:text="暂无日志记录"
         android:textSize="14sp"
-        android:textColor="#BDBDBD"
+        android:textColor="@color/text_secondary"
         android:visibility="gone" />
 
     <ScrollView
         android:id="@+id/sv_log"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:background="#F5F5F5"
+        android:layout_below="@id/toolbar"
+        android:background="@color/bg_page"
         android:padding="16dp">
 
         <TextView
@@ -80,10 +82,10 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:textSize="12sp"
-            android:textColor="#333333"
+            android:textColor="@color/text_primary"
             android:lineSpacingExtra="3dp"
             android:textIsSelectable="true"
             android:fontFamily="monospace" />
     </ScrollView>
 
-</LinearLayout>
+</RelativeLayout>
