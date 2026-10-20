@@ -31,8 +31,15 @@ public class AppGlobal {
         if (sKeyStoreManager == null) {
             throw new IllegalStateException("请先执行 initKeyManager 初始化密钥管理器");
         }
-        touch(); // 每次业务调用刷活跃度
+        touch();
         return sKeyStoreManager;
+    }
+
+    public static Context getAppContext() {
+        if (sAppCtx == null) {
+            throw new IllegalStateException("AppGlobal 未初始化，请先执行 initKeyManager");
+        }
+        return sAppCtx;
     }
 
     /** 业务代码在任何用户操作/网络请求前后调一下 */

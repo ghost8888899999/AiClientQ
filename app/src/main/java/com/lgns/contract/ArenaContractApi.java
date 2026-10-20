@@ -1,7 +1,10 @@
 package com.lgns.contract;
 
+import android.content.Context;
 import android.util.Log;
 
+import com.lgns.manager.AppGlobal;
+import com.lgns.manager.AppLogDbHelper;
 import com.lgns.model.ArenaConfig;
 import com.lgns.util.Web3AndroidUtil;
 
@@ -82,7 +85,10 @@ public class ArenaContractApi {
         if (ethCall.hasError()) {
             throw new Exception("playerSummary rpc error:" + ethCall.getError().getMessage());
         }
-        return decodePlayerSummary(ethCall.getValue());
+        String hexValue = ethCall.getValue();
+        Log.d("RPC_DEBUG", "playerSummary[" + playerAddr + "] 原始返回: " + hexValue);
+        logRpcToDb(null, "playerSummary[" + playerAddr.substring(0, Math.min(10, playerAddr.length())) + "...] 原始返回长度: " + hexValue.length());
+        return decodePlayerSummary(hexValue);
     }
 
     /**
@@ -140,7 +146,10 @@ public class ArenaContractApi {
                 DefaultBlockParameterName.LATEST
         ).send();
         if (res.hasError()) throw new Exception("jiaziCount error:" + res.getError().getMessage());
-        List<Type> dec = FunctionReturnDecoder.decode(res.getValue(), f.getOutputParameters());
+        String hexValue = res.getValue();
+        Log.d("RPC_DEBUG", "jiaziCount[" + owner + "] 原始返回: " + hexValue);
+        logRpcToDb(null, "jiaziCount[" + owner.substring(0, Math.min(10, owner.length())) + "...] 原始返回长度: " + hexValue.length());
+        List<Type> dec = FunctionReturnDecoder.decode(hexValue, f.getOutputParameters());
         return ((Uint256) dec.get(0)).getValue();
     }
 
@@ -160,7 +169,10 @@ public class ArenaContractApi {
                     DefaultBlockParameterName.LATEST
             ).send();
             if (res.hasError()) return null;
-            List<Type> dec = FunctionReturnDecoder.decode(res.getValue(), f.getOutputParameters());
+            String hexValue = res.getValue();
+            Log.d("RPC_DEBUG", "activityOf[" + owner + "] 原始返回: " + hexValue);
+            logRpcToDb(null, "activityOf[" + owner.substring(0, Math.min(10, owner.length())) + "...] 原始返回长度: " + hexValue.length());
+            List<Type> dec = FunctionReturnDecoder.decode(hexValue, f.getOutputParameters());
             BigInteger val = ((Uint256) dec.get(2)).getValue();
             return val.intValue();
         } catch (Exception e) {
@@ -185,6 +197,8 @@ public class ArenaContractApi {
             ).send();
             if (res.hasError()) return null;
             String hexRaw = Numeric.cleanHexPrefix(res.getValue());
+            Log.d("RPC_DEBUG", "playerHistoryLatest[" + owner + "] 原始返回长度: " + hexRaw.length());
+            logRpcToDb(null, "playerHistoryLatest[" + owner.substring(0, Math.min(10, owner.length())) + "...] 原始返回长度: " + hexRaw.length());
             if (hexRaw.length() < 64) return 0;
 
             int arrOffset;
@@ -520,9 +534,15 @@ public class ArenaContractApi {
 
     private static PlayerSummary decodePlayerSummary(String hexValue) {
         PlayerSummary s = new PlayerSummary();
+        Log.d("RPC_DEBUG", "decodePlayerSummary 输入 hex 长度: " + (hexValue != null ? hexValue.length() : "null"));
         try {
             List<Type> dec = FunctionReturnDecoder.decode(hexValue, castOutputs(buildPlayerSummaryOutputs()));
-            if (dec.size() < 16) return s;
+            Log.d("RPC_DEBUG", "decodePlayerSummary 解码后字段数: " + dec.size());
+            if (dec.size() < 16) {
+                Log.w("RPC_DEBUG", "decodePlayerSummary 字段数不足 16，返回默认值");
+                logRpcToDb(null, "decodePlayerSummary 字段数不足 16，实际: " + dec.size());
+                return s;
+            }
             s.walletBalance = safeUint(dec, 0);
             s.allowance = safeUint(dec, 1);
             s.prize = safeUint(dec, 2);
@@ -539,8 +559,12 @@ public class ArenaContractApi {
             s.roundsFromPrize = safeUint(dec, 13);
             s.nextEntryFromPrize = safeBool(dec, 14);
             s.seatedInCurrentRound = safeBool(dec, 15);
+            String result = "wallet=" + s.walletBalance + ", prize=" + s.prize + ", remaining=" + s.entriesRemainingToday;
+            Log.d("RPC_DEBUG", "decodePlayerSummary 解析结果: " + result);
+            logRpcToDb(null, "decodePlayerSummary 解析结果: " + result);
         } catch (Throwable t) {
-            Log.w("ArenaContractApi", "decodePlayerSummary partial fail: " + t.getClass().getSimpleName());
+            Log.w("RPC_DEBUG", "decodePlayerSummary partial fail: " + t.getClass().getSimpleName() + " - " + t.getMessage());
+            logRpcToDb(null, "decodePlayerSummary 异常: " + t.getClass().getSimpleName() + " - " + t.getMessage());
         }
         return s;
     }
@@ -561,6 +585,17 @@ public class ArenaContractApi {
     @SuppressWarnings("unchecked")
     private static List<TypeReference<Type>> castOutputs(List<TypeReference<?>> outputs) {
         return (List<TypeReference<Type>>) (List<?>) outputs;
+    }
+
+    private static void logRpcToDb(String keyNo, String content) {
+        try {
+            Context ctx = AppGlobal.getAppContext();
+            if (ctx == null) return;
+            AppLogDbHelper db = AppLogDbHelper.getInstance(ctx);
+            new Thread(() -> db.insertLog(keyNo, "RPC_DEBUG", content, System.currentTimeMillis())).start();
+        } catch (Exception e) {
+            Log.e("RPC_DEBUG", "写入数据库失败: " + e.getMessage());
+        }
     }
 
     /**

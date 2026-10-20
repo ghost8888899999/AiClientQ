@@ -69,7 +69,6 @@ public class KeyStoreManager {
         long newId = sp.getLong(KEY_NEXT_ID,1);
         String cipherText = encrypt(rawPrivateKey, sessionCryptoKey);
         
-        // 地址带 0x 前缀
         String addr = "0x" + org.web3j.crypto.Keys.getAddress(
                 org.web3j.crypto.ECKeyPair.create(org.web3j.utils.Numeric.toBigInt(rawPrivateKey)));
         
@@ -77,7 +76,7 @@ public class KeyStoreManager {
         list.add(new KeyEntry(newId, customCode, groupNo, cipherText, addr));
         saveKeyEntryList(list);
         sp.edit().putLong(KEY_NEXT_ID, newId+1).apply();
-
+        
         appendIdToCustomSort(newId);
         return new KeyEntry(newId, customCode, groupNo, cipherText, addr);
     }

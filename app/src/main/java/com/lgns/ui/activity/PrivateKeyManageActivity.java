@@ -291,16 +291,9 @@ public class PrivateKeyManageActivity extends AppCompatActivity {
             String fullKey = (part1 + part2).trim();
             String pwdStr = etPwd.getText().toString().trim();
 
-            if (fullKey.isEmpty()) {
-                Toast.makeText(this, "密钥内容不能为空", Toast.LENGTH_SHORT).show();
-                return;
-            }
-            if (pwdStr.isEmpty()) {
-                Toast.makeText(this, "请输入加解密密码", Toast.LENGTH_SHORT).show();
-                return;
-            }
-            if (!customCode.isEmpty() && isCustomCodeUsed(customCode, -1)) {
-                Toast.makeText(this, "自定义编号已存在", Toast.LENGTH_SHORT).show();
+            String validateError = validateAddKeyInput(customCode, fullKey, pwdStr);
+            if (validateError != null) {
+                Toast.makeText(this, validateError, Toast.LENGTH_LONG).show();
                 return;
             }
 
@@ -321,6 +314,54 @@ public class PrivateKeyManageActivity extends AppCompatActivity {
                 }
             }).start();
         });
+    }
+
+    private String validateAddKeyInput(String customCode, String fullKey, String pwdStr) {
+        if (fullKey.isEmpty()) {
+            return "密钥内容不能为空";
+        }
+        if (pwdStr.isEmpty()) {
+            return "请输入加解密密码";
+        }
+        if (customCode.isEmpty()) {
+            return "请输入自定义编号";
+        }
+        if (customCode.length() > 10) {
+            return "自定义编号不能超过10个字符";
+        }
+        if (isCustomCodeUsed(customCode, -1)) {
+            return "自定义编号已存在";
+        }
+        return validatePrivateKey(fullKey);
+    }
+
+    private String validatePrivateKey(String pk) {
+        String clean = pk.toLowerCase();
+        if (clean.startsWith("0x")) clean = clean.substring(2);
+        
+        if (clean.length() != 64) {
+            return "私钥长度错误：需要 64 个十六进制字符（当前 " + clean.length() + " 个）";
+        }
+        
+        if (!clean.matches("[0-9a-f]+")) {
+            return "私钥格式错误：只能包含 0-9 和 a-f 字符";
+        }
+        
+        if (clean.matches("0+")) {
+            return "私钥无效：不能全为 0";
+        }
+        
+        try {
+            java.math.BigInteger pkBig = new java.math.BigInteger(clean, 16);
+            java.math.BigInteger curveOrder = new java.math.BigInteger("FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141", 16);
+            if (pkBig.compareTo(curveOrder) >= 0) {
+                return "私钥超出有效范围";
+            }
+        } catch (NumberFormatException e) {
+            return "私钥解析失败：" + e.getMessage();
+        }
+        
+        return null;
     }
 
     private void showEditDialog(int position) {
