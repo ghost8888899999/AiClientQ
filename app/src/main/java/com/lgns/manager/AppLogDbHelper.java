@@ -17,7 +17,7 @@ import java.util.List;
 
 public class AppLogDbHelper extends SQLiteOpenHelper {
     private static final String DB_NAME = "app_log.db";
-    private static final int DB_VERSION = 6;
+    private static final int DB_VERSION = 7;
     private static AppLogDbHelper instance;
 
     public static final String TABLE_LOG = "task_log";
@@ -35,6 +35,7 @@ public class AppLogDbHelper extends SQLiteOpenHelper {
     public static final String TABLE_DAILY_STATUS = "daily_status";
     public static final String COL_DS_KEY_ID = "key_id";
     public static final String COL_DS_KEY_NO = "key_no";
+    public static final String COL_DS_GROUP_NO = "group_no";
     public static final String COL_DS_DATE = "status_date";
     public static final String COL_DS_TOTAL_QD = "total_qd";
     public static final String COL_DS_TODAY_QD = "today_qd";
@@ -46,6 +47,7 @@ public class AppLogDbHelper extends SQLiteOpenHelper {
     public static final String TABLE_FAILURE_LOG = "failure_log";
     public static final String COL_FL_KEY_ID = "key_id";
     public static final String COL_FL_KEY_NO = "key_no";
+    public static final String COL_FL_GROUP_NO = "group_no";
     public static final String COL_FL_DATE = "fail_date";
     public static final String COL_FL_TYPE = "fail_type";
     public static final String COL_FL_REASON = "fail_reason";
@@ -67,6 +69,7 @@ public class AppLogDbHelper extends SQLiteOpenHelper {
 
     private AppLogDbHelper(Context context) {
         super(context.getApplicationContext(), DB_NAME, null, DB_VERSION);
+        setWriteAheadLoggingEnabled(true);
     }
 
     public static synchronized AppLogDbHelper getInstance(Context ctx) {
@@ -94,6 +97,7 @@ public class AppLogDbHelper extends SQLiteOpenHelper {
                 COL_ID + " INTEGER PRIMARY KEY AUTOINCREMENT," +
                 COL_DS_KEY_ID + " INTEGER NOT NULL," +
                 COL_DS_KEY_NO + " TEXT," +
+                COL_DS_GROUP_NO + " TEXT DEFAULT ''," +
                 COL_DS_DATE + " TEXT NOT NULL," +
                 COL_DS_TOTAL_QD + " INTEGER DEFAULT 0," +
                 COL_DS_TODAY_QD + " INTEGER DEFAULT 0," +
@@ -104,6 +108,7 @@ public class AppLogDbHelper extends SQLiteOpenHelper {
                 COL_ID + " INTEGER PRIMARY KEY AUTOINCREMENT," +
                 COL_FL_KEY_ID + " INTEGER NOT NULL," +
                 COL_FL_KEY_NO + " TEXT," +
+                COL_FL_GROUP_NO + " TEXT DEFAULT ''," +
                 COL_FL_DATE + " TEXT NOT NULL," +
                 COL_FL_TYPE + " TEXT," +
                 COL_FL_REASON + " TEXT," +
@@ -177,6 +182,10 @@ public class AppLogDbHelper extends SQLiteOpenHelper {
             db.execSQL("CREATE TABLE IF NOT EXISTS " + TABLE_KEY_META + "(" +
                     COL_KM_KEY + " TEXT PRIMARY KEY," +
                     COL_KM_VALUE + " TEXT);");
+        }
+        if (oldVersion < 7) {
+            try { db.execSQL("ALTER TABLE " + TABLE_DAILY_STATUS + " ADD COLUMN " + COL_DS_GROUP_NO + " TEXT DEFAULT ''"); } catch (Exception ignored) {}
+            try { db.execSQL("ALTER TABLE " + TABLE_FAILURE_LOG + " ADD COLUMN " + COL_FL_GROUP_NO + " TEXT DEFAULT ''"); } catch (Exception ignored) {}
         }
     }
 
@@ -275,10 +284,11 @@ public class AppLogDbHelper extends SQLiteOpenHelper {
     }
 
     // ========== 当日状态 CRUD ==========
-    public long upsertDailyStatus(long keyId, String keyNo, String date, int totalQd, int todayQd, int todayEnter, long tokens, boolean isFailed) {
+    public long upsertDailyStatus(long keyId, String keyNo, String groupNo, String date, int totalQd, int todayQd, int todayEnter, long tokens, boolean isFailed) {
         ContentValues cv = new ContentValues();
         cv.put(COL_DS_KEY_ID, keyId);
         cv.put(COL_DS_KEY_NO, keyNo);
+        cv.put(COL_DS_GROUP_NO, groupNo != null ? groupNo : "");
         cv.put(COL_DS_DATE, date);
         cv.put(COL_DS_TOTAL_QD, totalQd);
         cv.put(COL_DS_TODAY_QD, todayQd);
@@ -291,12 +301,20 @@ public class AppLogDbHelper extends SQLiteOpenHelper {
 
     public List<DailyStatusItem> queryDailyStatus(String date) {
         List<DailyStatusItem> list = new ArrayList<>();
-        Cursor cursor = getReadableDatabase().query(TABLE_DAILY_STATUS, null,
-                COL_DS_DATE + "=?", new String[]{date}, null, null, COL_DS_KEY_ID + " ASC");
+        // 关联 key_entry 表获取当前最新分组
+        String sql = "SELECT ds.*, ke." + COL_KE_GROUP_NO + " as current_group " +
+                "FROM " + TABLE_DAILY_STATUS + " ds " +
+                "LEFT JOIN " + TABLE_KEY_ENTRY + " ke ON ds." + COL_DS_KEY_ID + " = ke." + COL_KE_ID + " " +
+                "WHERE ds." + COL_DS_DATE + "=? " +
+                "ORDER BY ds." + COL_DS_KEY_ID + " ASC";
+        Cursor cursor = getReadableDatabase().rawQuery(sql, new String[]{date});
+        int groupNoIdx = cursor.getColumnIndex("current_group");
         while (cursor.moveToNext()) {
             DailyStatusItem item = new DailyStatusItem();
             item.keyId = cursor.getLong(cursor.getColumnIndexOrThrow(COL_DS_KEY_ID));
             item.keyNo = cursor.getString(cursor.getColumnIndexOrThrow(COL_DS_KEY_NO));
+            item.groupNo = groupNoIdx >= 0 ? cursor.getString(groupNoIdx) : "";
+            if (item.groupNo == null) item.groupNo = "";
             item.date = cursor.getString(cursor.getColumnIndexOrThrow(COL_DS_DATE));
             item.totalQd = cursor.getInt(cursor.getColumnIndexOrThrow(COL_DS_TOTAL_QD));
             item.todayQd = cursor.getInt(cursor.getColumnIndexOrThrow(COL_DS_TODAY_QD));
@@ -310,10 +328,11 @@ public class AppLogDbHelper extends SQLiteOpenHelper {
     }
 
     // ========== 失败日志 CRUD ==========
-    public long insertFailure(long keyId, String keyNo, String date, String failType, String reason) {
+    public long insertFailure(long keyId, String keyNo, String groupNo, String date, String failType, String reason) {
         ContentValues cv = new ContentValues();
         cv.put(COL_FL_KEY_ID, keyId);
         cv.put(COL_FL_KEY_NO, keyNo);
+        cv.put(COL_FL_GROUP_NO, groupNo != null ? groupNo : "");
         cv.put(COL_FL_DATE, date);
         cv.put(COL_FL_TYPE, failType);
         cv.put(COL_FL_REASON, reason);
@@ -323,15 +342,23 @@ public class AppLogDbHelper extends SQLiteOpenHelper {
 
     public List<FailureLogItem> queryFailureLog(String date) {
         List<FailureLogItem> list = new ArrayList<>();
-        Cursor cursor = getReadableDatabase().query(TABLE_FAILURE_LOG, null,
-                COL_FL_DATE + "=?", new String[]{date}, null, null, COL_FL_TIME + " DESC");
+        // 关联 key_entry 表获取当前最新分组
+        String sql = "SELECT fl.*, ke." + COL_KE_GROUP_NO + " as current_group " +
+                "FROM " + TABLE_FAILURE_LOG + " fl " +
+                "LEFT JOIN " + TABLE_KEY_ENTRY + " ke ON fl." + COL_FL_KEY_ID + " = ke." + COL_KE_ID + " " +
+                "WHERE fl." + COL_FL_DATE + "=? " +
+                "ORDER BY fl." + COL_FL_TIME + " DESC";
+        Cursor cursor = getReadableDatabase().rawQuery(sql, new String[]{date});
+        int groupNoIdx = cursor.getColumnIndex("current_group");
         while (cursor.moveToNext()) {
             FailureLogItem item = new FailureLogItem();
             item.keyId = cursor.getLong(cursor.getColumnIndexOrThrow(COL_FL_KEY_ID));
             item.keyNo = cursor.getString(cursor.getColumnIndexOrThrow(COL_FL_KEY_NO));
+            item.groupNo = groupNoIdx >= 0 ? cursor.getString(groupNoIdx) : "";
+            if (item.groupNo == null) item.groupNo = "";
             item.date = cursor.getString(cursor.getColumnIndexOrThrow(COL_FL_DATE));
             item.failType = cursor.getString(cursor.getColumnIndexOrThrow(COL_FL_TYPE));
-            item.reason = cursor.getString(cursor.getColumnIndexOrThrow(COL_FL_REASON));
+            item.failReason = cursor.getString(cursor.getColumnIndexOrThrow(COL_FL_REASON));
             item.timeMs = cursor.getLong(cursor.getColumnIndexOrThrow(COL_FL_TIME));
             list.add(item);
         }
@@ -486,5 +513,38 @@ public class AppLogDbHelper extends SQLiteOpenHelper {
         int deletedRows = db.delete(TABLE_FAILURE_LOG, whereClause, whereArgs);
         Log.d("AppLogDbHelper", "删除了 " + deletedRows + " 条旧失败日志 (时间 < " + new Date(timestamp) + ")");
         return deletedRows;
+    }
+
+    // 清空所有日志数据（保留表结构，保留 key_entry 和 key_group）
+    public int clearAllLogData() {
+        SQLiteDatabase db = getWritableDatabase();
+        db.beginTransaction();
+        try {
+            int logCount = db.delete(TABLE_LOG, null, null);
+            int statusCount = db.delete(TABLE_DAILY_STATUS, null, null);
+            int failCount = db.delete(TABLE_FAILURE_LOG, null, null);
+            db.setTransactionSuccessful();
+            Log.d("AppLogDbHelper", "清空全部数据: 日志=" + logCount + ", 状态=" + statusCount + ", 失败=" + failCount);
+            return logCount + statusCount + failCount;
+        } finally {
+            db.endTransaction();
+        }
+    }
+
+    /**
+     * 调试专用：强制 checkpoint，合并 WAL 数据到主 db 文件
+     * 注意：不关闭连接，App 继续使用
+     */
+    public void forceCheckpointForDebug() {
+        SQLiteDatabase db = getWritableDatabase();
+        // 使用 TRUNCATE 模式：合并 WAL 到主 db 后清空 WAL 文件
+        Cursor cursor = db.rawQuery("PRAGMA wal_checkpoint(TRUNCATE)", null);
+        if (cursor.moveToFirst()) {
+            int busy = cursor.getInt(0);
+            int log = cursor.getInt(1);
+            int checkpointed = cursor.getInt(2);
+            Log.d("AppLogDbHelper", "调试 checkpoint: busy=" + busy + ", log=" + log + ", checkpointed=" + checkpointed);
+        }
+        cursor.close();
     }
 }

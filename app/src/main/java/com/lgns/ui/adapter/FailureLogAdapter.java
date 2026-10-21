@@ -38,7 +38,7 @@ public class FailureLogAdapter extends RecyclerView.Adapter<FailureLogAdapter.VH
         FailureLogItem item = itemList.get(position);
         holder.tvKeyNo.setText(item.keyNo);
         holder.tvFailType.setText(item.failType);
-        holder.tvReason.setText(item.reason);
+        holder.tvReason.setText(item.failReason);
         holder.tvTime.setText(new SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(new Date(item.timeMs)));
     }
 

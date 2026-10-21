@@ -4,10 +4,11 @@ import android.content.SharedPreferences;
 import android.os.Bundle;
 import android.util.Log;
 import android.view.View;
-import android.widget.Button;
+import android.widget.ArrayAdapter;
 import android.widget.ImageButton;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
+import android.widget.Spinner;
 import android.widget.TextView;
 import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
@@ -80,9 +81,13 @@ public class MainActivity extends AppCompatActivity implements TaskLogCallback, 
     private TextView tvEmptyStatus, tvEmptyFailure;
     private DailyStatusAdapter dailyStatusAdapter;
     private FailureLogAdapter failureLogAdapter;
+    private Spinner spGroupFilter;
 
     private volatile boolean isTaskRunning = false;
     private int currentTabPosition = 0;
+    private boolean skipRefreshOnResume = false;
+    private boolean refreshLocalOnlyOnResume = false;
+    private String currentGroup = "全部";
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -94,6 +99,7 @@ public class MainActivity extends AppCompatActivity implements TaskLogCallback, 
         rvFailureList = findViewById(R.id.rv_failure_list);
         tvEmptyStatus = findViewById(R.id.tv_empty_status);
         tvEmptyFailure = findViewById(R.id.tv_empty_failure);
+        spGroupFilter = findViewById(R.id.sp_group_filter);
 
         tabLayout.addOnTabSelectedListener(new TabLayout.OnTabSelectedListener() {
             @Override
@@ -110,8 +116,11 @@ public class MainActivity extends AppCompatActivity implements TaskLogCallback, 
                 }
                 loadTodayStatus();
             }
+
             @Override
-            public void onTabUnselected(TabLayout.Tab tab) {}
+            public void onTabUnselected(TabLayout.Tab tab) {
+            }
+
             @Override
             public void onTabReselected(TabLayout.Tab tab) {
                 loadTodayStatus();
@@ -136,6 +145,7 @@ public class MainActivity extends AppCompatActivity implements TaskLogCallback, 
 
         spAppSetting = getSharedPreferences("app_setting", MODE_PRIVATE);
         currentPlayMode = spAppSetting.getInt("play_mode", MODE_FLEXIBLE);
+        currentGroup = spAppSetting.getString("current_group", "全部");
 
         dialogHelper = new MainDialogHelper(this);
         menuHelper = new MainMenuHelper(this, spAppSetting);
@@ -143,6 +153,7 @@ public class MainActivity extends AppCompatActivity implements TaskLogCallback, 
         bindViews();
         setupButtonEvents();
         setupGearMenu();
+        setupGroupFilter();
         checkAutoClearBoot();
         setupIdleLockCallback();
 
@@ -154,7 +165,10 @@ public class MainActivity extends AppCompatActivity implements TaskLogCallback, 
                 AppGlobal.initKeyManager(getApplicationContext());
                 runOnUiThread(() -> {
                     appendLog("", "", "密钥管理器初始化完成");
-                    refreshCipherKeyList();
+                    // 初始化只加载本地私钥列表，不触发 RPC
+                    loadKeyListLocalOnly();
+                    // 加载当日状态和失败记录（本地数据）
+                    loadTodayStatus();
                 });
             } catch (Exception e) {
                 runOnUiThread(() -> appendLog("", "", "错误：密钥管理器初始化失败:" + e.getMessage()));
@@ -296,27 +310,96 @@ public class MainActivity extends AppCompatActivity implements TaskLogCallback, 
         btnSettingGear.setOnClickListener(v -> menuHelper.showCollapseMenu(v));
     }
 
-    private void checkAutoClearBoot() {
-        boolean enable = spAppSetting.getBoolean("auto_clear_enable", false);
-        long saveTotalMs = spAppSetting.getLong("auto_clear_ms", 0);
-        long saveStartTs = spAppSetting.getLong("auto_clear_start_ts", 0);
-        if (!enable || saveTotalMs <= 0 || saveStartTs <= 0) return;
+    private void setupGroupFilter() {
+        new Thread(() -> {
+            try {
+                AppLogDbHelper db = AppLogDbHelper.getInstance(this);
+                List<String> groups = db.queryAllGroups();
+                groups.add(0, "全部");
 
+                runOnUiThread(() -> {
+                    ArrayAdapter<String> adapter = new ArrayAdapter<>(this,
+                            android.R.layout.simple_spinner_item, groups);
+                    adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+                    spGroupFilter.setAdapter(adapter);
+
+                    int pos = groups.indexOf(currentGroup);
+                    if (pos >= 0) spGroupFilter.setSelection(pos);
+
+                    spGroupFilter.setOnItemSelectedListener(new android.widget.AdapterView.OnItemSelectedListener() {
+                        @Override
+                        public void onItemSelected(android.widget.AdapterView<?> parent, View view, int position, long id) {
+                            currentGroup = (String) parent.getItemAtPosition(position);
+                            spAppSetting.edit().putString("current_group", currentGroup).apply();
+                            loadTodayStatus();
+                        }
+
+                        @Override
+                        public void onNothingSelected(android.widget.AdapterView<?> parent) {
+                        }
+                    });
+                });
+            } catch (Exception e) {
+                Log.e("MainActivity", "加载分组失败", e);
+            }
+        }).start();
+    }
+
+    private void checkAutoClearBoot() {
+        ArenaConfig.loadConfig(this);
+        SharedPreferences spTs = getSharedPreferences("timestamps", MODE_PRIVATE);
         long now = System.currentTimeMillis();
-        if (now - saveStartTs >= saveTotalMs) {
+
+        // 检查私钥自动清除
+        if (ArenaConfig.autoClearEnable) {
+            long lastClearTs = spTs.getLong("last_clear_timestamp", 0);
+            long clearIntervalMs = getClearIntervalMs(ArenaConfig.autoClearIntervalValue, ArenaConfig.autoClearIntervalUnitIndex);
+
+            if (now - lastClearTs >= clearIntervalMs) {
+                new Thread(() -> {
+                    try {
+                        KeyStoreManager mgr = AppGlobal.getKeyStoreManager();
+                        mgr.clearAllKeys();
+                        spTs.edit().putLong("last_clear_timestamp", now).apply();
+                        runOnUiThread(() -> appendLog("", "", "警告：检测到自动清除计时到期，打开 APP 自动清空全部私钥！"));
+                    } catch (Exception ignored) {
+                    }
+                }).start();
+            }
+        }
+
+        // 检查日志自动清除（打开 App 时立即检查）
+        long lastLogClearTs = spTs.getLong("last_log_clear_timestamp", 0);
+        long logClearIntervalMs = getClearIntervalMs(ArenaConfig.logClearIntervalValue, ArenaConfig.logClearIntervalUnitIndex);
+
+        if (now - lastLogClearTs >= logClearIntervalMs) {
             new Thread(() -> {
                 try {
-                    KeyStoreManager mgr = AppGlobal.getKeyStoreManager();
-                    mgr.clearAllKeys();
-                    runOnUiThread(() -> appendLog("", "", "警告：检测到自动清除计时到期，打开 APP 自动清空全部私钥！"));
-
-                    spAppSetting.edit()
-                            .putBoolean("auto_clear_enable", false)
-                            .putLong("auto_clear_ms", 0)
-                            .putLong("auto_clear_start_ts", 0)
-                            .apply();
-                } catch (Exception ignored) {}
+                    AppLogDbHelper dbHelper = AppLogDbHelper.getInstance(this);
+                    int deletedCount = dbHelper.clearAllLogData();
+                    spTs.edit().putLong("last_log_clear_timestamp", now).apply();
+                    runOnUiThread(() -> appendLog("", "CONFIG", "日志清除到期，已清除 " + deletedCount + " 条数据"));
+                } catch (Exception ignored) {
+                }
             }).start();
+        }
+
+        // 启动定时清除日志调度器（App 运行期间每间隔配置时长自动清除）
+        long logClearMinutes = AppGlobal.getIntervalInMinutes(
+                ArenaConfig.logClearIntervalValue, ArenaConfig.logClearIntervalUnitIndex);
+        AppGlobal.startLogClearScheduler(logClearMinutes);
+    }
+
+    private long getClearIntervalMs(int value, int unitIndex) {
+        switch (unitIndex) {
+            case 0:
+                return java.util.concurrent.TimeUnit.MINUTES.toMillis(value);
+            case 1:
+                return java.util.concurrent.TimeUnit.HOURS.toMillis(value);
+            case 2:
+                return java.util.concurrent.TimeUnit.DAYS.toMillis(value);
+            default:
+                return java.util.concurrent.TimeUnit.HOURS.toMillis(value);
         }
     }
 
@@ -406,7 +489,9 @@ public class MainActivity extends AppCompatActivity implements TaskLogCallback, 
         void onInputPwd(char[] pwd);
     }
 
-    public MainDialogHelper getDialogHelper() { return dialogHelper; }
+    public MainDialogHelper getDialogHelper() {
+        return dialogHelper;
+    }
 
     @Override
     public boolean isRunning() {
@@ -432,9 +517,27 @@ public class MainActivity extends AppCompatActivity implements TaskLogCallback, 
     protected void onResume() {
         super.onResume();
         checkAutoClearBoot();
-        refreshCipherKeyList();
-        loadTodayStatus();
-        Log.d("MainActivity", "onResume: loadTodayStatus called");
+        
+        if (skipRefreshOnResume) {
+            skipRefreshOnResume = false;
+            Log.d("MainActivity", "onResume: skip refresh from sys config");
+        } else if (refreshLocalOnlyOnResume) {
+            refreshLocalOnlyOnResume = false;
+            // 从私钥管理返回，只刷新本地数据（不触发 RPC）
+            loadKeyListLocalOnly();
+            Log.d("MainActivity", "onResume: refresh local only from key manage");
+        } else {
+            // 其他情况（如从日志查看返回），不刷新
+            Log.d("MainActivity", "onResume: no refresh");
+        }
+    }
+
+    public void setSkipRefreshOnResume() {
+        skipRefreshOnResume = true;
+    }
+
+    public void setRefreshLocalOnlyOnResume() {
+        refreshLocalOnlyOnResume = true;
     }
 
     @Override
@@ -466,7 +569,7 @@ public class MainActivity extends AppCompatActivity implements TaskLogCallback, 
                         if (s.entriesToday != null) todayEnter = s.entriesToday.intValue();
                         if (s.walletBalance != null) tokens = s.walletBalance.longValue();
                     }
-                    db.upsertDailyStatus(item.keyId, keyNo, today, totalQd, todayQd, todayEnter, tokens, failed);
+                    db.upsertDailyStatus(item.keyId, keyNo, item.groupNo, today, totalQd, todayQd, todayEnter, tokens, failed);
                 }
                 runOnUiThread(() -> loadTodayStatus());
             } catch (Exception ignored) {}
@@ -478,7 +581,17 @@ public class MainActivity extends AppCompatActivity implements TaskLogCallback, 
         new Thread(() -> {
             try {
                 String today = new SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(new Date());
-                AppLogDbHelper.getInstance(this).insertFailure(0, keyNo, today, failType, reason);
+                // 查找对应的 groupNo
+                String groupNo = "";
+                for (KeyListItem item : keyListItemList) {
+                    String no = (item.customCode != null && !item.customCode.isEmpty())
+                            ? item.customCode : item.displayNo;
+                    if (no.equals(keyNo)) {
+                        groupNo = item.groupNo != null ? item.groupNo : "";
+                        break;
+                    }
+                }
+                AppLogDbHelper.getInstance(this).insertFailure(0, keyNo, groupNo, today, failType, reason);
                 runOnUiThread(() -> loadTodayStatus());
             } catch (Exception ignored) {}
         }).start();
@@ -488,28 +601,183 @@ public class MainActivity extends AppCompatActivity implements TaskLogCallback, 
         new Thread(() -> {
             try {
                 String today = new SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(new Date());
-                Log.d("MainActivity", "loadTodayStatus: querying date=" + today);
+                Log.d("MainActivity", "loadTodayStatus: date=" + today + ", group=" + currentGroup);
                 AppLogDbHelper db = AppLogDbHelper.getInstance(this);
+
                 List<DailyStatusItem> statusList = db.queryDailyStatus(today);
                 List<FailureLogItem> failList = db.queryFailureLog(today);
-                Log.d("MainActivity", "loadTodayStatus: statusCount=" + statusList.size() + ", failCount=" + failList.size());
+
+                // 按分组筛选
+                final List<DailyStatusItem> filteredStatusList;
+                final List<FailureLogItem> filteredFailList;
+
+                if (!"全部".equals(currentGroup)) {
+                    filteredStatusList = filterByGroup(statusList, currentGroup);
+                    filteredFailList = filterFailureByGroup(failList, currentGroup);
+                } else {
+                    filteredStatusList = statusList;
+                    filteredFailList = failList;
+                }
+
+                // 当日状态：按分组 + 私钥自定义排序
+                KeyStoreManager mgr = AppGlobal.getKeyStoreManager();
+                List<Long> customSortIds = mgr.getCustomSortIdList();
+                sortByGroupAndCustomOrder(filteredStatusList, customSortIds);
+
+                // 失败记录：按最新时间排序（不刷新 RPC，只展示本地数据）
+                sortByTimeDesc(filteredFailList);
+
+                Log.d("MainActivity", "loadTodayStatus: statusCount=" + filteredStatusList.size() + ", failCount=" + filteredFailList.size());
                 runOnUiThread(() -> {
-                    dailyStatusAdapter.setItemList(statusList);
+                    dailyStatusAdapter.setItemList(filteredStatusList);
                     dailyStatusAdapter.notifyDataSetChanged();
-                    failureLogAdapter.setItemList(failList);
+                    failureLogAdapter.setItemList(filteredFailList);
                     failureLogAdapter.notifyDataSetChanged();
 
                     tvEmptyStatus.setVisibility(View.GONE);
                     tvEmptyFailure.setVisibility(View.GONE);
 
                     if (currentTabPosition == 0) {
-                        if (statusList.isEmpty()) tvEmptyStatus.setVisibility(View.VISIBLE);
+                        if (filteredStatusList.isEmpty()) tvEmptyStatus.setVisibility(View.VISIBLE);
                     } else {
-                        if (failList.isEmpty()) tvEmptyFailure.setVisibility(View.VISIBLE);
+                        if (filteredFailList.isEmpty()) tvEmptyFailure.setVisibility(View.VISIBLE);
                     }
                 });
             } catch (Exception e) {
                 Log.e("MainActivity", "loadTodayStatus error", e);
+            }
+        }).start();
+    }
+
+    // 失败记录按最新时间排序（降序）
+    private void sortByTimeDesc(List<FailureLogItem> list) {
+        list.sort((a, b) -> Long.compare(b.timeMs, a.timeMs));
+    }
+
+    // 按分组 + 私钥自定义排序（当日状态）
+    private void sortByGroupAndCustomOrder(List<DailyStatusItem> list, List<Long> customSortIds) {
+        list.sort((a, b) -> {
+            // 先按分组排序
+            int groupCompare = compareGroup(a.groupNo, b.groupNo);
+            if (groupCompare != 0) return groupCompare;
+            // 同组内按私钥自定义排序
+            return compareByCustomOrder(a.keyId, b.keyId, customSortIds);
+        });
+    }
+
+    // 按分组 + 私钥自定义排序（失败日志）
+    private void sortByGroupAndCustomOrderForFailure(List<FailureLogItem> list, List<Long> customSortIds) {
+        list.sort((a, b) -> {
+            int groupCompare = compareGroup(a.groupNo, b.groupNo);
+            if (groupCompare != 0) return groupCompare;
+            return compareByCustomOrder(a.keyId, b.keyId, customSortIds);
+        });
+    }
+
+    // 分组名比较（空值排最后）
+    private int compareGroup(String a, String b) {
+        if (a == null && b == null) return 0;
+        if (a == null) return 1;
+        if (b == null) return -1;
+        return a.compareTo(b);
+    }
+
+    // 按自定义排序顺序比较（对标私钥管理）
+    private int compareByCustomOrder(long keyIdA, long keyIdB, List<Long> customSortIds) {
+        int indexA = customSortIds.indexOf(keyIdA);
+        int indexB = customSortIds.indexOf(keyIdB);
+        // 未在排序列表中的排最后
+        if (indexA < 0 && indexB < 0) return 0;
+        if (indexA < 0) return 1;
+        if (indexB < 0) return -1;
+        return Integer.compare(indexA, indexB);
+    }
+
+    private List<DailyStatusItem> filterByGroup(List<DailyStatusItem> list, String group) {
+        List<DailyStatusItem> filtered = new ArrayList<>();
+        for (DailyStatusItem item : list) {
+            if (group.equals(item.groupNo)) {
+                filtered.add(item);
+            }
+        }
+        return filtered;
+    }
+
+    private List<FailureLogItem> filterFailureByGroup(List<FailureLogItem> list, String group) {
+        List<FailureLogItem> filtered = new ArrayList<>();
+        for (FailureLogItem item : list) {
+            if (group.equals(item.groupNo)) {
+                filtered.add(item);
+            }
+        }
+        return filtered;
+    }
+
+    // 初始化时只加载本地私钥列表，不触发 RPC
+    private void loadKeyListLocalOnly() {
+        new Thread(() -> {
+            try {
+                KeyStoreManager mgr = AppGlobal.getKeyStoreManager();
+                List<KeyStoreManager.KeyEntry> originEntryList = mgr.loadKeyEntryList();
+                
+                // 去重
+                List<KeyStoreManager.KeyEntry> unique = new ArrayList<>();
+                for (KeyStoreManager.KeyEntry e : originEntryList) {
+                    boolean dup = false;
+                    for (KeyStoreManager.KeyEntry u : unique) {
+                        if (u.id == e.id) { dup = true; break; }
+                    }
+                    if (!dup) unique.add(e);
+                }
+                
+                // 按自定义排序
+                List<Long> customSortIds = mgr.getCustomSortIdList();
+                List<KeyStoreManager.KeyEntry> sorted = new ArrayList<>();
+                for (Long sortId : customSortIds) {
+                    for (KeyStoreManager.KeyEntry e : unique) {
+                        if (e.id == sortId) { sorted.add(e); break; }
+                    }
+                }
+                for (KeyStoreManager.KeyEntry e : unique) {
+                    boolean exist = false;
+                    for (KeyStoreManager.KeyEntry s : sorted) {
+                        if (s.id == e.id) { exist = true; break; }
+                    }
+                    if (!exist) sorted.add(e);
+                }
+
+                keyListItemList.clear();
+                for (int i = 0; i < sorted.size(); i++) {
+                    KeyStoreManager.KeyEntry entry = sorted.get(i);
+                    KeyListItem item = new KeyListItem();
+                    item.keyId = entry.id;
+                    item.seqNo = i + 1;
+                    item.displayNo = String.format(Locale.getDefault(), "%03d", entry.id);
+                    item.cipherText = entry.cipherText;
+                    item.address = entry.address;
+                    item.isUsable = true;
+                    item.isChecked = true;
+                    item.customCode = entry.customCode;
+                    item.groupNo = entry.groupNo;
+                    item.enabled = entry.enabled;
+                    keyListItemList.add(item);
+                }
+
+                // 计算启用数量
+                int enabledCount = 0;
+                for (KeyListItem item : keyListItemList) {
+                    if (item.enabled) enabledCount++;
+                }
+
+                // UI 更新必须在主线程
+                final int finalEnabledCount = enabledCount;
+                runOnUiThread(() -> {
+                    tvEnabledCount.setText(String.valueOf(finalEnabledCount));
+                    tvTokenCount.setText("0");
+                    tvQdCount.setText("0");
+                });
+            } catch (Exception e) {
+                Log.e("MainActivity", "loadKeyListLocalOnly error", e);
             }
         }).start();
     }

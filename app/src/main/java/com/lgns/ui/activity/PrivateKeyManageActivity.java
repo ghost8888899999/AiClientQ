@@ -4,12 +4,14 @@ import android.app.AlertDialog;
 import android.os.Bundle;
 import android.text.InputFilter;
 import android.text.InputType;
+import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.ArrayAdapter;
 import android.widget.EditText;
 import android.widget.ImageButton;
+import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.Spinner;
 import android.widget.TextView;
@@ -39,7 +41,9 @@ public class PrivateKeyManageActivity extends AppCompatActivity {
     private RecyclerView rvKeys;
     private TextView tvEmpty;
     private KeyAdapter adapter;
-    private List<DisplayItem> displayList = new ArrayList<>();
+    private List<DisplayItem> allDisplayList = new ArrayList<>(); // 完整列表
+    private List<DisplayItem> displayList = new ArrayList<>(); // 可见列表
+    private Map<String, Boolean> groupExpandedMap = new LinkedHashMap<>(); // 分组展开状态
 
     private static final int TYPE_HEADER = 0;
     private static final int TYPE_KEY = 1;
@@ -178,32 +182,63 @@ public class PrivateKeyManageActivity extends AppCompatActivity {
                     }
                 }
 
-                displayList = new ArrayList<>();
+                // 构建完整列表
+                allDisplayList = new ArrayList<>();
+                groupExpandedMap.clear();
+                int groupIndex = 0;
                 for (Map.Entry<String, List<KeyStoreManager.KeyEntry>> me : groupMap.entrySet()) {
                     if (!me.getValue().isEmpty()) {
-                        displayList.add(DisplayItem.header(me.getKey()));
+                        allDisplayList.add(DisplayItem.header(me.getKey()));
+                        // 第一个分组展开，其它折叠
+                        groupExpandedMap.put(me.getKey(), groupIndex == 0);
+                        groupIndex++;
                         for (KeyStoreManager.KeyEntry e : me.getValue()) {
-                            displayList.add(DisplayItem.keyItem(e));
+                            allDisplayList.add(DisplayItem.keyItem(e));
                         }
                     }
                 }
                 if (!ungrouped.isEmpty()) {
-                    displayList.add(DisplayItem.header("未分组"));
+                    allDisplayList.add(DisplayItem.header("未分组"));
+                    groupExpandedMap.put("未分组", groupIndex == 0);
                     for (KeyStoreManager.KeyEntry e : ungrouped) {
-                        displayList.add(DisplayItem.keyItem(e));
+                        allDisplayList.add(DisplayItem.keyItem(e));
                     }
                 }
+
+                // 构建可见列表
+                rebuildVisibleList();
 
                 boolean empty = sorted.isEmpty();
                 runOnUiThread(() -> {
                     adapter.notifyDataSetChanged();
                     tvEmpty.setVisibility(empty ? View.VISIBLE : View.GONE);
-                    rvKeys.setVisibility(empty ? View.GONE : View.VISIBLE);
                 });
             } catch (Exception e) {
-                runOnUiThread(() -> Toast.makeText(this, "加载失败", Toast.LENGTH_SHORT).show());
+                Log.e("PrivateKeyManage", "loadKeys error", e);
             }
         }).start();
+    }
+
+    private void rebuildVisibleList() {
+        displayList.clear();
+        String currentGroup = null;
+        boolean currentExpanded = false;
+        for (DisplayItem item : allDisplayList) {
+            if (item.type == TYPE_HEADER) {
+                currentGroup = item.groupName;
+                currentExpanded = groupExpandedMap.getOrDefault(currentGroup, false);
+                displayList.add(item); // 分组标题始终可见
+            } else if (currentExpanded) {
+                displayList.add(item); // 只添加展开分组的数据项
+            }
+        }
+    }
+
+    private void toggleGroup(String groupName) {
+        boolean expanded = groupExpandedMap.getOrDefault(groupName, false);
+        groupExpandedMap.put(groupName, !expanded);
+        rebuildVisibleList();
+        adapter.notifyDataSetChanged();
     }
 
     private void saveGroupSortOrder(String groupName) {
@@ -526,10 +561,15 @@ public class PrivateKeyManageActivity extends AppCompatActivity {
                 h.tvGroupName.setText(item.groupName);
                 h.viewColor.setBackgroundColor(getBadgeColor(item.groupName));
                 int count = 0;
-                for (DisplayItem d : displayList) {
+                for (DisplayItem d : allDisplayList) {
                     if (d.type == TYPE_KEY && d.groupName.equals(item.groupName)) count++;
                 }
                 h.tvGroupCount.setText(count + " 个");
+                // 展开/折叠图标旋转
+                boolean expanded = groupExpandedMap.getOrDefault(item.groupName, false);
+                h.ivExpand.setRotation(expanded ? 90 : 0);
+                // 点击展开/折叠
+                h.itemView.setOnClickListener(v -> toggleGroup(item.groupName));
             } else {
                 KeyVH h = (KeyVH) holder;
                 KeyStoreManager.KeyEntry entry = item.entry;
@@ -575,12 +615,14 @@ public class PrivateKeyManageActivity extends AppCompatActivity {
     static class HeaderVH extends RecyclerView.ViewHolder {
         TextView tvGroupName, tvGroupCount;
         View viewColor;
+        ImageView ivExpand;
 
         HeaderVH(View v) {
             super(v);
             tvGroupName = v.findViewById(R.id.tv_group_name);
             tvGroupCount = v.findViewById(R.id.tv_group_count);
             viewColor = v.findViewById(R.id.view_color);
+            ivExpand = v.findViewById(R.id.iv_expand);
         }
     }
 

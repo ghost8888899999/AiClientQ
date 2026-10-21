@@ -1,6 +1,8 @@
 package com.lgns.manager;
 
 import android.content.Context;
+import android.content.SharedPreferences;
+import android.util.Log;
 
 import com.lgns.model.ArenaConfig;
 import com.lgns.task.TaskLogCallback;
@@ -14,13 +16,17 @@ import java.util.concurrent.atomic.AtomicLong;
 public class AppGlobal {
     private static KeyStoreManager sKeyStoreManager;
     private static volatile Context sAppCtx;
-    private static TaskLogCallback sLogCallback; // 添加日志回调
+    private static TaskLogCallback sLogCallback;
 
     // 空闲自动上锁
     private static final AtomicLong LAST_ACTIVE_TS = new AtomicLong(System.currentTimeMillis());
     private static ScheduledExecutorService idleScheduler;
     private static ScheduledFuture<?> idleTask;
-    private static Runnable onIdleLock; // 上层注册,通知 UI 清空密码框/禁用按钮
+    private static Runnable onIdleLock;
+
+    // 定时清除日志
+    private static ScheduledExecutorService logClearScheduler;
+    private static ScheduledFuture<?> logClearTask;
 
     public static void initKeyManager(Context context) throws Exception {
         sAppCtx = context.getApplicationContext();
@@ -44,23 +50,73 @@ public class AppGlobal {
         return sAppCtx;
     }
 
-    /** 业务代码在任何用户操作/网络请求前后调一下 */
     public static void touch() {
         LAST_ACTIVE_TS.set(System.currentTimeMillis());
     }
 
-    /** 上层注册空闲回调(如:清空 sessionCryptoKey、禁用批量按钮) */
     public static void setOnIdleLock(Runnable cb) { onIdleLock = cb; }
 
-    // 添加日志回调设置方法
     public static void setLogCallback(TaskLogCallback callback) {
         sLogCallback = callback;
     }
 
-    // 添加配置更改日志方法
     public static void logConfigChange(String msg) {
         if (sLogCallback != null) {
             sLogCallback.onLog(null, "CONFIG", msg);
+        }
+    }
+
+    // 启动定时清除日志任务（根据配置的间隔）
+    public static synchronized void startLogClearScheduler(long intervalMinutes) {
+        stopLogClearScheduler();
+        if (intervalMinutes <= 0) return;
+
+        logClearScheduler = Executors.newSingleThreadScheduledExecutor(r -> {
+            Thread t = new Thread(r, "log-clear-timer");
+            t.setDaemon(true);
+            return t;
+        });
+
+        logClearTask = logClearScheduler.scheduleWithFixedDelay(() -> {
+            try {
+                AppLogDbHelper dbHelper = AppLogDbHelper.getInstance(sAppCtx);
+                int deletedCount = dbHelper.clearAllLogData();
+
+                SharedPreferences sp = sAppCtx.getSharedPreferences("timestamps", Context.MODE_PRIVATE);
+                sp.edit().putLong("last_log_clear_timestamp", System.currentTimeMillis()).apply();
+
+                Log.d("AppGlobal", "定时清除日志完成，共删除 " + deletedCount + " 条");
+
+                if (sLogCallback != null) {
+                    sLogCallback.onLog(null, "CONFIG", "定时清除日志，共删除 " + deletedCount + " 条");
+                }
+            } catch (Exception e) {
+                Log.e("AppGlobal", "定时清除日志失败", e);
+            }
+        }, intervalMinutes, intervalMinutes, TimeUnit.MINUTES);
+
+        Log.d("AppGlobal", "日志定时清除已启动，间隔=" + intervalMinutes + "分钟");
+    }
+
+    // 停止定时清除日志任务
+    public static synchronized void stopLogClearScheduler() {
+        if (logClearTask != null) {
+            logClearTask.cancel(false);
+            logClearTask = null;
+        }
+        if (logClearScheduler != null) {
+            logClearScheduler.shutdownNow();
+            logClearScheduler = null;
+        }
+    }
+
+    // 根据配置计算间隔分钟数
+    public static long getIntervalInMinutes(int value, int unitIndex) {
+        switch (unitIndex) {
+            case 0: return value;
+            case 1: return value * 60L;
+            case 2: return value * 24L * 60L;
+            default: return value;
         }
     }
 
@@ -74,8 +130,6 @@ public class AppGlobal {
         idleTask = idleScheduler.scheduleWithFixedDelay(() -> {
             long idleMs = System.currentTimeMillis() - LAST_ACTIVE_TS.get();
             if (idleMs >= ArenaConfig.IDLE_LOCK_SEC * 1000L && sKeyStoreManager != null) {
-                // 擦内存:SP 里的 cipherText 不动,只把内存中的 manager 断掉,
-                // 下次 getKeyStoreManager() 会抛 IllegalStateException 强制重解锁
                 sKeyStoreManager = null;
                 Runnable cb = onIdleLock;
                 if (cb != null) {

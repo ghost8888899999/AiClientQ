@@ -26,6 +26,16 @@
             android:textStyle="bold"
             android:textColor="#212121" />
 
+        <!-- 分组选择器 -->
+        <Spinner
+            android:id="@+id/sp_group_filter"
+            android:layout_width="wrap_content"
+            android:layout_height="36dp"
+            android:layout_marginEnd="8dp"
+            android:background="@drawable/bg_spinner"
+            android:paddingStart="8dp"
+            android:paddingEnd="24dp" />
+
         <TextView
             android:id="@+id/btn_security_warn"
             android:layout_width="wrap_content"

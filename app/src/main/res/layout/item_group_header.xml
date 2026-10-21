@@ -28,6 +28,14 @@
         android:id="@+id/tv_group_count"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
+        android:layout_marginEnd="8dp"
         android:textColor="@color/text_secondary"
         android:textSize="12sp" />
+
+    <ImageView
+        android:id="@+id/iv_expand"
+        android:layout_width="20dp"
+        android:layout_height="20dp"
+        android:src="@drawable/ic_arrow_expand_svg"
+        android:contentDescription="展开/折叠" />
 </LinearLayout>

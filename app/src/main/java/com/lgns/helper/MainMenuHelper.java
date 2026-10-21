@@ -35,6 +35,7 @@ public class MainMenuHelper {
         View popView = LayoutInflater.from(activity).inflate(R.layout.layout_pop_menu, null);
 
         popView.findViewById(R.id.menu_key_manage).setOnClickListener(v -> {
+            activity.setRefreshLocalOnlyOnResume();
             activity.startActivity(new android.content.Intent(activity, PrivateKeyManageActivity.class));
             dismissPopup();
         });
@@ -50,7 +51,7 @@ public class MainMenuHelper {
         });
 
         popView.findViewById(R.id.menu_sys_config).setOnClickListener(v -> {
-            activity.startActivity(new android.content.Intent(activity, com.lgns.ui.activity.AutoClearConfigActivity.class));
+            openSysConfig();
             dismissPopup();
         });
 
@@ -67,5 +68,10 @@ public class MainMenuHelper {
         mPopupWindow = new PopupWindow(popView, ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, true);
         mPopupWindow.setOutsideTouchable(true);
         mPopupWindow.showAsDropDown(anchorView, 0, 4);
+    }
+
+    public void openSysConfig() {
+        activity.setSkipRefreshOnResume();
+        activity.startActivity(new android.content.Intent(activity, com.lgns.ui.activity.AutoClearConfigActivity.class));
     }
 }

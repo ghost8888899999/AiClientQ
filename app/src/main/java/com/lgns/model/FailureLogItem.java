@@ -4,7 +4,8 @@ public class FailureLogItem {
     public long keyId;
     public String keyNo;
     public String date;
+    public String groupNo;
     public String failType;
-    public String reason;
+    public String failReason;
     public long timeMs;
 }
