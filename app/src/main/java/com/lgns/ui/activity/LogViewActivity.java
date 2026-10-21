@@ -28,62 +28,43 @@ import java.util.Locale;
 public class LogViewActivity extends AppCompatActivity {
 
     private LogAdapter logAdapter;
+    private TextView tvLogCount;
+    private TextView tvLogEmpty;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_log_view);
 
-        ImageButton btnBack = findViewById(R.id.btn_back);
-        TextView tvLogCount = findViewById(R.id.tv_log_count);
-        TextView tvLogEmpty = findViewById(R.id.tv_log_empty);
+        tvLogCount = findViewById(R.id.tv_log_count);
+        tvLogEmpty = findViewById(R.id.tv_log_empty);
         RecyclerView rvLog = findViewById(R.id.rv_log);
-        ImageButton btnExportLog = findViewById(R.id.btn_export_log);
-        ImageButton btnClearLog = findViewById(R.id.btn_clear_log);
-        ImageButton btnInitDb = findViewById(R.id.btn_init_db);
 
         logAdapter = new LogAdapter();
         rvLog.setLayoutManager(new LinearLayoutManager(this));
         rvLog.addItemDecoration(new DividerItemDecoration(this, DividerItemDecoration.VERTICAL));
         rvLog.setAdapter(logAdapter);
 
-        btnBack.setOnClickListener(v -> finish());
+        initViews();
 
         loadLogs(tvLogCount, tvLogEmpty);
+    }
 
-        btnExportLog.setOnClickListener(v -> copyLogsToClipboard());
-
-        btnClearLog.setOnClickListener(v -> new AlertDialog.Builder(this)
+    private void initViews() {
+        findViewById(R.id.btn_back).setOnClickListener(v -> onBackPressed());
+        findViewById(R.id.btn_export_log).setOnClickListener(v -> copyLogsToClipboard());
+        findViewById(R.id.btn_clear_log).setOnClickListener(v -> new AlertDialog.Builder(this)
                 .setTitle("清空日志")
-                .setMessage("确定清空所有操作日志吗？\n\n此操作不可恢复！")
+                .setMessage("确定清空所有日志吗？")
                 .setPositiveButton("清空", (d, w) -> new Thread(() -> {
                     try {
-                        AppLogDbHelper db = AppLogDbHelper.getInstance(this);
-                        db.deleteAllLogs();
+                        AppLogDbHelper.getInstance(this).clearAllLogData();
                         runOnUiThread(() -> {
-                            Toast.makeText(this, "已清空所有日志", Toast.LENGTH_SHORT).show();
+                            Toast.makeText(this, "日志已清空", Toast.LENGTH_SHORT).show();
                             loadLogs(tvLogCount, tvLogEmpty);
                         });
                     } catch (Exception e) {
                         runOnUiThread(() -> Toast.makeText(this, "清空失败: " + e.getMessage(), Toast.LENGTH_SHORT).show());
-                    }
-                }).start())
-                .setNegativeButton("取消", null)
-                .show());
-
-        btnInitDb.setOnClickListener(v -> new AlertDialog.Builder(this)
-                .setTitle("初始化数据库")
-                .setMessage("确定重新初始化数据库吗？\n\n将删除以下表并重建：\n• 当日状态\n• 失败日志\n• 操作日志\n\n分组信息不会被删除。")
-                .setPositiveButton("初始化", (d, w) -> new Thread(() -> {
-                    try {
-                        AppLogDbHelper db = AppLogDbHelper.getInstance(this);
-                        db.recreateTablesExceptGroups();
-                        runOnUiThread(() -> {
-                            Toast.makeText(this, "数据库已初始化", Toast.LENGTH_SHORT).show();
-                            loadLogs(tvLogCount, tvLogEmpty);
-                        });
-                    } catch (Exception e) {
-                        runOnUiThread(() -> Toast.makeText(this, "初始化失败: " + e.getMessage(), Toast.LENGTH_SHORT).show());
                     }
                 }).start())
                 .setNegativeButton("取消", null)

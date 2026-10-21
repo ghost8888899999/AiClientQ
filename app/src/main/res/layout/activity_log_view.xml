@@ -56,14 +56,6 @@
             android:background="?android:attr/selectableItemBackgroundBorderless"
             android:contentDescription="清空日志"
             android:src="@drawable/ic_trash_svg" />
-
-        <ImageButton
-            android:id="@+id/btn_init_db"
-            android:layout_width="48dp"
-            android:layout_height="48dp"
-            android:background="?android:attr/selectableItemBackgroundBorderless"
-            android:contentDescription="初始化数据库"
-            android:src="@drawable/ic_database_svg" />
     </LinearLayout>
 
     <TextView

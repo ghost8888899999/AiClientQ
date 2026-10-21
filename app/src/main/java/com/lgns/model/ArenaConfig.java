@@ -3,6 +3,8 @@ package com.lgns.model;
 import android.content.Context;
 import android.content.SharedPreferences;
 
+import com.lgns.manager.AppPrefs;
+
 import java.math.BigInteger;
 
 public class ArenaConfig {
@@ -66,7 +68,7 @@ public class ArenaConfig {
 
     // 保存配置
     public static void saveConfig(Context context) {
-        SharedPreferences sp = context.getSharedPreferences("config", Context.MODE_PRIVATE);
+        SharedPreferences sp = AppPrefs.get(context);
         SharedPreferences.Editor editor = sp.edit();
 
         editor.putBoolean("auto_clear_enable", autoClearEnable);
@@ -81,7 +83,7 @@ public class ArenaConfig {
 
     // 加载配置
     public static void loadConfig(Context context) {
-        SharedPreferences sp = context.getSharedPreferences("config", Context.MODE_PRIVATE);
+        SharedPreferences sp = AppPrefs.get(context);
 
         autoClearEnable = sp.getBoolean("auto_clear_enable", false);
         autoClearIntervalValue = sp.getInt("auto_clear_interval_value", 1);

@@ -8,7 +8,7 @@ import android.widget.EditText;
 import android.widget.Spinner;
 import android.widget.TextView;
 import android.widget.Toast;
-
+import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.appcompat.widget.SwitchCompat;
 
@@ -32,16 +32,32 @@ public class AutoClearConfigActivity extends AppCompatActivity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_auto_clear);
 
+        findViewById(R.id.btn_back).setOnClickListener(v -> onBackPressed());
+        findViewById(R.id.btn_save_auto_clear).setOnClickListener(v -> saveConfigs());
+        findViewById(R.id.btn_init_db).setOnClickListener(v -> showInitDbDialog());
+
         initViews();
         loadConfigs();
     }
 
+    private void showInitDbDialog() {
+        new AlertDialog.Builder(this)
+                .setTitle("初始化数据库")
+                .setMessage("确定重新初始化数据库吗？\n\n将删除以下表并重建：\n• 当日状态\n• 失败日志\n• 操作日志\n\n分组信息不会被删除。")
+                .setPositiveButton("初始化", (d, w) -> new Thread(() -> {
+                    try {
+                        AppLogDbHelper db = AppLogDbHelper.getInstance(this);
+                        db.recreateTablesExceptGroups();
+                        runOnUiThread(() -> Toast.makeText(this, "数据库已初始化", Toast.LENGTH_SHORT).show());
+                    } catch (Exception e) {
+                        runOnUiThread(() -> Toast.makeText(this, "初始化失败: " + e.getMessage(), Toast.LENGTH_SHORT).show());
+                    }
+                }).start())
+                .setNegativeButton("取消", null)
+                .show();
+    }
+
     private void initViews() {
-        findViewById(R.id.btn_back).setOnClickListener(v -> {
-            // 调试用：返回前强制 checkpoint，方便复制 db 文件
-            AppLogDbHelper.getInstance(this).forceCheckpointForDebug();
-            onBackPressed();
-        });
         swAutoEnable = findViewById(R.id.sw_auto_enable);
         etAutoClearVal = findViewById(R.id.et_auto_clear_val);
         spTimeUnit = findViewById(R.id.sp_time_unit);
@@ -49,7 +65,6 @@ public class AutoClearConfigActivity extends AppCompatActivity {
         etLogClearVal = findViewById(R.id.et_log_clear_val);
         spLogTimeUnit = findViewById(R.id.sp_log_time_unit);
         btnSave = findViewById(R.id.btn_save_auto_clear);
-        btnSave.setOnClickListener(v -> saveConfigs());
     }
 
     private void loadConfigs() {

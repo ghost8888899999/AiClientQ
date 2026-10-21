@@ -64,7 +64,7 @@ public class KeyStoreManager {
     }
 
     public KeyStoreManager(Context ctx) {
-        sp = ctx.getSharedPreferences(SP_NAME, Context.MODE_PRIVATE);
+        this.sp = AppPrefs.get(ctx);
         db = AppLogDbHelper.getInstance(ctx);
         migrateFromSpIfNeeded();
     }
@@ -332,22 +332,22 @@ public class KeyStoreManager {
     }
 
     public static void updateLastLogClearTimestamp(long timestamp, Context context) {
-        SharedPreferences sp = context.getSharedPreferences("timestamps", Context.MODE_PRIVATE);
+        SharedPreferences sp = AppPrefs.get(context);
         sp.edit().putLong("last_log_clear_timestamp", timestamp).apply();
     }
 
     public static long getLastLogClearTimestamp(Context context) {
-        SharedPreferences sp = context.getSharedPreferences("timestamps", Context.MODE_PRIVATE);
+        SharedPreferences sp = AppPrefs.get(context);
         return sp.getLong("last_log_clear_timestamp", 0);
     }
 
     public static void updateLastClearTimestamp(long timestamp, Context context) {
-        SharedPreferences sp = context.getSharedPreferences("timestamps", Context.MODE_PRIVATE);
+        SharedPreferences sp = AppPrefs.get(context);
         sp.edit().putLong("last_clear_timestamp", timestamp).apply();
     }
 
     public static long getLastClearTimestamp(Context context) {
-        SharedPreferences sp = context.getSharedPreferences("timestamps", Context.MODE_PRIVATE);
+        SharedPreferences sp = AppPrefs.get(context);
         return sp.getLong("last_clear_timestamp", 0);
     }
 

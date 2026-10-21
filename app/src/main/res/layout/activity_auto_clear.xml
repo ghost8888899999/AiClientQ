@@ -381,6 +381,43 @@
                     android:textColor="@color/text_primary" />
             </LinearLayout>
 
+            <!-- 初始化数据库 -->
+            <LinearLayout
+                android:id="@+id/btn_init_db"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:layout_marginTop="12dp"
+                android:background="@color/card_bg"
+                android:padding="16dp"
+                android:clickable="true"
+                android:focusable="true">
+
+                <ImageView
+                    android:layout_width="20dp"
+                    android:layout_height="20dp"
+                    android:src="@drawable/ic_warning_svg"
+                    android:layout_marginEnd="12dp"
+                    app:tint="#E65100" />
+
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="初始化数据库"
+                    android:textSize="15sp"
+                    android:textColor="#E65100"
+                    android:textStyle="bold" />
+
+                <ImageView
+                    android:layout_width="20dp"
+                    android:layout_height="20dp"
+                    android:src="@drawable/ic_arrow_expand_svg"
+                    android:rotation="-90"
+                    app:tint="#9E9E9E" />
+            </LinearLayout>
+
             <!-- 说明 -->
             <TextView
                 android:layout_width="match_parent"

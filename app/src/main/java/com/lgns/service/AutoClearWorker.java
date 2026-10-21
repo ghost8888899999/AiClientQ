@@ -9,6 +9,7 @@ import androidx.work.WorkerParameters;
 
 import com.lgns.model.ArenaConfig;
 import com.lgns.manager.AppLogDbHelper;
+import com.lgns.manager.AppPrefs;
 import com.lgns.manager.KeyStoreManager;
 
 import java.util.concurrent.TimeUnit;
@@ -114,12 +115,12 @@ public class AutoClearWorker extends Worker {
     }
 
     private void updateLastClearTimestamp(long timestamp, Context context) {
-        SharedPreferences sp = context.getSharedPreferences("timestamps", Context.MODE_PRIVATE);
+        SharedPreferences sp = AppPrefs.get(context);
         sp.edit().putLong("last_clear_timestamp", timestamp).apply();
     }
 
     private void updateLastLogClearTimestamp(long timestamp, Context context) {
-        SharedPreferences sp = context.getSharedPreferences("timestamps", Context.MODE_PRIVATE);
+        SharedPreferences sp = AppPrefs.get(context);
         sp.edit().putLong("last_log_clear_timestamp", timestamp).apply();
     }
 }

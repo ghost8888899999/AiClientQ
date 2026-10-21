@@ -82,7 +82,7 @@ public class AppGlobal {
                 AppLogDbHelper dbHelper = AppLogDbHelper.getInstance(sAppCtx);
                 int deletedCount = dbHelper.clearAllLogData();
 
-                SharedPreferences sp = sAppCtx.getSharedPreferences("timestamps", Context.MODE_PRIVATE);
+                SharedPreferences sp = AppPrefs.get(sAppCtx);
                 sp.edit().putLong("last_log_clear_timestamp", System.currentTimeMillis()).apply();
 
                 Log.d("AppGlobal", "定时清除日志完成，共删除 " + deletedCount + " 条");

@@ -1,6 +1,8 @@
 package com.lgns.helper;
 
 import android.app.AlertDialog;
+import android.content.Intent;
+import java.util.ArrayList;
 import android.text.InputType;
 import android.view.LayoutInflater;
 import android.view.View;
@@ -18,6 +20,7 @@ import com.lgns.model.KeyListItem;
 import com.lgns.manager.KeyStoreManager;
 import com.lgns.R;
 import com.lgns.util.Web3AndroidUtil;
+import com.lgns.ui.activity.BatchFundConfirmActivity;
 import com.lgns.ui.activity.ChampionshipStatsActivity;
 import com.lgns.ui.activity.LogViewActivity;
 import com.lgns.ui.activity.MainActivity;
@@ -328,7 +331,7 @@ public class MainDialogHelper {
                 .show();
     }
 
-    // 批量充值弹窗
+    // 批量充值确认页面
     public void showBatchFundDialog() {
         new Thread(() -> {
             try {
@@ -356,34 +359,27 @@ public class MainDialogHelper {
                         return;
                     }
 
-                    StringBuilder sb = new StringBuilder();
-                    sb.append("主号: ").append(fPreview.masterEntry.address.substring(0, 10)).append("...\n");
-                    sb.append("主号余额: ").append(fPreview.getMasterBalanceFormatted()).append(" fLGNS\n\n");
-                    sb.append("以下账号需要补齐到 100：\n");
+                    // 构建 FundItem 列表
+                    ArrayList<BatchFundConfirmActivity.FundItem> fundItems = new ArrayList<>();
                     for (int i = 0; i < fPreview.needFundLabels.size(); i++) {
-                        sb.append("  ").append(i + 1).append(". ").append(fPreview.needFundLabels.get(i)).append("\n");
+                        String label = fPreview.needFundLabels.get(i);
+                        // 解析标签格式："a01 (余额:0.00)"
+                        String keyNo = label.split(" ")[0];
+                        String balance = label.contains("余额:") ? label.split("余额:")[1].replace(")", "") : "0.00";
+                        String needAmount = "100.00"; // 目标余额
+                        fundItems.add(new BatchFundConfirmActivity.FundItem(keyNo, balance, needAmount));
                     }
-                    sb.append("\n共 ").append(fPreview.needFundAddrs.size()).append(" 个账号，需转入合计 ")
-                            .append(fPreview.getTotalNeededFormatted()).append(" fLGNS");
 
-                    styledDialog()
-                            .setTitle(R.string.fund_confirm_title)
-                            .setMessage(sb.toString())
-                            .setPositiveButton(R.string.btn_fund_confirm, (d, w) -> {
-                                showDecryptPasswordDialog(pwdCharArray -> new Thread(() -> {
-                                    try {
-                                        BatchFundTask.executeAutoFund(
-                                                activity.getEnabledKeyItems(), pwdCharArray, activity);
-                                    } catch (Exception e) {
-                                        activity.runOnUiThread(() -> activity.appendLog("", "FUND",
-                                                activity.getString(R.string.fund_query_fail, Web3AndroidUtil.safeMessage(e))));
-                                    } finally {
-                                        Arrays.fill(pwdCharArray, (char) 0);
-                                    }
-                                }).start());
-                            })
-                            .setNegativeButton(R.string.btn_cancel, null)
-                            .show();
+                    // 启动确认页面
+                    Intent intent = new Intent(activity, BatchFundConfirmActivity.class);
+                    intent.putExtra(BatchFundConfirmActivity.EXTRA_MASTER_ADDR, 
+                            fPreview.masterEntry.address);
+                    intent.putExtra(BatchFundConfirmActivity.EXTRA_MASTER_BALANCE, 
+                            fPreview.getMasterBalanceFormatted());
+                    intent.putExtra(BatchFundConfirmActivity.EXTRA_FUND_LIST, fundItems);
+                    intent.putExtra(BatchFundConfirmActivity.EXTRA_TOTAL_AMOUNT, 
+                            fPreview.getTotalNeededFormatted());
+                    activity.startActivityForResult(intent, REQUEST_BATCH_FUND);
                 });
             } catch (Exception e) {
                 activity.runOnUiThread(() -> styledDialog()
@@ -393,4 +389,7 @@ public class MainDialogHelper {
             }
         }).start();
     }
+
+    private static final int REQUEST_BATCH_FUND = 1001;
+
 }

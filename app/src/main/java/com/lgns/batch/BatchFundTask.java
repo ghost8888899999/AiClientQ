@@ -392,6 +392,7 @@ public class BatchFundTask {
         public BigInteger masterBalance = BigInteger.ZERO;
         public List<String> needFundAddrs = new ArrayList<>();
         public List<String> needFundLabels = new ArrayList<>();
+        public List<FundDetail> fundDetails = new ArrayList<>();
         public BigInteger totalNeeded = BigInteger.ZERO;
 
         public boolean needsFunding() { return hasMaster && !needFundAddrs.isEmpty(); }
@@ -404,6 +405,20 @@ public class BatchFundTask {
         public BigDecimal getTotalNeededFormatted() {
             return new BigDecimal(totalNeeded).divide(
                     new BigDecimal(BigInteger.TEN.pow(18)), 2, java.math.RoundingMode.HALF_UP);
+        }
+
+        public static class FundDetail {
+            public String keyNo;
+            public String address;
+            public BigDecimal currentBalance;
+            public BigDecimal neededAmount;
+
+            public FundDetail(String keyNo, String address, BigDecimal currentBalance, BigDecimal neededAmount) {
+                this.keyNo = keyNo;
+                this.address = address;
+                this.currentBalance = currentBalance;
+                this.neededAmount = neededAmount;
+            }
         }
     }
 }

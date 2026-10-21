@@ -63,5 +63,6 @@
             android:exported="false"
             android:label="自动清除配置" />
 
+        <activity android:name=".ui.activity.BatchFundConfirmActivity" />
     </application>
 </manifest>

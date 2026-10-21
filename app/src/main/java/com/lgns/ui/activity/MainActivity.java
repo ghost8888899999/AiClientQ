@@ -1,5 +1,6 @@
 package com.lgns.ui.activity;
 
+import android.content.Intent;
 import android.content.SharedPreferences;
 import android.os.Bundle;
 import android.util.Log;
@@ -17,6 +18,7 @@ import com.google.android.material.tabs.TabLayout;
 import com.lgns.manager.AppGlobal;
 import com.lgns.manager.AppLogDbHelper;
 import com.lgns.contract.ArenaContractApi;
+import com.lgns.manager.AppPrefs;
 import com.lgns.model.ArenaConfig;
 import com.lgns.model.DailyStatusItem;
 import com.lgns.model.FailureLogItem;
@@ -143,7 +145,7 @@ public class MainActivity extends AppCompatActivity implements TaskLogCallback, 
         failureLogAdapter = new FailureLogAdapter();
         rvFailureList.setAdapter(failureLogAdapter);
 
-        spAppSetting = getSharedPreferences("app_setting", MODE_PRIVATE);
+        spAppSetting = AppPrefs.get(this);
         currentPlayMode = spAppSetting.getInt("play_mode", MODE_FLEXIBLE);
         currentGroup = spAppSetting.getString("current_group", "全部");
 
@@ -347,7 +349,7 @@ public class MainActivity extends AppCompatActivity implements TaskLogCallback, 
 
     private void checkAutoClearBoot() {
         ArenaConfig.loadConfig(this);
-        SharedPreferences spTs = getSharedPreferences("timestamps", MODE_PRIVATE);
+        SharedPreferences spTs = AppPrefs.get(this);
         long now = System.currentTimeMillis();
 
         // 检查私钥自动清除
@@ -781,4 +783,24 @@ public class MainActivity extends AppCompatActivity implements TaskLogCallback, 
             }
         }).start();
     }
+
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode == REQUEST_BATCH_FUND && resultCode == RESULT_OK) {
+            // 用户确认充值，执行充值操作
+            dialogHelper.showDecryptPasswordDialog(pwdCharArray -> new Thread(() -> {
+                try {
+                    BatchFundTask.executeAutoFund(getEnabledKeyItems(), pwdCharArray, this);
+                } catch (Exception e) {
+                    runOnUiThread(() -> appendLog("", "FUND", 
+                            getString(R.string.fund_query_fail, Web3AndroidUtil.safeMessage(e))));
+                } finally {
+                    Arrays.fill(pwdCharArray, (char) 0);
+                }
+            }).start());
+        }
+    }
+
+    private static final int REQUEST_BATCH_FUND = 1001;
 }
