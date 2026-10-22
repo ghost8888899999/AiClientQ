@@ -41,6 +41,7 @@ public class MainMenuHelper {
         });
 
         popView.findViewById(R.id.menu_group_manage).setOnClickListener(v -> {
+            activity.setRefreshLocalOnlyOnResume();
             activity.startActivity(new android.content.Intent(activity, GroupManageActivity.class));
             dismissPopup();
         });

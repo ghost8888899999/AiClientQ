@@ -184,13 +184,14 @@ public class PrivateKeyManageActivity extends AppCompatActivity {
 
                 // 构建完整列表
                 allDisplayList = new ArrayList<>();
+                Map<String, Boolean> prevExpandedMap = new LinkedHashMap<>(groupExpandedMap);
                 groupExpandedMap.clear();
                 int groupIndex = 0;
                 for (Map.Entry<String, List<KeyStoreManager.KeyEntry>> me : groupMap.entrySet()) {
                     if (!me.getValue().isEmpty()) {
                         allDisplayList.add(DisplayItem.header(me.getKey()));
-                        // 第一个分组展开，其它折叠
-                        groupExpandedMap.put(me.getKey(), groupIndex == 0);
+                        Boolean prev = prevExpandedMap.get(me.getKey());
+                        groupExpandedMap.put(me.getKey(), prev != null ? prev : true);
                         groupIndex++;
                         for (KeyStoreManager.KeyEntry e : me.getValue()) {
                             allDisplayList.add(DisplayItem.keyItem(e));
@@ -199,7 +200,8 @@ public class PrivateKeyManageActivity extends AppCompatActivity {
                 }
                 if (!ungrouped.isEmpty()) {
                     allDisplayList.add(DisplayItem.header("未分组"));
-                    groupExpandedMap.put("未分组", groupIndex == 0);
+                    Boolean prevUngrouped = prevExpandedMap.get("未分组");
+                    groupExpandedMap.put("未分组", prevUngrouped != null ? prevUngrouped : true);
                     for (KeyStoreManager.KeyEntry e : ungrouped) {
                         allDisplayList.add(DisplayItem.keyItem(e));
                     }

@@ -222,7 +222,7 @@ public class ArenaContractApi {
                 try { ts = new BigInteger(tsHex, 16).longValue(); }
                 catch (NumberFormatException e) { continue; }
                 long rowDayId = (ts + ArenaConfig.DAY_OFFSET) / 86400L;
-                String wonHex = hexRaw.substring(base + 192, base + 256);
+                String wonHex = hexRaw.substring(base + 256, base + 320);
                 boolean won = !"0000000000000000000000000000000000000000000000000000000000000000".equals(wonHex);
                 if (won && rowDayId == todayDayId) winCount++;
             }
@@ -674,9 +674,9 @@ public class ArenaContractApi {
         for (int idx = 0; idx < arrLen; idx++) {
             int base = itemPtr + idx * 512;
             if (base + 512 > hex.length()) break;
-            String settledHex = hex.substring(base + 128, base + 192);
+            String settledHex = hex.substring(base + 192, base + 256);
             boolean settled = !"0000000000000000000000000000000000000000000000000000000000000000".equals(settledHex);
-            String wonHex = hex.substring(base + 192, base + 256);
+            String wonHex = hex.substring(base + 256, base + 320);
             boolean won = !"0000000000000000000000000000000000000000000000000000000000000000".equals(wonHex);
             if (settled && won) winCount++;
         }

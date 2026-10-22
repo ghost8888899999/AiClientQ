@@ -7,7 +7,6 @@
     android:orientation="vertical"
     android:background="#FAFAFA">
 
-    <!-- 顶部栏 -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
@@ -25,16 +24,6 @@
             android:textSize="20sp"
             android:textStyle="bold"
             android:textColor="#212121" />
-
-        <!-- 分组选择器 -->
-        <Spinner
-            android:id="@+id/sp_group_filter"
-            android:layout_width="wrap_content"
-            android:layout_height="36dp"
-            android:layout_marginEnd="8dp"
-            android:background="@drawable/bg_spinner"
-            android:paddingStart="8dp"
-            android:paddingEnd="24dp" />
 
         <TextView
             android:id="@+id/btn_security_warn"
@@ -58,12 +47,12 @@
             android:src="@drawable/ic_gear_svg" />
     </LinearLayout>
 
-    <!-- 摘要统计栏 -->
+    <!-- 汇总行（替代旧的信物/问鼎/启用） -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="horizontal"
-        android:padding="0dp"
+        android:padding="8dp"
         android:background="#FFFFFF"
         android:elevation="1dp">
 
@@ -73,28 +62,23 @@
             android:layout_weight="1"
             android:orientation="vertical"
             android:gravity="center">
-
             <TextView
-                android:id="@+id/tv_token_count"
+                android:id="@+id/tv_summary_enter"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="0"
-                android:textSize="24sp"
+                android:text="0/0"
+                android:textSize="16sp"
                 android:textStyle="bold"
-                android:textColor="#1976D2" />
-
+                android:textColor="#4CAF50" />
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="信物"
-                android:textSize="12sp"
+                android:text="今日入场"
+                android:textSize="10sp"
                 android:textColor="#757575" />
         </LinearLayout>
 
-        <View
-            android:layout_width="1dp"
-            android:layout_height="40dp"
-            android:background="#E0E0E0" />
+        <View android:layout_width="1dp" android:layout_height="28dp" android:background="#E0E0E0" />
 
         <LinearLayout
             android:layout_width="0dp"
@@ -102,28 +86,23 @@
             android:layout_weight="1"
             android:orientation="vertical"
             android:gravity="center">
-
             <TextView
-                android:id="@+id/tv_qd_count"
+                android:id="@+id/tv_summary_today_win"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="0"
-                android:textSize="24sp"
+                android:textSize="16sp"
                 android:textStyle="bold"
-                android:textColor="#388E3C" />
-
+                android:textColor="#FF5722" />
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="问鼎"
-                android:textSize="12sp"
+                android:text="今日冠军"
+                android:textSize="10sp"
                 android:textColor="#757575" />
         </LinearLayout>
 
-        <View
-            android:layout_width="1dp"
-            android:layout_height="40dp"
-            android:background="#E0E0E0" />
+        <View android:layout_width="1dp" android:layout_height="28dp" android:background="#E0E0E0" />
 
         <LinearLayout
             android:layout_width="0dp"
@@ -131,154 +110,55 @@
             android:layout_weight="1"
             android:orientation="vertical"
             android:gravity="center">
-
             <TextView
-                android:id="@+id/tv_enabled_count"
+                android:id="@+id/tv_summary_total_win"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="0"
-                android:textSize="24sp"
+                android:textSize="16sp"
                 android:textStyle="bold"
-                android:textColor="#7B1FA2" />
-
+                android:textColor="#E65100" />
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="启用"
-                android:textSize="12sp"
+                android:text="累计冠军"
+                android:textSize="10sp"
+                android:textColor="#757575" />
+        </LinearLayout>
+
+        <View android:layout_width="1dp" android:layout_height="28dp" android:background="#E0E0E0" />
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:orientation="vertical"
+            android:gravity="center">
+            <TextView
+                android:id="@+id/tv_summary_prize"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="0.00"
+                android:textSize="16sp"
+                android:textStyle="bold"
+                android:textColor="#FF9800" />
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="累计收益"
+                android:textSize="10sp"
                 android:textColor="#757575" />
         </LinearLayout>
     </LinearLayout>
 
-    <!-- 标签页 -->
-    <com.google.android.material.tabs.TabLayout
-        android:id="@+id/tab_layout"
-        android:layout_width="match_parent"
-        android:layout_height="48dp"
-        android:background="#FFFFFF"
-        app:tabMode="fixed"
-        app:tabGravity="fill"
-        app:tabMaxWidth="0dp"
-        app:tabIndicatorColor="#1976D2"
-        app:tabSelectedTextColor="#1976D2"
-        app:tabTextColor="#757575">
-
-        <com.google.android.material.tabs.TabItem
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:text="当日状态" />
-
-        <com.google.android.material.tabs.TabItem
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:text="失败列表" />
-    </com.google.android.material.tabs.TabLayout>
-
-    <!-- 当日状态表头（始终显示） -->
-    <LinearLayout
-        android:id="@+id/layout_status_header"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:orientation="horizontal"
-        android:gravity="center_vertical"
-        android:padding="12dp"
-        android:background="#F5F5F5">
-
-        <TextView
-            android:layout_width="32dp"
-            android:layout_height="wrap_content"
-            android:text="#"
-            android:textSize="12sp"
-            android:textColor="#9E9E9E"
-            android:gravity="center" />
-
-        <TextView
-            android:layout_width="60dp"
-            android:layout_height="wrap_content"
-            android:text="编号"
-            android:textSize="12sp"
-            android:textStyle="bold"
-            android:textColor="#616161" />
-
-        <TextView
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:text="总问鼎"
-            android:textSize="12sp"
-            android:textColor="#616161"
-            android:gravity="center" />
-
-        <TextView
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:text="今日问鼎"
-            android:textSize="12sp"
-            android:textColor="#616161"
-            android:gravity="center" />
-
-        <TextView
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:text="今日入场"
-            android:textSize="12sp"
-            android:textColor="#616161"
-            android:gravity="center" />
-
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="状态"
-            android:textSize="12sp"
-            android:textColor="#616161" />
-    </LinearLayout>
-
-    <!-- 标签内容 -->
-    <FrameLayout
+    <androidx.recyclerview.widget.RecyclerView
+        android:id="@+id/rv_account_list"
         android:layout_width="match_parent"
         android:layout_height="0dp"
-        android:layout_weight="1">
+        android:layout_weight="1"
+        android:padding="8dp"
+        android:clipToPadding="false" />
 
-        <androidx.recyclerview.widget.RecyclerView
-            android:id="@+id/rv_daily_status"
-            android:layout_width="match_parent"
-            android:layout_height="match_parent"
-            android:clipToPadding="false"
-            android:visibility="visible" />
-
-        <TextView
-            android:id="@+id/tv_empty_status"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_gravity="center"
-            android:text="暂无数据，执行后自动记录"
-            android:textSize="14sp"
-            android:textColor="#BDBDBD"
-            android:visibility="gone" />
-
-        <androidx.recyclerview.widget.RecyclerView
-            android:id="@+id/rv_failure_list"
-            android:layout_width="match_parent"
-            android:layout_height="match_parent"
-            android:clipToPadding="false"
-            android:visibility="gone" />
-
-        <TextView
-            android:id="@+id/tv_empty_failure"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_gravity="center"
-            android:text="暂无失败记录"
-            android:textSize="14sp"
-            android:textColor="#BDBDBD"
-            android:visibility="gone" />
-    </FrameLayout>
-
-    <!-- 操作按钮区 -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
@@ -298,13 +178,11 @@
             android:backgroundTint="#E65100"
             android:clickable="true"
             android:focusable="true">
-
             <ImageView
                 android:layout_width="16dp"
                 android:layout_height="16dp"
                 android:src="@drawable/ic_fund_svg"
                 android:layout_marginEnd="4dp" />
-
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
@@ -326,13 +204,11 @@
             android:backgroundTint="#1976D2"
             android:clickable="true"
             android:focusable="true">
-
             <ImageView
                 android:layout_width="16dp"
                 android:layout_height="16dp"
                 android:src="@drawable/ic_enter_svg"
                 android:layout_marginEnd="4dp" />
-
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
@@ -354,13 +230,11 @@
             android:backgroundTint="#388E3C"
             android:clickable="true"
             android:focusable="true">
-
             <ImageView
                 android:layout_width="16dp"
                 android:layout_height="16dp"
                 android:src="@drawable/ic_claim_svg"
                 android:layout_marginEnd="4dp" />
-
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
@@ -382,13 +256,11 @@
             android:backgroundTint="#7B1FA2"
             android:clickable="true"
             android:focusable="true">
-
             <ImageView
                 android:layout_width="16dp"
                 android:layout_height="16dp"
                 android:src="@drawable/ic_workflow_svg"
                 android:layout_marginEnd="4dp" />
-
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
@@ -398,7 +270,6 @@
         </LinearLayout>
     </LinearLayout>
 
-    <!-- 日志区 -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
