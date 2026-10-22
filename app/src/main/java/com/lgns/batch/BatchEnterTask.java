@@ -179,10 +179,10 @@ public class BatchEnterTask {
                     continue;
                 }
 
-                boolean ok = false;
+                int result = ENTER_FAIL;
                 for (int rpcTry = 0; rpcTry < ArenaConfig.RPC_URLS.length; rpcTry++) {
                     try {
-                        ok = processEnterOneResume(ctx, web3j, plainPk, keyNo, callback, accountLocalNonceMap);
+                        result = processEnterOneResume(ctx, web3j, plainPk, keyNo, callback, accountLocalNonceMap);
                         break;
                     } catch (java.io.IOException ioEx) {
                         callback.onLog(keyNo, "ENTER", "⚠ 网络异常(" + (rpcTry + 1) + "/"
@@ -193,12 +193,14 @@ public class BatchEnterTask {
                     } catch (Exception e) {
                         callback.onLog(keyNo, "ENTER", "✖ 非 IOException 兜底:" + msgOf(e));
                         callback.onKeyFailure(keyNo, "执行异常", msgOf(e));
-                        ok = false;
+                        result = ENTER_FAIL;
                         break;
                     }
                 }
 
-                if (ok) {
+                if (result == ENTER_SUCCESS) {
+                    successCount++;
+                } else if (result == ENTER_SKIP) {
                     skipCount++;
                 } else {
                     failCount++;
@@ -236,7 +238,12 @@ public class BatchEnterTask {
         }
     }
 
-    private static boolean processEnterOneResume(Context ctx, Web3j web3j, String privateKey, String keyNo,
+    // 返回值含义: 0=失败, 1=跳过(含成功入场), 2=真正的成功(有txHash)
+    private static final int ENTER_FAIL = 0;
+    private static final int ENTER_SKIP = 1;
+    private static final int ENTER_SUCCESS = 2;
+
+    private static int processEnterOneResume(Context ctx, Web3j web3j, String privateKey, String keyNo,
                                                  TaskLogCallback logCallback, HashMap<String, BigInteger> accountLocalNonceMap)
             throws java.io.IOException {
         ECKeyPair keyPair = null;
@@ -257,7 +264,7 @@ public class BatchEnterTask {
                     if (txSuccess) {
                         saveAccountState(ctx, fromAddr, new TaskAccountState(TaskAccountState.STATUS_IDLE, null));
                         logCallback.onLog(keyNo, "ENTER", "✔ [" + fromAddr.substring(0, 10) + "...] 历史入场交易链上确认成功");
-                        return true;
+                        return ENTER_SKIP;
                     } else {
                         logCallback.onLog(keyNo, "ENTER", "✖ [" + fromAddr.substring(0, 10) + "...] 历史入场交易reverted,重置状态准备重执行");
                         saveAccountState(ctx, fromAddr, new TaskAccountState(TaskAccountState.STATUS_IDLE, null));
@@ -276,21 +283,21 @@ public class BatchEnterTask {
                     } else {
                         logCallback.onLog(keyNo, "ENTER", "⏳ [" + fromAddr.substring(0, 10) + "...] 超 5min 仍在节点池,保持 TX_SENT");
                     }
-                    return true;
+                    return ENTER_SKIP;
                 } else {
                     if (elapsed > PENDING_WARN_THRESHOLD_MS) {
                         logCallback.onLog(keyNo, "ENTER", "⏳ [" + fromAddr.substring(0, 10) + "...]入场pending已超过60s,交易仍在节点池中,请观察链上状态,本轮跳过");
                     } else {
                         logCallback.onLog(keyNo, "ENTER", "⏳ [" + fromAddr.substring(0, 10) + "...]入场交易在节点Pending池中,等待打包,本轮跳过");
                     }
-                    return true;
+                    return ENTER_SKIP;
                 }
             }
 
             ArenaContractApi.PlayerSummary summary = ArenaContractApi.callPlayerSummary(web3j, fromAddr);
             if (summary.seatedInCurrentRound) {
                 logCallback.onLog(keyNo, "ENTER", "➖ [" + fromAddr.substring(0, 10) + "...] 合约查询已经入座,跳过入场");
-                return true;
+                return ENTER_SKIP;
             }
 
             BigInteger nonce;
@@ -314,11 +321,11 @@ public class BatchEnterTask {
 
             if (txHash != null && !txHash.isEmpty()) {
                 accountLocalNonceMap.put(fromAddr, nextNonce);
+                return ENTER_SUCCESS;
             } else {
                 saveAccountState(ctx, fromAddr, new TaskAccountState(TaskAccountState.STATUS_IDLE, null));
+                return ENTER_SKIP;
             }
-
-            return txHash != null && !txHash.isEmpty();
         } catch (java.io.IOException ioEx) {
             throw ioEx;
         } catch (Throwable t) {
@@ -328,7 +335,7 @@ public class BatchEnterTask {
                 revertedCooldownMap.put(fromAddr, System.currentTimeMillis());
             }
             logCallback.onLog(keyNo, "ENTER", " 【入场致命异常】:" + t.getClass().getSimpleName() + " | " + msg);
-            return false;
+            return ENTER_FAIL;
         } finally {
             keyPair = null;
         }
@@ -357,6 +364,12 @@ public class BatchEnterTask {
         BigInteger allowance = summary.allowance;
         BigInteger prize = summary.prize;
         BigInteger entriesRemainingToday = summary.entriesRemainingToday;
+        
+        // 检查今日是否还能入场
+        if (entriesRemainingToday.compareTo(BigInteger.ZERO) == 0) {
+            return new Pair<>(String.format("%s... 跳过:今日已打满12场", addr.substring(0, 10)), nonce);
+        }
+        
         String payDesc;
         boolean needApprove = false;
         if (prize.compareTo(ENTRY_FEE) >= 0) {

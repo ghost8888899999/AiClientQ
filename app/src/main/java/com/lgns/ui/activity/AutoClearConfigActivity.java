@@ -68,13 +68,68 @@ public class AutoClearConfigActivity extends AppCompatActivity {
     }
 
     private void loadConfigs() {
-        ArenaConfig.loadConfig(this);
-        swAutoEnable.setChecked(ArenaConfig.autoClearEnable);
-        etAutoClearVal.setText(String.valueOf(ArenaConfig.autoClearIntervalValue));
-        spTimeUnit.setSelection(ArenaConfig.autoClearIntervalUnitIndex);
-        spPlayMode.setSelection(ArenaConfig.playModeIndex);
-        etLogClearVal.setText(String.valueOf(ArenaConfig.logClearIntervalValue));
-        spLogTimeUnit.setSelection(ArenaConfig.logClearIntervalUnitIndex);
+        try {
+            ArenaConfig.loadConfig(this);
+            swAutoEnable.setChecked(ArenaConfig.autoClearEnable);
+            etAutoClearVal.setText(String.valueOf(ArenaConfig.autoClearIntervalValue));
+            
+            // 边界检查：防止索引超出数组范围（覆盖安装兼容）
+            int timeUnitIndex = ArenaConfig.autoClearIntervalUnitIndex;
+            if (timeUnitIndex < 0 || timeUnitIndex >= spTimeUnit.getCount()) {
+                String warnMsg = "配置项 autoClearIntervalUnitIndex 越界: " + timeUnitIndex + "，已重置为默认值 1(小时)";
+                Log.w("AutoClearConfig", warnMsg);
+                writeErrorToDb("CONFIG_WARN", warnMsg);
+                timeUnitIndex = 1; // 默认：小时
+            }
+            spTimeUnit.setSelection(timeUnitIndex);
+            
+            // 入场模式：旧版本有3个选项(0/1/2)，新版本只有2个(0/1)
+            int playModeIndex = ArenaConfig.playModeIndex;
+            if (playModeIndex < 0 || playModeIndex >= spPlayMode.getCount()) {
+                String warnMsg = "配置项 playModeIndex 越界: " + playModeIndex + "，已重置为默认值 0(能打就打)";
+                Log.w("AutoClearConfig", warnMsg);
+                writeErrorToDb("CONFIG_WARN", warnMsg);
+                playModeIndex = 0; // 默认：能打就打
+            }
+            spPlayMode.setSelection(playModeIndex);
+            
+            etLogClearVal.setText(String.valueOf(ArenaConfig.logClearIntervalValue));
+            
+            int logTimeUnitIndex = ArenaConfig.logClearIntervalUnitIndex;
+            if (logTimeUnitIndex < 0 || logTimeUnitIndex >= spLogTimeUnit.getCount()) {
+                String warnMsg = "配置项 logClearIntervalUnitIndex 越界: " + logTimeUnitIndex + "，已重置为默认值 2(天)";
+                Log.w("AutoClearConfig", warnMsg);
+                writeErrorToDb("CONFIG_WARN", warnMsg);
+                logTimeUnitIndex = 2; // 默认：天
+            }
+            spLogTimeUnit.setSelection(logTimeUnitIndex);
+        } catch (Exception e) {
+            String errMsg = "加载配置异常: " + e.getClass().getSimpleName() + " - " + e.getMessage();
+            Log.e("AutoClearConfig", errMsg, e);
+            writeErrorToDb("CONFIG_ERROR", errMsg);
+            
+            // 使用默认值
+            swAutoEnable.setChecked(false);
+            etAutoClearVal.setText("1");
+            spTimeUnit.setSelection(1);
+            spPlayMode.setSelection(0);
+            etLogClearVal.setText("1");
+            spLogTimeUnit.setSelection(2);
+        }
+    }
+
+    /**
+     * 将配置错误写入日志数据库，方便后续分析
+     */
+    private void writeErrorToDb(String tag, String message) {
+        try {
+            AppLogDbHelper dbHelper = AppLogDbHelper.getInstance(this);
+            if (dbHelper != null) {
+                dbHelper.insertLog(null, tag, message, System.currentTimeMillis());
+            }
+        } catch (Exception ignore) {
+            Log.e("AutoClearConfig", "写入配置错误日志失败", ignore);
+        }
     }
 
     private void saveConfigs() {

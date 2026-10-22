@@ -67,7 +67,7 @@ public class ArenaConfig {
     public static int autoClearIntervalUnitIndex = 1; // 0=分钟,1=小时,2=天
 
     // 入场模式
-    public static int playModeIndex = 0; // 0=能打就打,1=按排名打,2=固定人数
+    public static int playModeIndex = 0; // 0=能打就打,1=等齐再打
 
     // 自动清除日志
     public static int logClearIntervalValue = 1; // 默认1天
