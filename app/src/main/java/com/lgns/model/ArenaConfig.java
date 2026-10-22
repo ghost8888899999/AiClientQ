@@ -20,7 +20,7 @@ public class ArenaConfig {
     public static final String ARENA_ADDR = "0xff060bAB41e16eBF0eFE4FAd454404Fd5f75aAaA";
     public static final long CHAIN_ID = 6714L;
 
-    // ==================== 调试专用（发版前必须置 false） ====================
+    // ==================== 调试专用（发版前必须置为 false） ====================
     // 开启后：App 启动时用固定地址跑一遍领取流程的只读查询链，逐步打日志定位崩溃点
     // 地址是链上公开信息，硬编码无安全风险；私钥严禁硬编码
     public static final boolean DEBUG_FIXED_ADDR_ENABLE = false;
