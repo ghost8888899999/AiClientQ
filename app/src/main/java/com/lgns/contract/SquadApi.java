@@ -99,20 +99,14 @@ public class SquadApi {
                 org.web3j.protocol.core.methods.request.Transaction.createEthCallTransaction(null, squadAddr, data),
                 DefaultBlockParameterName.LATEST).send();
         if (res.hasError()) throw new Exception("overview 调用失败:" + res.getError().getMessage());
-        List<TypeReference<?>> outputTypes = new ArrayList<>();
-        for (int i = 0; i < 6; i++) {
-            outputTypes.add(TypeReference.create(Uint256.class));
-        }
-        @SuppressWarnings("unchecked")
-        List<Type> dec = FunctionReturnDecoder.decode(res.getValue(),
-                (List<TypeReference<Type>>) (List<?>) outputTypes);
+        // 手动逐字解析，规避 web3j TypeDecoder 在低版本 Android 的 NoSuchMethodError
         OverviewData ov = new OverviewData();
-        ov.total = ((Uint256) dec.get(0)).getValue();
-        ov.upgraded = ((Uint256) dec.get(1)).getValue();
-        ov.roundId = ((Uint256) dec.get(2)).getValue();
-        ov.dayId = ((Uint256) dec.get(3)).getValue();
-        ov.masterBalance = ((Uint256) dec.get(4)).getValue();
-        ov.masterGas = ((Uint256) dec.get(5)).getValue();
+        ov.total = ArenaContractApi.decodeUint256At(res.getValue(), 0);
+        ov.upgraded = ArenaContractApi.decodeUint256At(res.getValue(), 1);
+        ov.roundId = ArenaContractApi.decodeUint256At(res.getValue(), 2);
+        ov.dayId = ArenaContractApi.decodeUint256At(res.getValue(), 3);
+        ov.masterBalance = ArenaContractApi.decodeUint256At(res.getValue(), 4);
+        ov.masterGas = ArenaContractApi.decodeUint256At(res.getValue(), 5);
         return ov;
     }
 

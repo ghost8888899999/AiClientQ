@@ -27,7 +27,8 @@ public class KeyStoreManager {
     private static final int PBKDF2_SALT_LEN = 16;
     private static final int PBKDF2_ITERATION_COUNT = 65536;
     private static final int AES_KEY_BIT = 256;
-    private final SharedPreferences sp;
+    // legacy 私钥独立文件 keystore_sp.xml（与合并后的 app_prefs 隔离）
+    private final SharedPreferences legacySp;
     private final AppLogDbHelper db;
 
     public static class KeyEntry {
@@ -64,38 +65,81 @@ public class KeyStoreManager {
     }
 
     public KeyStoreManager(Context ctx) {
-        this.sp = AppPrefs.get(ctx);
+        this.legacySp = ctx.getSharedPreferences(SP_NAME, Context.MODE_PRIVATE);
         db = AppLogDbHelper.getInstance(ctx);
         migrateFromSpIfNeeded();
     }
 
     private synchronized void migrateFromSpIfNeeded() {
-        String spRaw = sp.getString(KEY_ENTRY_LIST, "");
+        String spRaw = legacySp.getString(KEY_ENTRY_LIST, "");
         if (spRaw.isEmpty()) {
-            Log.d(TAG, "SP 无数据，无需迁移");
+            Log.d(TAG, "keystore_sp.xml 无数据，无需迁移");
             return;
         }
-        int dbCount = db.getKeyEntryCount();
-        if (dbCount > 0) {
-            Log.d(TAG, "SQLite 已有 " + dbCount + " 条数据，跳过迁移，清除 SP");
-            clearSpData();
-            return;
-        }
-        Log.d(TAG, "开始从 SP 迁移到 SQLite...");
+        Log.d(TAG, "开始从 SP 合并迁移到 SQLite（不丢弃 legacy 记录）...");
         try {
             List<KeyEntry> spList = parseSpEntries(spRaw);
             List<Long> sortIds = parseSpSortOrder();
-            for (int i = 0; i < spList.size(); i++) {
-                KeyEntry e = spList.get(i);
-                int sortOrder = sortIds.contains(e.id) ? sortIds.indexOf(e.id) : i;
-                db.insertKeyEntry((int) e.id, e.customCode, e.groupNo, e.cipherText, e.address, e.enabled, sortOrder);
+
+            // SQL 现有数据（可能为空）→ 建立 id/密文集合用于去重
+            List<KeyEntry> existing = loadKeyEntryList();
+            java.util.Set<Long> existIds = new java.util.HashSet<>();
+            java.util.Set<String> existCiphers = new java.util.HashSet<>();
+            long maxId = 0;
+            for (KeyEntry e : existing) {
+                existIds.add(e.id);
+                if (e.cipherText != null) existCiphers.add(e.cipherText);
+                if (e.id > maxId) maxId = e.id;
             }
-            long nextId = sp.getLong(KEY_NEXT_ID, 1);
-            db.putMetaValue("next_id", String.valueOf(nextId));
-            long masterId = sp.getLong(KEY_MASTER_ACCOUNT_ID, -1);
-            db.putMetaValue("master_account_id", String.valueOf(masterId));
-            clearSpData();
-            Log.d(TAG, "迁移完成！共 " + spList.size() + " 条密钥已转入 SQLite");
+            long nextId = Long.parseLong(db.getMetaValue("next_id", "1"));
+            if (maxId + 1 > nextId) nextId = maxId + 1;
+
+            // 按 SP 的 custom_sort_order 排序（图例 2,1 → a02 在前），未列出的按原序追加
+            List<KeyEntry> ordered = new ArrayList<>();
+            for (Long sid : sortIds) {
+                for (KeyEntry e : spList) {
+                    if (e.id == sid.longValue()) { ordered.add(e); break; }
+                }
+            }
+            for (KeyEntry e : spList) {
+                if (!ordered.contains(e)) ordered.add(e);
+            }
+
+            // 新增到 sqlite：密文相同 = 同一把钥匙 → 跳过防重复；id 冲突 → 取 next_id 重排
+            int baseSort = existing.size();
+            int imported = 0;
+            int lost = 0;
+            for (int i = 0; i < ordered.size(); i++) {
+                KeyEntry e = ordered.get(i);
+                if (e.cipherText != null && existCiphers.contains(e.cipherText)) continue;
+                long id = e.id;
+                if (existIds.contains(id)) {
+                    // 避让：跳过现有 id 和本轮已分配的 id，杜绝二次碰撞
+                    while (existIds.contains(nextId)) nextId++;
+                    id = nextId++;
+                }
+                existIds.add(id);
+                if (e.cipherText != null) existCiphers.add(e.cipherText);
+                if (id > maxId) maxId = id;
+                long row = db.insertKeyEntry((int) id, e.customCode, e.groupNo, e.cipherText, e.address, e.enabled, baseSort + i);
+                if (row >= 0) {
+                    imported++;
+                } else {
+                    lost++;
+                    Log.e(TAG, "插入失败（主键冲突？）id=" + id + " code=" + e.customCode);
+                }
+            }
+
+            db.putMetaValue("next_id", String.valueOf(Math.max(nextId, maxId + 1)));
+            long masterId = legacySp.getLong(KEY_MASTER_ACCOUNT_ID, -1);
+            if (masterId >= 0 && getMasterAccountId() < 0) setMasterAccountId(masterId);
+            if (lost == 0) {
+                clearSpData();
+                Log.d(TAG, "迁移完成！新增 " + imported + " 条 legacy 密钥到 sqlite，跳过重复 " + (spList.size() - imported) + " 条");
+            } else {
+                // 有丢失则保留 xml，下次启动自动重试（已入库的按密文去重跳过）
+                Log.e(TAG, "⚠ " + lost + " 条插入失败，保留 keystore_sp.xml 待下次启动重试");
+            }
         } catch (Exception e) {
             Log.e(TAG, "迁移失败: " + e.getMessage(), e);
         }
@@ -117,19 +161,35 @@ public class KeyStoreManager {
             String addr = null;
             boolean enabled = true;
 
+            // 头部格式：id[@自定义编号[@分组]] 或 id#自定义编号[@分组]
+            // 图例 "1@a01:xxx" 中 a01 为自定义编号，不是分组
             String idPart = head;
-            if (head.contains("@")) {
-                String[] idAndGroup = head.split("@", 2);
-                idPart = idAndGroup[0];
-                try { groupNo = idAndGroup[1]; } catch (Exception ignore) {}
-            }
+            String codePart = null;
+            String groupPart = null;
             if (idPart.contains("#")) {
                 String[] idAndCode = idPart.split("#", 2);
-                try { id = Long.parseLong(idAndCode[0]); } catch (Exception e) { continue; }
-                customCode = idAndCode[1];
-            } else {
-                try { id = Long.parseLong(idPart); } catch (Exception e) { continue; }
+                idPart = idAndCode[0];
+                String rest = idAndCode[1];
+                if (rest.contains("@")) {
+                    String[] codeAndGroup = rest.split("@", 2);
+                    codePart = codeAndGroup[0];
+                    groupPart = codeAndGroup[1];
+                } else {
+                    codePart = rest;
+                }
+            } else if (idPart.contains("@")) {
+                String[] segs = idPart.split("@", 3);
+                idPart = segs[0];
+                if (segs.length > 1) codePart = segs[1];
+                if (segs.length > 2) groupPart = segs[2];
             }
+            try {
+                id = Long.parseLong(idPart);
+            } catch (Exception e) {
+                continue;
+            }
+            customCode = codePart != null ? codePart : "";
+            groupNo = groupPart != null ? groupPart : "";
             if (cipherText.contains("@")) {
                 String[] ctAndAddr = cipherText.split("@", 2);
                 cipherText = ctAndAddr[0];
@@ -147,7 +207,7 @@ public class KeyStoreManager {
 
     private List<Long> parseSpSortOrder() {
         List<Long> ids = new ArrayList<>();
-        String str = sp.getString(KEY_CUSTOM_SORT_ORDER, "");
+        String str = legacySp.getString(KEY_CUSTOM_SORT_ORDER, "");
         if (str.isEmpty()) return ids;
         String[] arr = str.split(",");
         for (String s : arr) {
@@ -157,7 +217,7 @@ public class KeyStoreManager {
     }
 
     private void clearSpData() {
-        sp.edit()
+        legacySp.edit()
                 .remove(KEY_ENTRY_LIST)
                 .remove(KEY_NEXT_ID)
                 .remove(KEY_CUSTOM_SORT_ORDER)

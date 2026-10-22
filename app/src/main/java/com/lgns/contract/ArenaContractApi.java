@@ -134,6 +134,23 @@ public class ArenaContractApi {
         return out;
     }
 
+    /**
+     * 手动解析返回值中第 wordIndex 个 uint256 字（32 字节 = 64 hex）
+     * 不走 web3j TypeDecoder：其内部 new BigInteger(byte[],int,int) 三参构造器
+     * 是 Java 9 API，低版本 Android 的 core-oj.jar 缺失 → NoSuchMethodError 崩溃
+     */
+    public static BigInteger decodeUint256At(String hexWith0x, int wordIndex) {
+        if (hexWith0x == null) return BigInteger.ZERO;
+        String hex = Numeric.cleanHexPrefix(hexWith0x);
+        int from = wordIndex * 64;
+        if (hex.length() < from + 64) return BigInteger.ZERO;
+        try {
+            return new BigInteger(hex.substring(from, from + 64), 16);
+        } catch (NumberFormatException e) {
+            return BigInteger.ZERO;
+        }
+    }
+
     public static BigInteger callJiaziCount(Web3j web3j, String owner) throws Exception {
         List<Type> inputs = new ArrayList<Type>();
         inputs.add(new Address(owner));
@@ -149,8 +166,7 @@ public class ArenaContractApi {
         String hexValue = res.getValue();
         Log.d("RPC_DEBUG", "jiaziCount[" + owner + "] 原始返回：" + hexValue);
         logRpcToDb(null, "jiaziCount[" + owner + "] 原始返回长度：" + hexValue.length());
-        List<Type> dec = FunctionReturnDecoder.decode(hexValue, f.getOutputParameters());
-        return ((Uint256) dec.get(0)).getValue();
+        return decodeUint256At(hexValue, 0);
     }
 
     public static Integer callActivityOfMatchesToday(Web3j web3j, String owner) {
@@ -172,8 +188,8 @@ public class ArenaContractApi {
             String hexValue = res.getValue();
             Log.d("RPC_DEBUG", "activityOf[" + owner + "] 原始返回：" + hexValue);
             logRpcToDb(null, "activityOf[" + owner + "] 原始返回长度：" + hexValue.length());
-            List<Type> dec = FunctionReturnDecoder.decode(hexValue, f.getOutputParameters());
-            BigInteger val = ((Uint256) dec.get(2)).getValue();
+            // activityOf 返回 (fullDays, day, matchesToday, firstIncomplete)，matchesToday 为第 3 个字
+            BigInteger val = decodeUint256At(hexValue, 2);
             return val.intValue();
         } catch (Exception e) {
             return null;
@@ -609,77 +625,5 @@ public class ArenaContractApi {
         } catch (Exception e) {
             Log.e("RPC_DEBUG", "写入数据库失败: " + e.getMessage());
         }
-    }
-
-    /**
-     * 锦标赛统计:批量查询每个地址的总场次 + 冠军次数
-     * playerHistoryLatest(player,count) selector: 0x0810151a
-     * 返回 Map: addr → [totalCount, winCount]
-     */
-    public static Map<String, long[]> callChampionshipCounts(
-            Web3j web3j, Collection<String> playerAddrs) {
-        Map<String, long[]> out = new LinkedHashMap<>();
-        if (playerAddrs == null || playerAddrs.isEmpty()) return out;
-
-        List<String> addrs = new ArrayList<>(playerAddrs);
-        List<CompletableFuture<EthCall>> futures = new ArrayList<>(addrs.size());
-        for (String addr : addrs) {
-            String addrPadded = String.format("%64s", Numeric.cleanHexPrefix(addr)).replace(' ', '0');
-            String countHex = Numeric.toHexStringNoPrefixZeroPadded(BigInteger.valueOf(100), 64);
-            String data = "0x0810151a" + addrPadded + countHex;
-            futures.add(web3j.ethCall(
-                    Transaction.createEthCallTransaction(null, ARENA_ADDR, data),
-                    DefaultBlockParameterName.LATEST).sendAsync());
-        }
-        try {
-            CompletableFuture.allOf(futures.toArray(new CompletableFuture[0]))
-                    .get(ArenaConfig.RPC_CALL_TIMEOUT_SEC * 2L, TimeUnit.SECONDS);
-        } catch (Exception ignore) {}
-
-        for (int i = 0; i < futures.size(); i++) {
-            String addr = addrs.get(i);
-            try {
-                EthCall ec = futures.get(i).get();
-                if (ec.hasError()) continue;
-                String hex = Numeric.cleanHexPrefix(ec.getValue());
-                long[] counts = decodeChampionships(hex);
-                if (counts != null) out.put(addr, counts);
-            } catch (Exception ignore) {}
-        }
-
-        for (String addr : addrs) {
-            if (!out.containsKey(addr)) {
-                out.put(addr, new long[]{0, 0});
-            }
-        }
-        return out;
-    }
-
-    /**
-     * 解码 playerHistoryLatest 返回的 struct[] + total
-     * @return [totalCount, winCount] 或 null
-     */
-    private static long[] decodeChampionships(String hex) {
-        if (hex.length() < 128) return new long[]{0, 0};
-        int arrPtr, arrLen, total;
-        try {
-            arrPtr = Integer.parseInt(hex.substring(0, 64), 16) * 2;
-            if (arrPtr + 64 > hex.length()) return null;
-            arrLen = Integer.parseInt(hex.substring(arrPtr, arrPtr + 64), 16);
-            total = Integer.parseInt(hex.substring(64, 128), 16);
-        } catch (NumberFormatException e) { return null; }
-
-        int itemPtr = arrPtr + 64;
-        int winCount = 0;
-        for (int idx = 0; idx < arrLen; idx++) {
-            int base = itemPtr + idx * 512;
-            if (base + 512 > hex.length()) break;
-            String settledHex = hex.substring(base + 192, base + 256);
-            boolean settled = !"0000000000000000000000000000000000000000000000000000000000000000".equals(settledHex);
-            String wonHex = hex.substring(base + 256, base + 320);
-            boolean won = !"0000000000000000000000000000000000000000000000000000000000000000".equals(wonHex);
-            if (settled && won) winCount++;
-        }
-        return new long[]{total, winCount};
     }
 }

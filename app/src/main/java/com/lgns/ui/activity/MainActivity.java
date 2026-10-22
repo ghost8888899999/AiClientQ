@@ -117,6 +117,11 @@ public class MainActivity extends AppCompatActivity implements TaskLogCallback, 
                 AppGlobal.initKeyManager(getApplicationContext());
                 runOnUiThread(() -> {
                     appendLog("", "", "密钥管理器初始化完成");
+                    // 调试探针已停用（领取链路调试完毕）：不再输出界面日志、不写数据库日志
+                    // 往后需要时取消下面两行注释即可恢复
+                    // if (ArenaConfig.DEBUG_FIXED_ADDR_ENABLE) {
+//                         runDebugClaimProbe();
+                    // }
                     // 初始化只加载本地私钥列表，不触发 RPC
                     loadKeyListLocalOnly(this::applyLocalDefaults);
                 });
@@ -375,6 +380,11 @@ public class MainActivity extends AppCompatActivity implements TaskLogCallback, 
         MainDataLoader.refreshCipherKeyList(this, this, keyListItemList);
     }
 
+    // 密钥数据变更（补全地址/迁移等）后：本地结构重建 + 数值继承 + 链上回填
+    public void refreshLocalAndStats() {
+        loadKeyListLocalOnly(this::applyLocalDefaults);
+    }
+
     @Override
     public void onLog(final String keyNo, final String type, final String msg) {
         String safeKeyNo = (keyNo == null || keyNo.trim().isEmpty()) ? null : keyNo.trim();
@@ -514,6 +524,11 @@ public class MainActivity extends AppCompatActivity implements TaskLogCallback, 
         loadStatsOverview();
     }
 
+    // 供锦标赛统计页继承已加载的冠军次数（对标 applyLocalDefaults 的快照继承机制）
+    public Map<String, AccountStatsAdapter.AccountStatsItem> getAccountStatsSnapshot() {
+        return accountStatsAdapter.snapshotAccountItems();
+    }
+
     // 初始化时只加载本地私钥列表，不触发 RPC；
     // 同一后台线程内顺带完成分组查询与占位列表构建，仅一次主线程提交，保证毫秒级上屏
     private void loadKeyListLocalOnly(StatsReadyCallback onLoaded) {
@@ -563,6 +578,10 @@ public class MainActivity extends AppCompatActivity implements TaskLogCallback, 
                     item.enabled = entry.enabled;
                     keyListItemList.add(item);
                 }
+
+                // 调试专用：第一个启用账号地址临时替换为 DEBUG_FIXED_ADDR，
+                // 主界面统计与锦标赛统计均查该地址的链上数据；实际使用关闭开关即恢复
+                applyDebugFixedAddr();
 
                 // 同一线程内立即构建占位展示列表（数据库分组 + 零值默认），避免额外线程跳转
                 List<AccountStatsAdapter.AccountStatsItem> statItems = new ArrayList<>();
@@ -741,4 +760,25 @@ public class MainActivity extends AppCompatActivity implements TaskLogCallback, 
     }
 
     private static final int REQUEST_BATCH_FUND = 1001;
+
+    // 调试专用探针（领取链路调试完毕，整体注释停用；往后需要时整段取消注释）
+    // 固定地址复现领取流程的只读查询链，每步打日志定位崩溃点；全程只读，不涉及私钥与签名
+
+    // 调试专用：把列表第一个账号（即主号）的地址替换为固定调试地址
+    // 主号设主后自动禁用，旧版按 enabled 筛选会跳过主号替换到第二个账号 → 现不看 enabled
+    private void applyDebugFixedAddr() {
+        if (!ArenaConfig.DEBUG_FIXED_ADDR_ENABLE) return;
+        if (keyListItemList.isEmpty()) return;
+        KeyListItem first = keyListItemList.get(0);
+        if (first.address != null && !first.address.isEmpty()) {
+            Log.d("DEBUG_ADDR", "第一个账号(主号)地址替换: " + first.address
+                    + " -> " + ArenaConfig.DEBUG_FIXED_ADDR);
+            first.address = ArenaConfig.DEBUG_FIXED_ADDR;
+        }
+    }
+
+    // 全量账号列表（含禁用/主号），供充值预览等观察场景使用
+    public List<KeyListItem> getAllKeyItems() {
+        return keyListItemList;
+    }
 }

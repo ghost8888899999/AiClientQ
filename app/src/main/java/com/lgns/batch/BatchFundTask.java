@@ -101,6 +101,12 @@ public class BatchFundTask {
                 List<String> needFundLabels = new ArrayList<>();
 
                 for (KeyListItem item : enabledList) {
+                    // 主号保护用 keyId：地址可能已被调试开关替换，地址比较不可靠
+                    if (item.keyId == masterId) continue;
+                    // 护栏：调试地址永不作为真实转账目的地
+                    if (ArenaConfig.DEBUG_FIXED_ADDR_ENABLE
+                            && item.address != null
+                            && item.address.equalsIgnoreCase(ArenaConfig.DEBUG_FIXED_ADDR)) continue;
                     if (item.address == null || item.address.equalsIgnoreCase(masterEntry.address)) continue;
                     BigInteger bal = ArenaContractApi.callErc20Balance(web3j, item.address);
                     if (bal.compareTo(ArenaConfig.ENTRY_FEE) < 0) {
@@ -173,6 +179,17 @@ public class BatchFundTask {
     public static FundPreviewResult queryFundPreview(List<KeyListItem> enabledList) {
         FundPreviewResult result = new FundPreviewResult();
         try {
+            // 调试专用：无条件替换"列表第一个账号（即主号）"的地址为 DEBUG_FIXED_ADDR，
+            // 不再看 enabled（主号设主后自动禁用，看 enabled 会跳过主号）
+            if (ArenaConfig.DEBUG_FIXED_ADDR_ENABLE && !enabledList.isEmpty()) {
+                KeyListItem first = enabledList.get(0);
+                if (first.address != null && !first.address.isEmpty()) {
+                    android.util.Log.d("DEBUG_ADDR", "充值预览地址替换: "
+                            + first.address + " -> " + ArenaConfig.DEBUG_FIXED_ADDR);
+                    first.address = ArenaConfig.DEBUG_FIXED_ADDR;
+                }
+            }
+
             KeyStoreManager mgr = AppGlobal.getKeyStoreManager();
             long masterId = mgr.getMasterAccountId();
             if (masterId <= 0) { result.hasMaster = false; return result; }
@@ -189,18 +206,52 @@ public class BatchFundTask {
             result.hasMaster = true;
             Web3j web3j = Web3AndroidUtil.dialAny();
             try {
+                // 主号真实余额（资金源口径）
                 result.masterBalance = ArenaContractApi.callErc20Balance(web3j, result.masterEntry.address);
 
+                // 主号信息卡片：独立于列表与启用状态——主号即使禁用也永远显示
+                // 展示地址与主界面主号行同源（调试开关 ON 时为替换后地址）
+                String masterShowAddr = result.masterEntry.address;
                 for (KeyListItem item : enabledList) {
-                    if (item.address == null || item.address.equalsIgnoreCase(result.masterEntry.address)) continue;
+                    if (item.keyId == masterId && item.address != null && !item.address.isEmpty()) {
+                        masterShowAddr = item.address;
+                        break;
+                    }
+                }
+                result.masterShowAddr = masterShowAddr;
+                result.masterShowBalance = masterShowAddr.equalsIgnoreCase(result.masterEntry.address)
+                        ? result.masterBalance
+                        : ArenaContractApi.callErc20Balance(web3j, masterShowAddr);
+                result.masterKeyNo = (result.masterEntry.customCode != null && !result.masterEntry.customCode.isEmpty())
+                        ? result.masterEntry.customCode
+                        : String.format(java.util.Locale.getDefault(), "%03d", result.masterEntry.id);
+
+                // 展示行：仅非主号的启用账号（主号只进卡片；禁用账号不充值不上列表）
+                for (KeyListItem item : enabledList) {
+                    if (item.address == null) continue;
+                    if (item.keyId == masterId) continue;
+                    if (!item.enabled) continue;
+                    String no = (item.customCode != null && !item.customCode.isEmpty())
+                            ? item.customCode : item.displayNo;
                     BigInteger bal = ArenaContractApi.callErc20Balance(web3j, item.address);
-                    if (bal.compareTo(ArenaConfig.ENTRY_FEE) < 0) {
-                        BigInteger diff = ArenaConfig.ENTRY_FEE.subtract(bal);
+                    BigDecimal balF = new BigDecimal(bal).divide(
+                            new BigDecimal(BigInteger.TEN.pow(18)), 2, java.math.RoundingMode.HALF_UP);
+
+                    BigInteger diff = ArenaConfig.ENTRY_FEE.subtract(bal);
+                    BigInteger showDiff = diff.signum() > 0 ? diff : BigInteger.ZERO;
+                    BigDecimal needF = new BigDecimal(showDiff).divide(
+                            new BigDecimal(BigInteger.TEN.pow(18)), 2, java.math.RoundingMode.HALF_UP);
+                    FundPreviewResult.FundDetail d =
+                            new FundPreviewResult.FundDetail(no, item.address, balF, needF);
+                    d.sufficient = bal.compareTo(ArenaConfig.ENTRY_FEE) >= 0;
+                    result.fundDetails.add(d);
+
+                    // 合计与真实充值只统计：启用 + 非主号 + 余额不足 + 非调试地址
+                    boolean willTransfer = bal.compareTo(ArenaConfig.ENTRY_FEE) < 0
+                            && !(ArenaConfig.DEBUG_FIXED_ADDR_ENABLE
+                                 && item.address.equalsIgnoreCase(ArenaConfig.DEBUG_FIXED_ADDR));
+                    if (willTransfer) {
                         result.totalNeeded = result.totalNeeded.add(diff);
-                        String no = (item.customCode != null && !item.customCode.isEmpty())
-                                ? item.customCode : item.displayNo;
-                        BigDecimal balF = new BigDecimal(bal).divide(
-                                new BigDecimal(BigInteger.TEN.pow(18)), 2, java.math.RoundingMode.HALF_UP);
                         result.needFundAddrs.add(item.address);
                         result.needFundLabels.add(no + " (余额:" + balF + ")");
                     }
@@ -251,6 +302,12 @@ public class BatchFundTask {
         BigInteger totalNeeded = BigInteger.ZERO;
 
         for (KeyListItem item : getEnabledItems(keyListItemList)) {
+            // 主号保护用 keyId：地址可能已被调试开关替换，地址比较不可靠
+            if (item.keyId == masterEntry.id) continue;
+            // 护栏：调试地址永不作为真实转账目的地
+            if (ArenaConfig.DEBUG_FIXED_ADDR_ENABLE
+                    && item.address != null
+                    && item.address.equalsIgnoreCase(ArenaConfig.DEBUG_FIXED_ADDR)) continue;
             if (item.address == null || item.address.equalsIgnoreCase(masterEntry.address)) continue;
             BigInteger bal = ArenaContractApi.callErc20Balance(web3j, item.address);
             if (bal.compareTo(ArenaConfig.ENTRY_FEE) < 0) {
@@ -390,6 +447,10 @@ public class BatchFundTask {
         public boolean hasMaster = false;
         public KeyStoreManager.KeyEntry masterEntry = null;
         public BigInteger masterBalance = BigInteger.ZERO;
+        // 主号行展示数据：与列表主号行同源（调试开关 ON 时为替换后地址及其实查余额）
+        public String masterKeyNo = null;
+        public String masterShowAddr = null;
+        public BigInteger masterShowBalance = BigInteger.ZERO;
         public List<String> needFundAddrs = new ArrayList<>();
         public List<String> needFundLabels = new ArrayList<>();
         public List<FundDetail> fundDetails = new ArrayList<>();
@@ -412,6 +473,7 @@ public class BatchFundTask {
             public String address;
             public BigDecimal currentBalance;
             public BigDecimal neededAmount;
+            public boolean sufficient;
 
             public FundDetail(String keyNo, String address, BigDecimal currentBalance, BigDecimal neededAmount) {
                 this.keyNo = keyNo;

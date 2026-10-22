@@ -20,6 +20,12 @@ public class ArenaConfig {
     public static final String ARENA_ADDR = "0xff060bAB41e16eBF0eFE4FAd454404Fd5f75aAaA";
     public static final long CHAIN_ID = 6714L;
 
+    // ==================== 调试专用（发版前必须置 false） ====================
+    // 开启后：App 启动时用固定地址跑一遍领取流程的只读查询链，逐步打日志定位崩溃点
+    // 地址是链上公开信息，硬编码无安全风险；私钥严禁硬编码
+    public static final boolean DEBUG_FIXED_ADDR_ENABLE = false;
+    public static final String DEBUG_FIXED_ADDR = "0x86f990B428e4f1aaCf3cD0272941b52a74d36c8E";
+
     // Squad 合约地址: null 表示未部署/未配置,部署后由用户设置
     public static volatile String SQUAD_ADDR = null;
     // 主号私钥(用于 Squad 模式的 SetCodeTx 委托 + 批量交易签名)

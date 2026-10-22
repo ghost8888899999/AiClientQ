@@ -24,10 +24,11 @@ import com.lgns.ui.activity.BatchFundConfirmActivity;
 import com.lgns.ui.activity.ChampionshipStatsActivity;
 import com.lgns.ui.activity.LogViewActivity;
 import com.lgns.ui.activity.MainActivity;
+import com.lgns.ui.adapter.AccountStatsAdapter;
 
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
 
 public class MainDialogHelper {
     private final MainActivity activity;
@@ -53,8 +54,14 @@ public class MainDialogHelper {
 
         List<String> addrs = new ArrayList<>();
         List<String> labels = new ArrayList<>();
+        List<String> groups = new ArrayList<>();
+        List<Integer> initChamps = new ArrayList<>();
+        // 快照继承：主界面已加载的冠军次数直接带过去，避免统计页归零闪烁
+        Map<String, AccountStatsAdapter.AccountStatsItem> snapshot = activity.getAccountStatsSnapshot();
         int missingCount = 0;
         for (KeyListItem item : selectedList) {
+            // 对标主界面：禁用账号不参与统计展示
+            if (!item.enabled) continue;
             String no = (item.customCode != null && !item.customCode.isEmpty())
                     ? item.customCode : item.displayNo;
             if (item.address == null || item.address.isEmpty()) {
@@ -63,6 +70,9 @@ public class MainDialogHelper {
             }
             addrs.add(item.address);
             labels.add(no);
+            groups.add(item.groupNo != null ? item.groupNo : "");
+            AccountStatsAdapter.AccountStatsItem old = snapshot.get(item.address);
+            initChamps.add(old != null ? old.totalChampion : -1);
         }
 
         if (missingCount > 0 && addrs.isEmpty()) {
@@ -74,11 +84,19 @@ public class MainDialogHelper {
             return;
         }
 
-        if (addrs.isEmpty()) return;
+        if (addrs.isEmpty()) {
+            styledDialog()
+                    .setMessage("没有启用的账号可统计，请先在私钥管理启用账号")
+                    .setPositiveButton(R.string.btn_ok, null)
+                    .show();
+            return;
+        }
 
         android.content.Intent intent = new android.content.Intent(activity, ChampionshipStatsActivity.class);
         intent.putStringArrayListExtra("addrs", new ArrayList<>(addrs));
         intent.putStringArrayListExtra("labels", new ArrayList<>(labels));
+        intent.putStringArrayListExtra("groups", new ArrayList<>(groups));
+        intent.putIntegerArrayListExtra("initChamps", new ArrayList<>(initChamps));
         activity.startActivity(intent);
     }
 
@@ -89,23 +107,35 @@ public class MainDialogHelper {
                 KeyStoreManager mgr = AppGlobal.getKeyStoreManager();
                 List<KeyStoreManager.KeyEntry> entries = mgr.loadKeyEntryList();
                 int migrated = 0;
+                int failed = 0;
                 for (KeyStoreManager.KeyEntry entry : entries) {
                     if (entry.address != null && !entry.address.isEmpty()) continue;
                     try {
                         String pk = mgr.decryptCipherText(entry.cipherText, pwdCharArray);
-                        String addr = org.web3j.crypto.Keys.getAddress(
+                        String addr = "0x" + org.web3j.crypto.Keys.getAddress(
                                 org.web3j.crypto.ECKeyPair.create(org.web3j.utils.Numeric.toBigInt(pk)));
                         entry.address = addr;
                         migrated++;
-                    } catch (Exception ignore) {}
+                    } catch (Exception ignore) {
+                        failed++;
+                    }
                 }
                 mgr.saveKeyEntryList(entries);
                 final int count = migrated;
+                final int failCount = failed;
                 activity.runOnUiThread(() -> {
-                    activity.appendLog("", "", activity.getString(R.string.migrate_success_fmt, count));
-                    activity.refreshCipherKeyList();
+                    String msg;
+                    if (count > 0) {
+                        msg = activity.getString(R.string.migrate_success_fmt, count);
+                    } else if (failCount > 0) {
+                        msg = activity.getString(R.string.migrate_decrypt_fail);
+                    } else {
+                        msg = activity.getString(R.string.migrate_none);
+                    }
+                    activity.appendLog("", "", msg);
+                    if (count > 0) activity.refreshLocalAndStats();
                     styledDialog()
-                            .setMessage(activity.getString(R.string.migrate_success_fmt, count))
+                            .setMessage(msg)
                             .setPositiveButton(R.string.btn_ok, null)
                             .show();
                 });
@@ -336,7 +366,7 @@ public class MainDialogHelper {
         new Thread(() -> {
             try {
                 BatchFundTask.FundPreviewResult preview = BatchFundTask.queryFundPreview(
-                        activity.getEnabledKeyItems());
+                        activity.getAllKeyItems());
 
                 if (!preview.hasMaster) {
                     activity.runOnUiThread(() -> styledDialog()
@@ -359,26 +389,33 @@ public class MainDialogHelper {
                         return;
                     }
 
-                    // 构建 FundItem 列表
+                    // 构建 FundItem 列表：全量启用账号（含主号与余额充足者），
+                    // 地址/差额/足额标记均取自 fundDetails，不再解析标签字符串
                     ArrayList<BatchFundConfirmActivity.FundItem> fundItems = new ArrayList<>();
-                    for (int i = 0; i < fPreview.needFundLabels.size(); i++) {
-                        String label = fPreview.needFundLabels.get(i);
-                        // 解析标签格式："a01 (余额:0.00)"
-                        String keyNo = label.split(" ")[0];
-                        String balance = label.contains("余额:") ? label.split("余额:")[1].replace(")", "") : "0.00";
-                        String needAmount = "100.00"; // 目标余额
-                        fundItems.add(new BatchFundConfirmActivity.FundItem(keyNo, balance, needAmount));
+                    for (int i = 0; i < fPreview.fundDetails.size(); i++) {
+                        BatchFundTask.FundPreviewResult.FundDetail d = fPreview.fundDetails.get(i);
+                        fundItems.add(new BatchFundConfirmActivity.FundItem(
+                                d.keyNo,
+                                d.currentBalance.toPlainString(),
+                                d.neededAmount.toPlainString(),
+                                d.address,
+                                d.sufficient));
                     }
 
                     // 启动确认页面
                     Intent intent = new Intent(activity, BatchFundConfirmActivity.class);
-                    intent.putExtra(BatchFundConfirmActivity.EXTRA_MASTER_ADDR, 
-                            fPreview.masterEntry.address);
-                    intent.putExtra(BatchFundConfirmActivity.EXTRA_MASTER_BALANCE, 
-                            fPreview.getMasterBalanceFormatted());
+                    // 主号卡片与列表主号行同源：开关 ON 时展示替换后地址及其实查余额，OFF 时即真实数据
+                    intent.putExtra(BatchFundConfirmActivity.EXTRA_MASTER_ADDR,
+                            fPreview.masterShowAddr != null ? fPreview.masterShowAddr : fPreview.masterEntry.address);
+                    intent.putExtra(BatchFundConfirmActivity.EXTRA_MASTER_KEYNO,
+                            fPreview.masterKeyNo == null ? "" : fPreview.masterKeyNo);
+                    java.math.BigDecimal masterShowBalF = new java.math.BigDecimal(fPreview.masterShowBalance).divide(
+                            new java.math.BigDecimal(java.math.BigInteger.TEN.pow(18)), 2, java.math.RoundingMode.HALF_UP);
+                    intent.putExtra(BatchFundConfirmActivity.EXTRA_MASTER_BALANCE,
+                            String.valueOf(masterShowBalF));
                     intent.putExtra(BatchFundConfirmActivity.EXTRA_FUND_LIST, fundItems);
-                    intent.putExtra(BatchFundConfirmActivity.EXTRA_TOTAL_AMOUNT, 
-                            fPreview.getTotalNeededFormatted());
+                    intent.putExtra(BatchFundConfirmActivity.EXTRA_TOTAL_AMOUNT,
+                            String.valueOf(fPreview.getTotalNeededFormatted()));
                     activity.startActivityForResult(intent, REQUEST_BATCH_FUND);
                 });
             } catch (Exception e) {

@@ -23,7 +23,7 @@
     <!-- 批量充值 -->
     <string name="fund_no_need_title">批量充值</string>
     <string name="fund_no_need_msg">所有账号余额均 ≥ 100，无需充值</string>
-    <string name="fund_confirm_title">批量充值确认</string>
+    <string name="fund_confirm_title">批量充值</string>
     <string name="fund_query_fail">查询失败: %s</string>
 
     <!-- 锦标赛/地址迁移 -->
@@ -32,6 +32,8 @@
     <string name="dialog_no_addr_msg">所选账号均为旧密钥，没有地址信息。\n\n请使用菜单「补全密钥地址」输入密码一次性迁移。</string>
     <string name="migrate_success_fmt">已为 %d 个密钥补全地址</string>
     <string name="migrate_fail_fmt">迁移失败：%s</string>
+    <string name="migrate_none">所有密钥均已有地址，无需补全</string>
+    <string name="migrate_decrypt_fail">补全失败：无法解密私钥，请确认密码是否正确</string>
 
     <!-- 密码安全 -->
     <string name="dialog_security_title">密码安全说明</string>
