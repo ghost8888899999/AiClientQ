@@ -341,13 +341,16 @@ public class BatchEnterTask {
         String enterData = org.web3j.abi.FunctionEncoder.encode(
                 new org.web3j.abi.datatypes.Function("enterArena",
                         new ArrayList<>(), new ArrayList<>()));
-        BigInteger estGas = Web3AndroidUtil.estimateGasWithCeiling(web3j, addr, ArenaConfig.ARENA_ADDR, enterData);
+        
+        // 使用 ArenaConfig 常量，避免 eth_estimateGas 返回值格式错误
+        BigInteger estGas = ArenaConfig.GAS_LIMIT_ENTER_ARENA;
+        
         BigInteger nativeBalance = web3j.ethGetBalance(addr, DefaultBlockParameterName.LATEST).send().getBalance();
         BigInteger needNative = estGas.multiply(gasPrice);
         if (nativeBalance.compareTo(needNative) < 0) {
             BigInteger diff = needNative.subtract(nativeBalance);
             double diffEth = Convert.fromWei(diff.toString(), Convert.Unit.ETHER).doubleValue();
-            return new Pair<>(String.format("%s... 跳过:原生币不足,差约 %.4f", addr.substring(0, 10), diffEth), nonce);
+            return new Pair<>(String.format("%s... 跳过:原生币不足，差约 %.4f", addr.substring(0, 10), diffEth), nonce);
         }
         ArenaContractApi.PlayerSummary summary = ArenaContractApi.callPlayerSummary(web3j, addr);
         BigInteger walletBalance = summary.walletBalance;
@@ -357,32 +360,47 @@ public class BatchEnterTask {
         String payDesc;
         boolean needApprove = false;
         if (prize.compareTo(ENTRY_FEE) >= 0) {
-            payDesc = "参与游戏(奖金抵扣)";
+            payDesc = "参与游戏 (奖金抵扣)";
         } else {
             if (walletBalance.compareTo(ENTRY_FEE) >= 0) {
-                payDesc = "参与游戏(钱包扣币)";
+                payDesc = "参与游戏 (钱包扣币)";
                 if (allowance.compareTo(ENTRY_FEE) < 0) {
                     needApprove = true;
                 }
             } else {
                 double prizeD = Convert.fromWei(prize.toString(), Convert.Unit.ETHER).doubleValue();
                 double walletD = Convert.fromWei(walletBalance.toString(), Convert.Unit.ETHER).doubleValue();
-                return new Pair<>(String.format("%s... 跳过:奖金 %.2f、钱包 %.2f 都不足100", addr.substring(0, 10), prizeD, walletD), nonce);
+                return new Pair<>(String.format("%s... 跳过:奖金 %.2f、钱包 %.2f 都不足 100", addr.substring(0, 10), prizeD, walletD), nonce);
             }
         }
         BigInteger currentNonce = nonce;
         if (needApprove) {
-            ArenaContractApi.doApproveArena(web3j, keyPair, MAX_UINT256, currentNonce, gasPrice,
-                    (txHash, rawTxHex) -> saveAccountState(ctx, fromAddrLower,
-                            new TaskAccountState(TaskAccountState.STATUS_TX_SENT, txHash, rawTxHex)));
+            try {
+                ArenaContractApi.doApproveArena(web3j, keyPair, MAX_UINT256, currentNonce, gasPrice,
+                        (txHash, rawTxHex) -> saveAccountState(ctx, fromAddrLower,
+                                new TaskAccountState(TaskAccountState.STATUS_TX_SENT, txHash, rawTxHex)));
+            } catch (Exception approveEx) {
+                throw new Exception("approve 失败:" + Web3AndroidUtil.safeMessage(approveEx), approveEx);
+            }
             currentNonce = currentNonce.add(BigInteger.ONE);
             Thread.sleep(2000);
         }
-        TransactionReceipt enterReceipt = ArenaContractApi.doEnterArena(web3j, keyPair, currentNonce, gasPrice, estGas,
-                (txHash, rawTxHex) -> saveAccountState(ctx, fromAddrLower,
-                        new TaskAccountState(TaskAccountState.STATUS_TX_SENT, txHash, rawTxHex)));
-        String txHash = enterReceipt.getTransactionHash();
-        String logText = String.format("%s... 成功 %s (%s)", addr.substring(0, 10), payDesc, txHash);
-        return new Pair<>(logText, currentNonce.add(BigInteger.ONE));
+        try {
+            TransactionReceipt enterReceipt = ArenaContractApi.doEnterArena(web3j, keyPair, currentNonce, gasPrice, estGas,
+                    (txHash, rawTxHex) -> saveAccountState(ctx, fromAddrLower,
+                            new TaskAccountState(TaskAccountState.STATUS_TX_SENT, txHash, rawTxHex)));
+            String txHash = enterReceipt.getTransactionHash();
+            String blockNumber = enterReceipt.getBlockNumber() != null ? enterReceipt.getBlockNumber().toString() : "未知";
+            String gasUsed = enterReceipt.getGasUsed() != null ? enterReceipt.getGasUsed().toString() : "未知";
+            String logText = String.format("%s... 成功 %s | txHash=%s | block=%s | nonce=%s | gasUsed=%s | gasLimit=%s", 
+                addr.substring(0, 10), payDesc, txHash, blockNumber, currentNonce.toString(), gasUsed, estGas.toString());
+            return new Pair<>(logText, currentNonce.add(BigInteger.ONE));
+        } catch (Exception enterEx) {
+            String errMsg = Web3AndroidUtil.safeMessage(enterEx);
+            if (errMsg.contains("reverted")) {
+                throw new Exception("enterArena reverted:" + errMsg, enterEx);
+            }
+            throw new Exception("enterArena 失败:" + errMsg + " | nonce=" + currentNonce, enterEx);
+        }
     }
 }

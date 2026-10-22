@@ -31,6 +31,13 @@ public class ArenaConfig {
     public static final BigInteger MAX_JIAZI_BATCH = BigInteger.valueOf(64);
     public static final long DAY_OFFSET = 8 * 3600L;
 
+    // Gas limit 常量（参考 Go/Python/wlClient_1 项目）
+    public static final BigInteger GAS_LIMIT_ENTER_ARENA = BigInteger.valueOf(1500000);
+    public static final BigInteger GAS_LIMIT_CLAIM_JIAZI = BigInteger.valueOf(300000);
+    public static final BigInteger GAS_LIMIT_CLAIM_LINEAGE = BigInteger.valueOf(300000);
+    public static final BigInteger GAS_LIMIT_CLAIM_REWARDS = BigInteger.valueOf(200000);
+    public static final BigInteger GAS_LIMIT_ERC20_TRANSFER = BigInteger.valueOf(100000);
+
     // 交易回执最大等待秒
     public static final int TX_TIMEOUT_SEC = 180;
     // 回执轮询间隔毫秒

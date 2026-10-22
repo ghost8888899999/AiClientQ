@@ -1,5 +1,7 @@
 package com.lgns.util;
 
+import android.util.Log;
+
 import com.lgns.model.ArenaConfig;
 
 import org.web3j.crypto.Credentials;
@@ -27,6 +29,14 @@ import okhttp3.OkHttpClient;
  * 更佳优化：并行探测三节点 + 合约字节码就绪校验 + OkHttp 显式超时
  */
 public class Web3AndroidUtil {
+
+    /**
+     * RPC 任务函数式接口，用于重试机制
+     */
+    @FunctionalInterface
+    public interface RpcTask<T> {
+        T run() throws Exception;
+    }
 
     private static final long RECEIPT_POLL_MS = 1000L;
     private static final long TX_WAIT_TIMEOUT_SEC = ArenaConfig.TX_TIMEOUT_SEC;
@@ -71,18 +81,24 @@ public class Web3AndroidUtil {
         return rpcRetryCall(() -> {
             org.web3j.protocol.core.methods.request.Transaction tx =
                     org.web3j.protocol.core.methods.request.Transaction.createEthCallTransaction(from, to, callData);
-            BigInteger rawGas = web3j.ethEstimateGas(tx).send().getAmountUsed();
-            return rawGas.multiply(GAS_LIMIT_RATIO).divide(GAS_LIMIT_BASE);
+            try {
+                BigInteger rawGas = web3j.ethEstimateGas(tx).send().getAmountUsed();
+                return rawGas.multiply(GAS_LIMIT_RATIO).divide(GAS_LIMIT_BASE);
+            } catch (Exception e) {
+                String errMsg = "eth_estimateGas 失败：" + e.getMessage() + " | from=" + from + " | to=" + to + " | 节点:" + currentRpcUrl();
+                Log.e("GAS_ESTIMATE", errMsg);
+                // 写入数据库日志
+                try {
+                    android.content.Context ctx = com.lgns.manager.AppGlobal.getAppContext();
+                    com.lgns.manager.AppLogDbHelper dbHelper = com.lgns.manager.AppLogDbHelper.getInstance(ctx);
+                    if (dbHelper != null) {
+                        dbHelper.insertLog(null, "GAS_EST", errMsg, System.currentTimeMillis());
+                    }
+                } catch (Exception ignore) {}
+                // 不直接 throw，让 rpcRetryCall 决定是否重试
+                throw new RuntimeException(errMsg, e);
+            }
         });
-    }
-
-    public static String getAddress(ECKeyPair keyPair) {
-        return Credentials.create(keyPair).getAddress();
-    }
-
-    @FunctionalInterface
-    public interface RpcTask<T> {
-        T run() throws Exception;
     }
 
     public static <T> T rpcRetryCall(RpcTask<T> task) throws Exception {
@@ -93,11 +109,19 @@ public class Web3AndroidUtil {
             } catch (Exception e) {
                 lastEx = e;
                 if (isRevert(e)) throw e;
+                // 记录重试日志到数据库
+                try {
+                    android.content.Context ctx = com.lgns.manager.AppGlobal.getAppContext();
+                    com.lgns.manager.AppLogDbHelper dbHelper = com.lgns.manager.AppLogDbHelper.getInstance(ctx);
+                    if (dbHelper != null) {
+                        dbHelper.insertLog(null, "RPC_RETRY", "重试 " + (i+1) + "/" + RPC_MAX_RETRY + "：" + safeMessage(e) + " | 节点:" + currentRpcUrl(), System.currentTimeMillis());
+                    }
+                } catch (Exception ignore) {}
                 long delay = RPC_RETRY_INTERVAL_MS * (1L << Math.min(i, 4));
                 Thread.sleep(delay);
             }
         }
-        throw new Exception("RPC调用重试全部失败", lastEx);
+        throw new Exception("RPC 调用重试全部失败 | 节点:" + currentRpcUrl(), lastEx);
     }
 
     public static ECKeyPair pkToKeyPair(String privateKeyHex) {
@@ -106,8 +130,15 @@ public class Web3AndroidUtil {
     }
 
     /**
-     * 创建Web3j http实例,按当前活跃节点选择RPC URL
-     * 更佳优化:补齐 OkHttp connect/read/write 超时,防节点不回永久挂死
+     * 从 ECKeyPair 获取以太坊地址（带 0x 前缀）
+     */
+    public static String getAddress(ECKeyPair keyPair) {
+        return "0x" + org.web3j.crypto.Keys.getAddress(keyPair);
+    }
+
+    /**
+     * 创建 Web3j http 实例，按当前活跃节点选择 RPC URL
+     * 更佳优化:补齐 OkHttp connect/read/write 超时，防节点不回永久挂死
      */
     public static Web3j createWeb3j() {
         String url = currentRpcUrl();

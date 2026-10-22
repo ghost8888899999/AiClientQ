@@ -219,8 +219,10 @@ public class SquadApi {
 
             BigInteger estGas;
             try {
+                // 尝试使用 eth_estimateGas（组队功能有 fallback 机制）
                 estGas = Web3AndroidUtil.estimateGasWithCeiling(web3j, masterAddr, squadAddr, data);
             } catch (Exception e) {
+                // fallback 到硬编码公式计算
                 estGas = estimateGasFloor("playSome", members.size());
             }
             if (estGas.compareTo(pv.gas) < 0) pv.gas = estGas;

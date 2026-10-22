@@ -37,9 +37,17 @@ android {
         resources {
             excludes += ['META-INF/DISCLAIMER']
         }
+        // 禁用时间戳（每次编译时间不同会导致 APK 不同）
+        jniLibs {
+            useLegacyPackaging = false
+        }
+    }
+    // 关键配置
+    buildFeatures {
+        buildConfig = true
     }
 }
-
+// 固定依赖版本(不用+号)
 dependencies {
     implementation libs.appcompat
     implementation libs.material

@@ -86,8 +86,8 @@ public class ArenaContractApi {
             throw new Exception("playerSummary rpc error:" + ethCall.getError().getMessage());
         }
         String hexValue = ethCall.getValue();
-        Log.d("RPC_DEBUG", "playerSummary[" + playerAddr + "] 原始返回: " + hexValue);
-        logRpcToDb(null, "playerSummary[" + playerAddr.substring(0, Math.min(10, playerAddr.length())) + "...] 原始返回长度: " + hexValue.length());
+        Log.d("RPC_DEBUG", "playerSummary[" + playerAddr + "] 原始返回：" + hexValue);
+        logRpcToDb(null, "playerSummary[" + playerAddr + "] 原始返回长度：" + hexValue.length());
         return decodePlayerSummary(hexValue);
     }
 
@@ -147,8 +147,8 @@ public class ArenaContractApi {
         ).send();
         if (res.hasError()) throw new Exception("jiaziCount error:" + res.getError().getMessage());
         String hexValue = res.getValue();
-        Log.d("RPC_DEBUG", "jiaziCount[" + owner + "] 原始返回: " + hexValue);
-        logRpcToDb(null, "jiaziCount[" + owner.substring(0, Math.min(10, owner.length())) + "...] 原始返回长度: " + hexValue.length());
+        Log.d("RPC_DEBUG", "jiaziCount[" + owner + "] 原始返回：" + hexValue);
+        logRpcToDb(null, "jiaziCount[" + owner + "] 原始返回长度：" + hexValue.length());
         List<Type> dec = FunctionReturnDecoder.decode(hexValue, f.getOutputParameters());
         return ((Uint256) dec.get(0)).getValue();
     }
@@ -170,8 +170,8 @@ public class ArenaContractApi {
             ).send();
             if (res.hasError()) return null;
             String hexValue = res.getValue();
-            Log.d("RPC_DEBUG", "activityOf[" + owner + "] 原始返回: " + hexValue);
-            logRpcToDb(null, "activityOf[" + owner.substring(0, Math.min(10, owner.length())) + "...] 原始返回长度: " + hexValue.length());
+            Log.d("RPC_DEBUG", "activityOf[" + owner + "] 原始返回：" + hexValue);
+            logRpcToDb(null, "activityOf[" + owner + "] 原始返回长度：" + hexValue.length());
             List<Type> dec = FunctionReturnDecoder.decode(hexValue, f.getOutputParameters());
             BigInteger val = ((Uint256) dec.get(2)).getValue();
             return val.intValue();
@@ -198,7 +198,7 @@ public class ArenaContractApi {
             if (res.hasError()) return null;
             String hexRaw = Numeric.cleanHexPrefix(res.getValue());
             Log.d("RPC_DEBUG", "playerHistoryLatest[" + owner + "] 原始返回长度: " + hexRaw.length());
-            logRpcToDb(null, "playerHistoryLatest[" + owner.substring(0, Math.min(10, owner.length())) + "...] 原始返回长度: " + hexRaw.length());
+            logRpcToDb(null, "playerHistoryLatest[" + owner + "] 原始返回长度: " + hexRaw.length());
             if (hexRaw.length() < 64) return 0;
 
             int arrOffset;
@@ -323,7 +323,8 @@ public class ArenaContractApi {
             if (receiptResp.getTransactionReceipt().isPresent()) {
                 TransactionReceipt rcpt = receiptResp.getTransactionReceipt().get();
                 if (!rcpt.isStatusOK()) {
-                    throw new RevertedTxException("tx reverted, hash=" + txHash, txHash);
+                    String revertReason = rcpt.getRevertReason() != null ? rcpt.getRevertReason() : "未知";
+                    throw new RevertedTxException("tx reverted, hash=" + txHash + " | reason=" + revertReason, txHash);
                 }
                 return rcpt;
             }
@@ -388,7 +389,7 @@ public class ArenaContractApi {
 
     public static TransactionReceipt doEnterArena(Web3j web3j, ECKeyPair ecKeyPair, BigInteger nonce,
                                                   BigInteger gasPrice, PreBroadcastHook hook) throws Exception {
-        return doEnterArena(web3j, ecKeyPair, nonce, gasPrice, BigInteger.valueOf(1500000), hook);
+        return doEnterArena(web3j, ecKeyPair, nonce, gasPrice, ArenaConfig.GAS_LIMIT_ENTER_ARENA, hook);
     }
 
     public static TransactionReceipt doEnterArena(Web3j web3j, ECKeyPair ecKeyPair, BigInteger nonce,
@@ -409,8 +410,7 @@ public class ArenaContractApi {
         List<Type> inputs = Arrays.<Type>asList(new Uint256(start), new Uint256(count));
         Function func = new Function("claimJiazi", inputs, new ArrayList<TypeReference<?>>());
         String data = FunctionEncoder.encode(func);
-        BigInteger gasLimit = BigInteger.valueOf(300000);
-        sendRawTxAndWaitReceipt(web3j, ecKeyPair, nonce, gasPrice, gasLimit, ARENA_ADDR, data, hook);
+        sendRawTxAndWaitReceipt(web3j, ecKeyPair, nonce, gasPrice, ArenaConfig.GAS_LIMIT_CLAIM_JIAZI, ARENA_ADDR, data, hook);
     }
 
     public static void doClaimJiazi(Web3j web3j, ECKeyPair ecKeyPair, BigInteger start, BigInteger count,
@@ -423,7 +423,7 @@ public class ArenaContractApi {
         Function func = new Function("claimLineage", new ArrayList<Type>(), new ArrayList<TypeReference<?>>());
         String data = FunctionEncoder.encode(func);
         sendRawTxAndWaitReceipt(web3j, ecKeyPair, nonce, gasPrice,
-                BigInteger.valueOf(300000), ARENA_ADDR, data, hook);
+                ArenaConfig.GAS_LIMIT_CLAIM_LINEAGE, ARENA_ADDR, data, hook);
     }
 
     public static void doClaimLineage(Web3j web3j, ECKeyPair ecKeyPair, BigInteger nonce, BigInteger gasPrice) throws Exception {
@@ -435,7 +435,7 @@ public class ArenaContractApi {
         Function func = new Function("claimRewards", new ArrayList<Type>(), new ArrayList<TypeReference<?>>());
         String data = FunctionEncoder.encode(func);
         sendRawTxAndWaitReceipt(web3j, ecKeyPair, nonce, gasPrice,
-                BigInteger.valueOf(200000), ARENA_ADDR, data, hook);
+                ArenaConfig.GAS_LIMIT_CLAIM_REWARDS, ARENA_ADDR, data, hook);
     }
 
     public static void doClaimRewards(Web3j web3j, ECKeyPair ecKeyPair, BigInteger nonce, BigInteger gasPrice) throws Exception {
@@ -453,8 +453,7 @@ public class ArenaContractApi {
         List<Type> inputs = Arrays.<Type>asList(new Address(toAddr), new Uint256(amount));
         Function func = new Function("transfer", inputs, new ArrayList<TypeReference<?>>());
         String txData = FunctionEncoder.encode(func);
-        BigInteger gasLimit = BigInteger.valueOf(100000);
-        return sendRawTxAndWaitReceipt(web3j, ecKeyPair, nonce, gasPrice, gasLimit, tokenContract, txData);
+        return sendRawTxAndWaitReceipt(web3j, ecKeyPair, nonce, gasPrice, ArenaConfig.GAS_LIMIT_ERC20_TRANSFER, tokenContract, txData);
     }
 
     public static BigInteger callErc20Balance(Web3j web3j, String owner) throws Exception {
@@ -497,7 +496,10 @@ public class ArenaContractApi {
             Function f = new Function("enterArena", new ArrayList<Type>(), new ArrayList<TypeReference<?>>());
             String data = FunctionEncoder.encode(f);
             BigInteger gasPrice = web3j.ethGasPrice().send().getGasPrice();
-            BigInteger gas = Web3AndroidUtil.estimateGasWithCeiling(web3j, addr, ARENA_ADDR, data);
+            
+            // 使用 ArenaConfig 常量，与 BatchEnterTask 保持一致
+            BigInteger gas = ArenaConfig.GAS_LIMIT_ENTER_ARENA;
+            
             BigInteger need = gas.multiply(gasPrice);
             BigInteger nativeBal = web3j.ethGetBalance(addr, DefaultBlockParameterName.LATEST).send().getBalance();
             if (nativeBal.compareTo(need) < 0) {
@@ -541,7 +543,7 @@ public class ArenaContractApi {
         if (hex == null || hex.length() < 1024) {
             Log.w("RPC_DEBUG", "decodePlayerSummary hex 长度不足 1024，返回默认值");
             logRpcToDb(null, "decodePlayerSummary hex 长度不足 1024，实际: " + (hex != null ? hex.length() : "null"));
-            return s;
+            throw new RuntimeException("decodePlayerSummary 返回数据长度不足：期望 1024，实际 " + (hex != null ? hex.length() : "null"));
         }
 
         s.walletBalance = safeHexUint(hex, 0);
