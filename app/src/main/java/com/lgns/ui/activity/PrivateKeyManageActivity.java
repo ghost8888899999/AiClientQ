@@ -1,6 +1,7 @@
 package com.lgns.ui.activity;
 
 import android.app.AlertDialog;
+import android.content.res.ColorStateList;
 import android.os.Bundle;
 import android.text.InputFilter;
 import android.text.InputType;
@@ -25,7 +26,10 @@ import androidx.recyclerview.widget.ItemTouchHelper;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 
+import com.google.android.material.card.MaterialCardView;
 import com.google.android.material.floatingactionbutton.FloatingActionButton;
+import com.lgns.helper.PasswordStrengthDialog;
+import com.lgns.helper.StatusTipDialog;
 import com.lgns.manager.AppGlobal;
 import com.lgns.manager.AppLogDbHelper;
 import com.lgns.manager.KeyStoreManager;
@@ -39,7 +43,9 @@ import java.util.Map;
 
 public class PrivateKeyManageActivity extends AppCompatActivity {
     private RecyclerView rvKeys;
-    private TextView tvEmpty;
+    private View tvEmpty;
+    private TextView tvSummaryAccounts, tvSummaryEnabled, tvSummaryGroups;
+    private View cardSummary;
     private KeyAdapter adapter;
     private List<DisplayItem> allDisplayList = new ArrayList<>(); // 完整列表
     private List<DisplayItem> displayList = new ArrayList<>(); // 可见列表
@@ -66,11 +72,12 @@ public class PrivateKeyManageActivity extends AppCompatActivity {
             return d;
         }
 
-        static DisplayItem keyItem(KeyStoreManager.KeyEntry e) {
+        static DisplayItem keyItem(String groupName, KeyStoreManager.KeyEntry e) {
             DisplayItem d = new DisplayItem();
             d.type = TYPE_KEY;
             d.entry = e;
-            d.groupName = e.groupNo;
+            // 统一使用列表展示的分组名（含“未分组”兑底），保证标题计数与拖拽分组一致
+            d.groupName = groupName;
             return d;
         }
     }
@@ -84,6 +91,10 @@ public class PrivateKeyManageActivity extends AppCompatActivity {
 
         rvKeys = findViewById(R.id.rv_keys);
         tvEmpty = findViewById(R.id.tv_empty);
+        tvSummaryAccounts = findViewById(R.id.tv_summary_accounts);
+        tvSummaryEnabled = findViewById(R.id.tv_summary_enabled);
+        tvSummaryGroups = findViewById(R.id.tv_summary_groups);
+        cardSummary = findViewById(R.id.card_summary);
 
         rvKeys.setLayoutManager(new LinearLayoutManager(this));
         adapter = new KeyAdapter();
@@ -128,6 +139,8 @@ public class PrivateKeyManageActivity extends AppCompatActivity {
 
         FloatingActionButton fabAdd = findViewById(R.id.fab_add);
         fabAdd.setOnClickListener(v -> showAddKeyDialog());
+
+        findViewById(R.id.btn_change_pwd).setOnClickListener(v -> showChangeCryptoKeyDialog());
     }
 
     @Override
@@ -194,29 +207,49 @@ public class PrivateKeyManageActivity extends AppCompatActivity {
                         groupExpandedMap.put(me.getKey(), prev != null ? prev : true);
                         groupIndex++;
                         for (KeyStoreManager.KeyEntry e : me.getValue()) {
-                            allDisplayList.add(DisplayItem.keyItem(e));
+                            allDisplayList.add(DisplayItem.keyItem(me.getKey(), e));
                         }
                     }
                 }
                 if (!ungrouped.isEmpty()) {
-                    allDisplayList.add(DisplayItem.header("未分组"));
-                    Boolean prevUngrouped = prevExpandedMap.get("未分组");
-                    groupExpandedMap.put("未分组", prevUngrouped != null ? prevUngrouped : true);
+                    String ungroupedName = getString(R.string.common_ungrouped);
+                    allDisplayList.add(DisplayItem.header(ungroupedName));
+                    Boolean prevUngrouped = prevExpandedMap.get(ungroupedName);
+                    groupExpandedMap.put(ungroupedName, prevUngrouped != null ? prevUngrouped : true);
                     for (KeyStoreManager.KeyEntry e : ungrouped) {
-                        allDisplayList.add(DisplayItem.keyItem(e));
+                        allDisplayList.add(DisplayItem.keyItem(ungroupedName, e));
                     }
                 }
 
                 // 构建可见列表
                 rebuildVisibleList();
 
+                int enabledCount = 0;
+                for (KeyStoreManager.KeyEntry e : sorted) {
+                    if (e.enabled) enabledCount++;
+                }
+                int groupCount = 0;
+                for (Map.Entry<String, List<KeyStoreManager.KeyEntry>> me : groupMap.entrySet()) {
+                    if (!me.getValue().isEmpty()) groupCount++;
+                }
+                if (!ungrouped.isEmpty()) groupCount++;
+
                 boolean empty = sorted.isEmpty();
+                final int fEnabledCount = enabledCount;
+                final int fGroupCount = groupCount;
                 runOnUiThread(() -> {
                     adapter.notifyDataSetChanged();
+                    tvSummaryAccounts.setText(String.valueOf(sorted.size()));
+                    tvSummaryEnabled.setText(String.valueOf(fEnabledCount));
+                    tvSummaryGroups.setText(String.valueOf(fGroupCount));
+                    cardSummary.setVisibility(empty ? View.GONE : View.VISIBLE);
                     tvEmpty.setVisibility(empty ? View.VISIBLE : View.GONE);
                 });
             } catch (Exception e) {
                 Log.e("PrivateKeyManage", "loadKeys error", e);
+                // 加载失败（如会话已锁定）时给出明确提示，避免页面空白却无任何反馈
+                String reason = e.getMessage() != null ? e.getMessage() : "加载私钥列表失败";
+                runOnUiThread(() -> Toast.makeText(this, reason, Toast.LENGTH_LONG).show());
             }
         }).start();
     }
@@ -287,17 +320,7 @@ public class PrivateKeyManageActivity extends AppCompatActivity {
         ImageButton ivEye = view.findViewById(R.id.iv_eye_toggle);
         ImageButton ivCryptoHelp = view.findViewById(R.id.iv_crypto_help);
 
-        ivCryptoHelp.setOnClickListener(v -> new AlertDialog.Builder(this, R.style.AppDialog)
-                .setTitle("密码安全说明")
-                .setMessage("若设备丢失，黑客可拿到加密数据离线暴力破解：\n\n" +
-                        "6 位纯数字 → 约 3~14 小时可破解 ❌\n\n" +
-                        "7 位纯数字 → 约 1~6 天可破解 ❌\n\n" +
-                        "7 位字母+数字 → 约 1100 年 ✅\n\n" +
-                        "8 位字母+数字 → 约 10 万年 ✅✅\n\n" +
-                        "10 位混合 → 千万年级别 ✅✅✅\n\n" +
-                        "建议：至少 7 位字母+数字组合，越长越安全。\n密码仅在内存中使用，关闭 APP 即清除。")
-                .setPositiveButton("知道了", null)
-                .show());
+        ivCryptoHelp.setOnClickListener(v -> PasswordStrengthDialog.show(this));
 
         List<String> groups = AppLogDbHelper.getInstance(this).queryAllGroups();
         if (groups.isEmpty()) groups.add("default");
@@ -312,15 +335,13 @@ public class PrivateKeyManageActivity extends AppCompatActivity {
             ivEye.setImageResource(visible[0] ? R.drawable.ic_eye_on_svg : R.drawable.ic_eye_off_svg);
         });
 
-        AlertDialog dialog = new AlertDialog.Builder(this)
-                .setTitle("添加私钥")
+        AlertDialog dialog = new AlertDialog.Builder(this, R.style.AppDialog)
                 .setView(view)
-                .setPositiveButton("确认添加", null)
-                .setNegativeButton("取消", null)
                 .create();
         dialog.show();
 
-        dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
+        view.findViewById(R.id.btn_dialog_cancel).setOnClickListener(v -> dialog.dismiss());
+        view.findViewById(R.id.btn_dialog_confirm).setOnClickListener(v -> {
             String customCode = etCustomCode != null ? etCustomCode.getText().toString().trim() : "";
             String group = ((String) spGroup.getSelectedItem()).trim();
             String part1 = etPk1.getText().toString().trim();
@@ -341,13 +362,15 @@ public class PrivateKeyManageActivity extends AppCompatActivity {
                     mgr.addPrivateKey(fullKey, pwd, customCode, group);
                     java.util.Arrays.fill(pwd, (char) 0);
                     runOnUiThread(() -> {
-                        Toast.makeText(this, "✅ 添加成功", Toast.LENGTH_SHORT).show();
+                        Toast.makeText(this, R.string.toast_key_added, Toast.LENGTH_SHORT).show();
                         dialog.dismiss();
                         loadKeys();
                     });
                 } catch (Exception e) {
                     java.util.Arrays.fill(pwd, (char) 0);
-                    runOnUiThread(() -> Toast.makeText(this, "❌ " + e.getMessage(), Toast.LENGTH_SHORT).show());
+                    runOnUiThread(() -> Toast.makeText(this,
+                            getString(R.string.toast_op_failed_fmt, e.getMessage()),
+                            Toast.LENGTH_SHORT).show());
                 }
             }).start();
         });
@@ -355,19 +378,19 @@ public class PrivateKeyManageActivity extends AppCompatActivity {
 
     private String validateAddKeyInput(String customCode, String fullKey, String pwdStr) {
         if (fullKey.isEmpty()) {
-            return "密钥内容不能为空";
+            return getString(R.string.dialog_key_empty);
         }
         if (pwdStr.isEmpty()) {
-            return "请输入加解密密码";
+            return getString(R.string.err_pwd_empty);
         }
         if (customCode.isEmpty()) {
-            return "请输入自定义编号";
+            return getString(R.string.err_custom_code_empty);
         }
         if (customCode.length() > 10) {
-            return "自定义编号不能超过10个字符";
+            return getString(R.string.err_custom_code_too_long);
         }
         if (isCustomCodeUsed(customCode, -1)) {
-            return "自定义编号已存在";
+            return getString(R.string.err_custom_code_duplicated);
         }
         String pkError = validatePrivateKey(fullKey);
         if (pkError != null) {
@@ -383,14 +406,14 @@ public class PrivateKeyManageActivity extends AppCompatActivity {
     private String validatePrivateKey(String pk) {
         String clean = pk.trim().toLowerCase();
         if (clean.startsWith("0x")) clean = clean.substring(2);
-        
+
         if (clean.isEmpty()) {
-            return "私钥内容不能为空";
+            return getString(R.string.err_pk_content_empty);
         }
         if (!clean.matches("[0-9a-f]+")) {
-            return "私钥格式错误：只能包含 0-9 和 a-f 字符（可带 0x 前缀）";
+            return getString(R.string.err_pk_format);
         }
-        
+
         return null;
     }
 
@@ -398,23 +421,23 @@ public class PrivateKeyManageActivity extends AppCompatActivity {
         try {
             String clean = rawPrivateKey.trim().toLowerCase();
             if (clean.startsWith("0x")) clean = clean.substring(2);
-            
+
             String newAddr = "0x" + org.web3j.crypto.Keys.getAddress(
                     org.web3j.crypto.ECKeyPair.create(org.web3j.utils.Numeric.toBigInt(clean)));
-            
+
             KeyStoreManager mgr = AppGlobal.getKeyStoreManager();
             List<KeyStoreManager.KeyEntry> allKeys = mgr.loadKeyEntryList();
-            
+
             for (KeyStoreManager.KeyEntry entry : allKeys) {
                 if (entry.address != null && entry.address.equalsIgnoreCase(newAddr)) {
-                    String label = entry.customCode.isEmpty() 
-                            ? String.format("%03d", entry.id) 
+                    String label = entry.customCode.isEmpty()
+                            ? getString(R.string.key_default_code_fmt, entry.id)
                             : entry.customCode;
-                    return "私钥已存在！对应编号: " + label + "，地址: " + entry.address;
+                    return getString(R.string.err_pk_duplicated_fmt, label, entry.address);
                 }
             }
         } catch (Exception e) {
-            return "私钥校验失败: " + e.getMessage();
+            return getString(R.string.err_pk_verify_failed_fmt, e.getMessage());
         }
         return null;
     }
@@ -428,7 +451,7 @@ public class PrivateKeyManageActivity extends AppCompatActivity {
 
         etCode.setText(entry.customCode);
         etCode.setFilters(new InputFilter[]{new InputFilter.LengthFilter(10)});
-        tvAddr.setText(entry.address != null ? entry.address : "地址未知");
+        tvAddr.setText(entry.address != null ? entry.address : getString(R.string.key_addr_unknown));
 
         List<String> groups = AppLogDbHelper.getInstance(this).queryAllGroups();
         if (groups.isEmpty()) groups.add("default");
@@ -439,36 +462,25 @@ public class PrivateKeyManageActivity extends AppCompatActivity {
             if (idx >= 0) spGroup.setSelection(idx);
         }
 
-        LinearLayout layoutMaster = new LinearLayout(this);
-        layoutMaster.setOrientation(LinearLayout.HORIZONTAL);
-        layoutMaster.setGravity(android.view.Gravity.CENTER_VERTICAL);
-        layoutMaster.setPadding(0, 16, 0, 0);
-        CheckBox cbMaster = new CheckBox(this);
-        cbMaster.setText("设为主号（用于批量充值）");
-        cbMaster.setTextSize(14);
+        CheckBox cbMaster = view.findViewById(R.id.cb_master);
         long currentMasterId = AppGlobal.getKeyStoreManager().getMasterAccountId();
         cbMaster.setChecked(currentMasterId == entry.id);
-        layoutMaster.addView(cbMaster);
-
-        if (view instanceof LinearLayout) {
-            ((LinearLayout) view).addView(layoutMaster);
-        } else if (view instanceof android.widget.ScrollView) {
-            android.widget.ScrollView sv = (android.widget.ScrollView) view;
-            android.widget.LinearLayout inner = (android.widget.LinearLayout) sv.getChildAt(0);
-            inner.addView(layoutMaster);
-        }
 
         final long fCurrentMasterId = currentMasterId;
 
-        AlertDialog.Builder dialogBuilder = new AlertDialog.Builder(this)
-                .setTitle("编辑私钥信息")
+        AlertDialog dialog = new AlertDialog.Builder(this, R.style.AppDialog)
                 .setView(view)
-                .setPositiveButton("保存", (d, w) -> {
+                .create();
+        dialog.show();
+
+        view.findViewById(R.id.btn_dialog_cancel).setOnClickListener(v -> dialog.dismiss());
+        view.findViewById(R.id.btn_dialog_confirm).setOnClickListener(v -> {
                     String newCode = etCode.getText().toString().trim();
                     String newGroup = (String) spGroup.getSelectedItem();
                     boolean isMaster = cbMaster.isChecked();
                     entry.customCode = newCode.isEmpty() ? null : newCode;
                     entry.groupNo = newGroup;
+                    dialog.dismiss();
                     new Thread(() -> {
                         try {
                             KeyStoreManager mgr = AppGlobal.getKeyStoreManager();
@@ -477,18 +489,18 @@ public class PrivateKeyManageActivity extends AppCompatActivity {
                                 mgr.setMasterAccountId(entry.id);
                                 mgr.updateKeyEntry((int) entry.id, entry.customCode, entry.groupNo, false);
                                 entry.enabled = false;
-                                runOnUiThread(() -> Toast.makeText(this, "已设为主号并自动禁用", Toast.LENGTH_SHORT).show());
+                                runOnUiThread(() -> Toast.makeText(this, R.string.toast_master_set_disabled, Toast.LENGTH_SHORT).show());
                             } else if (!isMaster && fCurrentMasterId == entry.id) {
                                 mgr.setMasterAccountId(-1);
                             }
                             runOnUiThread(() -> loadKeys());
                         } catch (Exception e) {
-                            runOnUiThread(() -> Toast.makeText(this, "❌ 保存失败: " + e.getMessage(), Toast.LENGTH_SHORT).show());
+                            runOnUiThread(() -> Toast.makeText(this,
+                                    getString(R.string.toast_save_failed_fmt, e.getMessage()),
+                                    Toast.LENGTH_SHORT).show());
                         }
                     }).start();
-                })
-                .setNegativeButton("取消", null);
-        dialogBuilder.show();
+        });
     }
 
     private boolean isCustomCodeUsed(String code, long excludeId) {
@@ -504,11 +516,13 @@ public class PrivateKeyManageActivity extends AppCompatActivity {
     private void showDeleteConfirm(int position) {
         KeyStoreManager.KeyEntry entry = displayList.get(position).entry;
         String label = entry.customCode.isEmpty()
-                ? String.format("%03d", entry.id) : entry.customCode;
-        new AlertDialog.Builder(this)
-                .setTitle("删除私钥")
-                .setMessage("确定删除「" + label + "」？\n\n" + entry.address)
-                .setPositiveButton("删除", (d, w) -> new Thread(() -> {
+                ? getString(R.string.key_default_code_fmt, entry.id) : entry.customCode;
+        StatusTipDialog.showDanger(this, StatusTipDialog.TONE_WARN,
+                R.drawable.ic_delete_warn_svg,
+                getString(R.string.dialog_delete_key_title),
+                getString(R.string.key_delete_msg_v2_fmt, label, shortAddr(entry.address)),
+                getString(R.string.key_delete_confirm_btn),
+                () -> new Thread(() -> {
                     try {
                         KeyStoreManager mgr = AppGlobal.getKeyStoreManager();
                         List<KeyStoreManager.KeyEntry> all = mgr.loadKeyEntryList();
@@ -519,19 +533,101 @@ public class PrivateKeyManageActivity extends AppCompatActivity {
                             }
                         }
                         runOnUiThread(() -> {
-                            Toast.makeText(this, "✅ 已删除", Toast.LENGTH_SHORT).show();
+                            Toast.makeText(this, R.string.toast_key_deleted, Toast.LENGTH_SHORT).show();
                             loadKeys();
                         });
                     } catch (Exception e) {
-                        runOnUiThread(() -> Toast.makeText(this, "❌ 删除失败", Toast.LENGTH_SHORT).show());
+                        runOnUiThread(() -> Toast.makeText(this, R.string.toast_delete_failed, Toast.LENGTH_SHORT).show());
                     }
-                }).start())
-                .setNegativeButton("取消", null)
-                .show();
+                }).start(),
+                getString(R.string.btn_cancel), null);
     }
 
     private int getBadgeColor(String text) {
         return BADGE_COLORS[Math.abs(text.hashCode()) % BADGE_COLORS.length];
+    }
+
+    // 与主界面账号行一致：0x1234...abcd
+    private String shortAddr(String addr) {
+        if (addr == null || addr.isEmpty()) return getString(R.string.key_addr_unknown);
+        if (addr.length() > 10) {
+            return addr.substring(0, 6) + "..." + addr.substring(addr.length() - 4);
+        }
+        return addr;
+    }
+
+    private void showChangeCryptoKeyDialog() {
+        View view = LayoutInflater.from(this).inflate(R.layout.dialog_change_crypto_key, null);
+        EditText etOld = view.findViewById(R.id.et_old_pwd);
+        EditText etNew = view.findViewById(R.id.et_new_pwd);
+        EditText etConfirm = view.findViewById(R.id.et_new_pwd_confirm);
+        ImageButton ivEye = view.findViewById(R.id.iv_eye_toggle);
+
+        final boolean[] visible = {false};
+        ivEye.setOnClickListener(v -> {
+            visible[0] = !visible[0];
+            int type = visible[0]
+                    ? (InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_NORMAL)
+                    : (InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
+            etOld.setInputType(type);
+            etNew.setInputType(type);
+            etConfirm.setInputType(type);
+            ivEye.setImageResource(visible[0] ? R.drawable.ic_eye_on_svg : R.drawable.ic_eye_off_svg);
+        });
+
+        AlertDialog dialog = new AlertDialog.Builder(this, R.style.AppDialog)
+                .setView(view)
+                .create();
+        dialog.show();
+
+        TextView btnConfirm = view.findViewById(R.id.btn_dialog_confirm);
+        view.findViewById(R.id.btn_dialog_cancel).setOnClickListener(v -> dialog.dismiss());
+        btnConfirm.setOnClickListener(v -> {
+            String oldStr = etOld.getText().toString();
+            String newStr = etNew.getText().toString();
+            String confirmStr = etConfirm.getText().toString();
+            String err = null;
+            if (oldStr.isEmpty()) err = getString(R.string.err_old_pwd_empty);
+            else if (newStr.isEmpty()) err = getString(R.string.err_new_pwd_empty);
+            else if (!newStr.equals(confirmStr)) err = getString(R.string.err_new_pwd_mismatch);
+            else if (newStr.equals(oldStr)) err = getString(R.string.err_new_pwd_same_as_old);
+            if (err != null) {
+                Toast.makeText(this, err, Toast.LENGTH_LONG).show();
+                return;
+            }
+            char[] oldPwd = oldStr.toCharArray();
+            char[] newPwd = newStr.toCharArray();
+            btnConfirm.setEnabled(false);
+            new Thread(() -> {
+                try {
+                    KeyStoreManager mgr = AppGlobal.getKeyStoreManager();
+                    int count = mgr.changeCryptoKey(oldPwd, newPwd);
+                    // 同步主界面缓存的会话密码，避免本会话后续操作仍用旧密码解密失败
+                    MainActivity ma = MainActivity.sInstance == null ? null : MainActivity.sInstance.get();
+                    if (ma != null && ma.tempUserCryptoKey != null) {
+                        java.util.Arrays.fill(ma.tempUserCryptoKey, (char) 0);
+                        ma.tempUserCryptoKey = newPwd.clone();
+                    }
+                    java.util.Arrays.fill(oldPwd, (char) 0);
+                    java.util.Arrays.fill(newPwd, (char) 0);
+                    runOnUiThread(() -> {
+                        Toast.makeText(this,
+                                getString(R.string.toast_change_pwd_success_fmt, count),
+                                Toast.LENGTH_LONG).show();
+                        dialog.dismiss();
+                    });
+                } catch (Exception e) {
+                    java.util.Arrays.fill(oldPwd, (char) 0);
+                    java.util.Arrays.fill(newPwd, (char) 0);
+                    runOnUiThread(() -> {
+                        btnConfirm.setEnabled(true);
+                        Toast.makeText(this,
+                                getString(R.string.toast_op_failed_fmt, e.getMessage()),
+                                Toast.LENGTH_LONG).show();
+                    });
+                }
+            }).start();
+        });
     }
 
     private class KeyAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
@@ -561,12 +657,12 @@ public class PrivateKeyManageActivity extends AppCompatActivity {
             if (holder instanceof HeaderVH) {
                 HeaderVH h = (HeaderVH) holder;
                 h.tvGroupName.setText(item.groupName);
-                h.viewColor.setBackgroundColor(getBadgeColor(item.groupName));
+                h.viewColor.setBackgroundTintList(ColorStateList.valueOf(getBadgeColor(item.groupName)));
                 int count = 0;
                 for (DisplayItem d : allDisplayList) {
                     if (d.type == TYPE_KEY && d.groupName.equals(item.groupName)) count++;
                 }
-                h.tvGroupCount.setText(count + " 个");
+                h.tvGroupCount.setText(getString(R.string.common_count_fmt, count));
                 // 展开/折叠图标旋转
                 boolean expanded = groupExpandedMap.getOrDefault(item.groupName, false);
                 h.ivExpand.setRotation(expanded ? 90 : 0);
@@ -575,17 +671,42 @@ public class PrivateKeyManageActivity extends AppCompatActivity {
             } else {
                 KeyVH h = (KeyVH) holder;
                 KeyStoreManager.KeyEntry entry = item.entry;
-                String label = entry.customCode.isEmpty()
-                        ? String.format("%03d", entry.id) : entry.customCode;
+                String baseLabel = entry.customCode.isEmpty()
+                        ? getString(R.string.key_default_code_fmt, entry.id) : entry.customCode;
                 long masterId = AppGlobal.getKeyStoreManager().getMasterAccountId();
-                if (masterId == entry.id) {
-                    label = "[主] " + label;
+                boolean isMaster = masterId == entry.id;
+                h.tvCode.setText(baseLabel);
+                // 徒标取原始编号首字
+                h.tvBadge.setText(baseLabel.isEmpty() ? "?"
+                        : String.valueOf(baseLabel.charAt(0)).toUpperCase());
+                h.tvBadge.setBackgroundTintList(ColorStateList.valueOf(getBadgeColor(baseLabel)));
+
+                // 主号整卡用浅橙底 + 橙色描边，一眼区分于普通账号
+                if (isMaster) {
+                    h.cardView.setCardBackgroundColor(0xFFFFF8F0);
+                    h.cardView.setStrokeColor(0xFFFFE0B2);
+                } else {
+                    h.cardView.setCardBackgroundColor(0xFFFFFFFF);
+                    h.cardView.setStrokeColor(0xFFEDF1F6);
                 }
-                h.tvCode.setText(label);
-                h.tvBadge.setText(String.valueOf(label.charAt(0)).toUpperCase());
-                h.tvBadge.setBackgroundColor(getBadgeColor(label));
-                h.tvAddr.setText(entry.address != null && !entry.address.isEmpty()
-                        ? entry.address : "地址未知");
+
+                // 主号用橙色胶囊突出，普通账号显示所属分组，未分组不占位
+                if (isMaster) {
+                    h.tvGroupTag.setVisibility(View.VISIBLE);
+                    h.tvGroupTag.setText(R.string.key_master_pill);
+                    h.tvGroupTag.setTextColor(0xFFE65100);
+                    h.tvGroupTag.setBackgroundTintList(ColorStateList.valueOf(0xFFFFF3E0));
+                } else if (item.groupName != null
+                        && !item.groupName.equals(getString(R.string.common_ungrouped))) {
+                    h.tvGroupTag.setVisibility(View.VISIBLE);
+                    h.tvGroupTag.setText(item.groupName);
+                    h.tvGroupTag.setTextColor(0xFF78909C);
+                    h.tvGroupTag.setBackgroundTintList(ColorStateList.valueOf(0xFFF1F5F9));
+                } else {
+                    h.tvGroupTag.setVisibility(View.GONE);
+                }
+
+                h.tvAddr.setText(shortAddr(entry.address));
                 h.swEnabled.setChecked(entry.enabled);
                 h.swEnabled.setOnCheckedChangeListener((btn, checked) -> {
                     entry.enabled = checked;
@@ -629,15 +750,18 @@ public class PrivateKeyManageActivity extends AppCompatActivity {
     }
 
     static class KeyVH extends RecyclerView.ViewHolder {
-        TextView tvBadge, tvCode, tvAddr;
+        MaterialCardView cardView;
+        TextView tvBadge, tvCode, tvAddr, tvGroupTag;
         SwitchCompat swEnabled;
         ImageButton btnEdit, btnDelete;
 
         KeyVH(View v) {
             super(v);
+            cardView = v.findViewById(R.id.card_key);
             tvBadge = v.findViewById(R.id.tv_badge);
             tvCode = v.findViewById(R.id.tv_key_code);
             tvAddr = v.findViewById(R.id.tv_key_addr);
+            tvGroupTag = v.findViewById(R.id.tv_group_tag);
             swEnabled = v.findViewById(R.id.sw_enabled);
             btnEdit = v.findViewById(R.id.btn_edit);
             btnDelete = v.findViewById(R.id.btn_delete);

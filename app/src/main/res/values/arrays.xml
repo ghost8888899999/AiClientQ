@@ -1,13 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string-array name="time_unit_array">
-        <item>分钟</item>
-        <item>小时</item>
-        <item>天</item>
+        <item>@string/unit_minute</item>
+        <item>@string/unit_hour</item>
+        <item>@string/unit_day</item>
     </string-array>
 
     <string-array name="play_mode_array">
-        <item>能打就打</item>
-        <item>等齐再打</item>
+        <item>@string/play_mode_flexible</item>
+        <item>@string/play_mode_together</item>
     </string-array>
 </resources>

@@ -54,12 +54,13 @@ public class MainActivity extends AppCompatActivity implements TaskLogCallback, 
     public static final int MODE_TOGETHER = 1;
     private int currentPlayMode;
     public char[] tempUserCryptoKey;
+    // 当前实例弱引用：私钥管理页修改加解密密码后同步会话密码用，不阻止 GC
+    public static java.lang.ref.WeakReference<MainActivity> sInstance;
     public List<KeyListItem> keyListItemList = new ArrayList<>();
 
     private static final String WORK_AUTO_CLEAR = "work_auto_clear_task";
     private static final long MIN_ALLOW_MINUTE = 15;
     private SharedPreferences spAppSetting;
-    private final String[] unitArray = {"分钟", "小时", "天"};
 
     private ImageButton btnSettingGear;
     private TextView btnSecurityWarn;
@@ -84,6 +85,7 @@ public class MainActivity extends AppCompatActivity implements TaskLogCallback, 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        sInstance = new java.lang.ref.WeakReference<>(this);
         setContentView(R.layout.activity_main);
 
         rvAccountList = findViewById(R.id.rv_account_list);
@@ -111,12 +113,14 @@ public class MainActivity extends AppCompatActivity implements TaskLogCallback, 
 
         // 注册 AppGlobal 的日志回调
         AppGlobal.setLogCallback(this);
+        // 自动过程提示（定时清理等）只上屏、不落库
+        AppGlobal.setUiLogCallback((keyNo, type, msg) -> appendUiLog(keyNo, msg));
 
         new Thread(() -> {
             try {
                 AppGlobal.initKeyManager(getApplicationContext());
                 runOnUiThread(() -> {
-                    appendLog("", "", "密钥管理器初始化完成");
+                    // 初始化成功不再上屏：本地私钥加载属于后台准备，成功时对用户无实际意义
                     // 调试探针已停用（领取链路调试完毕）：不再输出界面日志、不写数据库日志
                     // 往后需要时取消下面两行注释即可恢复
                     // if (ArenaConfig.DEBUG_FIXED_ADDR_ENABLE) {
@@ -126,7 +130,7 @@ public class MainActivity extends AppCompatActivity implements TaskLogCallback, 
                     loadKeyListLocalOnly(this::applyLocalDefaults);
                 });
             } catch (Exception e) {
-                runOnUiThread(() -> appendLog("", "", "错误：密钥管理器初始化失败:" + e.getMessage()));
+                runOnUiThread(() -> appendUiLog(null, "错误：密钥管理器初始化失败:" + e.getMessage()));
             }
         }).start();
     }
@@ -150,7 +154,9 @@ public class MainActivity extends AppCompatActivity implements TaskLogCallback, 
         layoutLogHeader.setOnClickListener(v -> {
             boolean visible = scrollView.getVisibility() == View.VISIBLE;
             scrollView.setVisibility(visible ? View.GONE : View.VISIBLE);
-            tvLogToggle.setText(visible ? "▶" : "▼");
+            tvLogToggle.setText(visible
+                    ? getString(R.string.arrow_collapsed)
+                    : getString(R.string.arrow_expanded));
         });
         scrollView.setVisibility(View.VISIBLE);
 
@@ -162,7 +168,7 @@ public class MainActivity extends AppCompatActivity implements TaskLogCallback, 
 
     private void handleBatchFundClick() {
         if (isTaskRunning) {
-            android.widget.Toast.makeText(this, "任务执行中，请勿重复点击", android.widget.Toast.LENGTH_SHORT).show();
+            android.widget.Toast.makeText(this, R.string.task_running, android.widget.Toast.LENGTH_SHORT).show();
             return;
         }
         dialogHelper.showBatchFundDialog();
@@ -170,77 +176,86 @@ public class MainActivity extends AppCompatActivity implements TaskLogCallback, 
 
     private void handleBatchEnterClick() {
         if (isTaskRunning) {
-            android.widget.Toast.makeText(this, "任务执行中，请勿重复点击", android.widget.Toast.LENGTH_SHORT).show();
+            android.widget.Toast.makeText(this, R.string.task_running, android.widget.Toast.LENGTH_SHORT).show();
             return;
         }
         List<KeyListItem> enabledList = getEnabledKeyItems();
         if (enabledList.isEmpty()) {
-            android.widget.Toast.makeText(this, "没有启用的私钥，请先在私钥管理中启用", android.widget.Toast.LENGTH_SHORT).show();
+            android.widget.Toast.makeText(this, R.string.no_enabled_key, android.widget.Toast.LENGTH_SHORT).show();
             return;
         }
         Log.d("UI_CLICK", "点击【批量入场】按钮");
-        setTaskButtonsEnabled(false);
-        dialogHelper.showDecryptPasswordDialog(pwdCharArray -> new Thread(() -> {
-            try {
-                BatchEnterTask.batchEnterAllResume(getApplicationContext(), this, currentPlayMode, enabledList, pwdCharArray);
-            } catch (Exception e) {
-                runOnUiThread(() -> appendLog("", "ENTER", "批量入场外层异常：" + e.getMessage()));
-                Log.e("BATCH_ENTER", "异常", e);
-            } finally {
-                Arrays.fill(pwdCharArray, (char) 0);
-                runOnUiThread(() -> setTaskButtonsEnabled(true));
-            }
-        }).start());
+        // 密码弹窗阶段不锁按钮：取消或输错都要保持可点，密码校验通过后才进入任务锁定
+        dialogHelper.showDecryptPasswordDialog(pwdCharArray -> {
+            setTaskButtonsEnabled(false);
+            new Thread(() -> {
+                try {
+                    BatchEnterTask.batchEnterAllResume(getApplicationContext(), this, currentPlayMode, enabledList, pwdCharArray);
+                } catch (Exception e) {
+                    runOnUiThread(() -> appendLog("", "ENTER", "批量入场外层异常：" + e.getMessage()));
+                    Log.e("BATCH_ENTER", "异常", e);
+                } finally {
+                    Arrays.fill(pwdCharArray, (char) 0);
+                    runOnUiThread(() -> setTaskButtonsEnabled(true));
+                }
+            }).start();
+        });
     }
 
     private void handleBatchClaimClick() {
         if (isTaskRunning) {
-            android.widget.Toast.makeText(this, "任务执行中，请勿重复点击", android.widget.Toast.LENGTH_SHORT).show();
+            android.widget.Toast.makeText(this, R.string.task_running, android.widget.Toast.LENGTH_SHORT).show();
             return;
         }
         List<KeyListItem> enabledList = getEnabledKeyItems();
         if (enabledList.isEmpty()) {
-            android.widget.Toast.makeText(this, "没有启用的私钥，请先在私钥管理中启用", android.widget.Toast.LENGTH_SHORT).show();
+            android.widget.Toast.makeText(this, R.string.no_enabled_key, android.widget.Toast.LENGTH_SHORT).show();
             return;
         }
         Log.d("UI_CLICK", "点击【批量领取】按钮");
-        setTaskButtonsEnabled(false);
-        dialogHelper.showDecryptPasswordDialog(pwdCharArray -> new Thread(() -> {
-            try {
-                BatchClaimTask.batchClaimAllResume(getApplicationContext(), this, currentPlayMode, enabledList, pwdCharArray);
-            } catch (Exception e) {
-                runOnUiThread(() -> appendLog("", "CLAIM", "错误：批量领取外层异常：" + e.getMessage()));
-                Log.e("BATCH_CLAIM", "异常", e);
-            } finally {
-                Arrays.fill(pwdCharArray, (char) 0);
-                runOnUiThread(() -> setTaskButtonsEnabled(true));
-            }
-        }).start());
+        // 密码弹窗阶段不锁按钮：取消或输错都要保持可点，密码校验通过后才进入任务锁定
+        dialogHelper.showDecryptPasswordDialog(pwdCharArray -> {
+            setTaskButtonsEnabled(false);
+            new Thread(() -> {
+                try {
+                    BatchClaimTask.batchClaimAllResume(getApplicationContext(), this, currentPlayMode, enabledList, pwdCharArray);
+                } catch (Exception e) {
+                    runOnUiThread(() -> appendLog("", "CLAIM", "错误：批量领取外层异常：" + e.getMessage()));
+                    Log.e("BATCH_CLAIM", "异常", e);
+                } finally {
+                    Arrays.fill(pwdCharArray, (char) 0);
+                    runOnUiThread(() -> setTaskButtonsEnabled(true));
+                }
+            }).start();
+        });
     }
 
     private void handleFullWorkflowClick() {
         if (isTaskRunning) {
-            android.widget.Toast.makeText(this, "任务执行中，请勿重复点击", android.widget.Toast.LENGTH_SHORT).show();
+            android.widget.Toast.makeText(this, R.string.task_running, android.widget.Toast.LENGTH_SHORT).show();
             return;
         }
         List<KeyListItem> enabledList = getEnabledKeyItems();
         if (enabledList.isEmpty()) {
-            android.widget.Toast.makeText(this, "没有启用的私钥，请先在私钥管理中启用", android.widget.Toast.LENGTH_SHORT).show();
+            android.widget.Toast.makeText(this, R.string.no_enabled_key, android.widget.Toast.LENGTH_SHORT).show();
             return;
         }
         Log.d("UI_CLICK", "点击【完整工作流】按钮");
-        setTaskButtonsEnabled(false);
-        dialogHelper.showDecryptPasswordDialog(pwdCharArray -> new Thread(() -> {
-            try {
-                BatchWorkflowTask.fullArenaWorkflowResume(getApplicationContext(), this, 2, currentPlayMode, enabledList, pwdCharArray);
-            } catch (Exception e) {
-                runOnUiThread(() -> appendLog("", "", "完整工作流外层异常：" + e.getMessage()));
-                Log.e("FULL_WORKFLOW", "异常", e);
-            } finally {
-                Arrays.fill(pwdCharArray, (char) 0);
-                runOnUiThread(() -> setTaskButtonsEnabled(true));
-            }
-        }).start());
+        // 密码弹窗阶段不锁按钮：取消或输错都要保持可点，密码校验通过后才进入任务锁定
+        dialogHelper.showDecryptPasswordDialog(pwdCharArray -> {
+            setTaskButtonsEnabled(false);
+            new Thread(() -> {
+                try {
+                    BatchWorkflowTask.fullArenaWorkflowResume(getApplicationContext(), this, 2, currentPlayMode, enabledList, pwdCharArray);
+                } catch (Exception e) {
+                    runOnUiThread(() -> appendLog("", "", "完整工作流外层异常：" + e.getMessage()));
+                    Log.e("FULL_WORKFLOW", "异常", e);
+                } finally {
+                    Arrays.fill(pwdCharArray, (char) 0);
+                    runOnUiThread(() -> setTaskButtonsEnabled(true));
+                }
+            }).start();
+        });
     }
 
     private void setTaskButtonsEnabled(boolean enabled) {
@@ -278,33 +293,41 @@ public class MainActivity extends AppCompatActivity implements TaskLogCallback, 
                         KeyStoreManager mgr = AppGlobal.getKeyStoreManager();
                         mgr.clearAllKeys();
                         spTs.edit().putLong("last_clear_timestamp", now).apply();
-                        runOnUiThread(() -> appendLog("", "", "警告：检测到自动清除计时到期，打开 APP 自动清空全部私钥！"));
+                        runOnUiThread(() -> appendUiLog(null, "警告：检测到自动清除计时到期，打开 APP 自动清空全部私钥！"));
                     } catch (Exception ignored) {
                     }
                 }).start();
             }
         }
 
-        // 检查日志自动清除（打开 App 时立即检查）
-        long lastLogClearTs = spTs.getLong("last_log_clear_timestamp", 0);
-        long logClearIntervalMs = getClearIntervalMs(ArenaConfig.logClearIntervalValue, ArenaConfig.logClearIntervalUnitIndex);
+        // 检查日志自动清理（独立开关：只删除早于保留时长的旧记录）
+        if (ArenaConfig.logClearEnable) {
+            long lastLogClearTs = spTs.getLong("last_log_clear_timestamp", 0);
+            long logClearIntervalMs = getClearIntervalMs(ArenaConfig.logClearIntervalValue, ArenaConfig.logClearIntervalUnitIndex);
 
-        if (now - lastLogClearTs >= logClearIntervalMs) {
-            new Thread(() -> {
-                try {
-                    AppLogDbHelper dbHelper = AppLogDbHelper.getInstance(this);
-                    int deletedCount = dbHelper.clearAllLogData();
-                    spTs.edit().putLong("last_log_clear_timestamp", now).apply();
-                    runOnUiThread(() -> appendLog("", "CONFIG", "日志清除到期，已清除 " + deletedCount + " 条数据"));
-                } catch (Exception ignored) {
-                }
-            }).start();
+            if (now - lastLogClearTs >= logClearIntervalMs) {
+                new Thread(() -> {
+                    try {
+                        long cutoff = now - logClearIntervalMs;
+                        AppLogDbHelper dbHelper = AppLogDbHelper.getInstance(this);
+                        int deletedCount = dbHelper.deleteLogsOlderThan(cutoff)
+                                + dbHelper.deleteDailyStatusOlderThan(cutoff)
+                                + dbHelper.deleteFailureLogsOlderThan(cutoff);
+                        spTs.edit().putLong("last_log_clear_timestamp", now).apply();
+                        runOnUiThread(() -> appendUiLog(null, "日志清理到期，已清理 " + deletedCount + " 条旧记录"));
+                    } catch (Exception ignored) {
+                    }
+                }).start();
+            }
+
+            // 启动定时清理日志调度器（App 运行期间按间隔删除旧记录）
+            long logClearMinutes = AppGlobal.getIntervalInMinutes(
+                    ArenaConfig.logClearIntervalValue, ArenaConfig.logClearIntervalUnitIndex);
+            AppGlobal.startLogClearScheduler(logClearMinutes);
+        } else {
+            // 开关关闭：停掉运行中的日志清理线程
+            AppGlobal.stopLogClearScheduler();
         }
-
-        // 启动定时清除日志调度器（App 运行期间每间隔配置时长自动清除）
-        long logClearMinutes = AppGlobal.getIntervalInMinutes(
-                ArenaConfig.logClearIntervalValue, ArenaConfig.logClearIntervalUnitIndex);
-        AppGlobal.startLogClearScheduler(logClearMinutes);
     }
 
     private long getClearIntervalMs(int value, int unitIndex) {
@@ -322,12 +345,12 @@ public class MainActivity extends AppCompatActivity implements TaskLogCallback, 
 
     private void setupIdleLockCallback() {
         AppGlobal.setOnIdleLock(() -> runOnUiThread(() -> {
-            appendLog("", "", "会话已过期，请重新输入密码解锁");
+            appendUiLog(null, "会话已过期，请重新输入密码解锁");
             dialogHelper.showDecryptPasswordDialog(pwdCharArray -> new Thread(() -> {
                 try {
                     AppGlobal.initKeyManager(getApplicationContext());
                     runOnUiThread(() -> {
-                        appendLog("", "", "密码验证成功，会话已恢复");
+                        appendUiLog(null, "密码验证成功，会话已恢复");
                         refreshCipherKeyList();
                     });
                 } catch (Exception e) {
@@ -390,6 +413,18 @@ public class MainActivity extends AppCompatActivity implements TaskLogCallback, 
         String safeKeyNo = (keyNo == null || keyNo.trim().isEmpty()) ? null : keyNo.trim();
         String safeType = (type == null || type.trim().isEmpty()) ? null : type.trim();
         final long timeMs = System.currentTimeMillis();
+        appendLogToUi(safeKeyNo, msg, timeMs);
+        // 只有用户主动触发的操作（批量任务、密钥增删等）才落库
+        new Thread(() -> AppLogDbHelper.getInstance(this).insertLog(safeKeyNo, safeType, msg, timeMs)).start();
+    }
+
+    // 非用户点击触发的过程日志（启动初始化、定时清理、自动刷新等）：只上屏，不写数据库，避免 db 越积越大
+    public void appendUiLog(String keyNo, String msg) {
+        String safeKeyNo = (keyNo == null || keyNo.trim().isEmpty()) ? null : keyNo.trim();
+        appendLogToUi(safeKeyNo, msg, System.currentTimeMillis());
+    }
+
+    private void appendLogToUi(final String safeKeyNo, final String msg, final long timeMs) {
         runOnUiThread(() -> {
             SimpleDateFormat sdf = new SimpleDateFormat("yyyy‑MM‑dd HH:mm:ss", Locale.getDefault());
             StringBuilder sb = new StringBuilder();
@@ -399,7 +434,6 @@ public class MainActivity extends AppCompatActivity implements TaskLogCallback, 
             tvLog.setText(tvLog.getText() + sb.toString() + "\n");
             scrollView.post(() -> scrollView.fullScroll(ScrollView.FOCUS_DOWN));
         });
-        new Thread(() -> AppLogDbHelper.getInstance(this).insertLog(safeKeyNo, safeType, msg, timeMs)).start();
     }
 
     public void appendLog(String keyNo, String type, String msg) {
@@ -437,6 +471,7 @@ public class MainActivity extends AppCompatActivity implements TaskLogCallback, 
             Arrays.fill(tempUserCryptoKey, (char) 0);
             tempUserCryptoKey = null;
         }
+        if (sInstance != null && sInstance.get() == this) sInstance = null;
     }
 
     @Override
@@ -631,9 +666,10 @@ public class MainActivity extends AppCompatActivity implements TaskLogCallback, 
             }
         }
         if (!ungrouped.isEmpty()) {
-            displayItems.add(AccountStatsAdapter.DisplayItem.header("未分组"));
+            String ungroupedName = getString(R.string.common_ungrouped);
+            displayItems.add(AccountStatsAdapter.DisplayItem.header(ungroupedName));
             for (AccountStatsAdapter.AccountStatsItem ai : ungrouped) {
-                displayItems.add(AccountStatsAdapter.DisplayItem.account("未分组", ai));
+                displayItems.add(AccountStatsAdapter.DisplayItem.account(ungroupedName, ai));
             }
         }
         return displayItems;
@@ -725,7 +761,7 @@ public class MainActivity extends AppCompatActivity implements TaskLogCallback, 
 
             } catch (Exception e) {
                 Log.e("StatsOverview", "加载失败", e);
-                runOnUiThread(() -> appendLog("", "", "加载统计失败：" + Web3AndroidUtil.safeMessage(e)));
+                runOnUiThread(() -> appendUiLog(null, "加载统计失败：" + Web3AndroidUtil.safeMessage(e)));
             } finally {
                 if (web3j != null) {
                     try { web3j.shutdown(); } catch (Exception ignore) {}
@@ -745,17 +781,21 @@ public class MainActivity extends AppCompatActivity implements TaskLogCallback, 
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
         if (requestCode == REQUEST_BATCH_FUND && resultCode == RESULT_OK) {
-            // 用户确认充值，执行充值操作
-            dialogHelper.showDecryptPasswordDialog(pwdCharArray -> new Thread(() -> {
-                try {
-                    BatchFundTask.executeAutoFund(getEnabledKeyItems(), pwdCharArray, this);
-                } catch (Exception e) {
-                    runOnUiThread(() -> appendLog("", "FUND", 
-                            getString(R.string.fund_query_fail, Web3AndroidUtil.safeMessage(e))));
-                } finally {
-                    Arrays.fill(pwdCharArray, (char) 0);
-                }
-            }).start());
+            // 用户确认充值：密码校验通过后才锁定按钮，取消弹窗不影响按钮
+            dialogHelper.showDecryptPasswordDialog(pwdCharArray -> {
+                setTaskButtonsEnabled(false);
+                new Thread(() -> {
+                    try {
+                        BatchFundTask.executeAutoFund(getEnabledKeyItems(), pwdCharArray, this);
+                    } catch (Exception e) {
+                        runOnUiThread(() -> appendLog("", "FUND",
+                                getString(R.string.fund_query_fail, Web3AndroidUtil.safeMessage(e))));
+                    } finally {
+                        Arrays.fill(pwdCharArray, (char) 0);
+                        runOnUiThread(() -> setTaskButtonsEnabled(true));
+                    }
+                }).start();
+            });
         }
     }
 

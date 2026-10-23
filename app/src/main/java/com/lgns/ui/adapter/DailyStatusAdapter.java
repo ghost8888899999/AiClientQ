@@ -10,6 +10,7 @@ import androidx.recyclerview.widget.RecyclerView;
 
 import com.lgns.model.DailyStatusItem;
 import com.lgns.R;
+import com.lgns.manager.AppGlobal;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -46,8 +47,10 @@ public class DailyStatusAdapter extends RecyclerView.Adapter<RecyclerView.ViewHo
         // 按分组构建完整列表
         String currentGroup = null;
         int groupIndex = 0;
+        String ungroupedName = com.lgns.manager.AppGlobal.getAppContext()
+                .getString(R.string.common_ungrouped);
         for (DailyStatusItem item : list) {
-            String group = item.groupNo != null && !item.groupNo.isEmpty() ? item.groupNo : "未分组";
+            String group = item.groupNo != null && !item.groupNo.isEmpty() ? item.groupNo : ungroupedName;
             if (!group.equals(currentGroup)) {
                 allItemList.add(group);
                 groupOrder.add(group);
@@ -114,7 +117,7 @@ public class DailyStatusAdapter extends RecyclerView.Adapter<RecyclerView.ViewHo
                     count++;
                 }
             }
-            vh.tvGroupCount.setText(count + " 条");
+            vh.tvGroupCount.setText(vh.itemView.getContext().getString(R.string.daily_group_count_fmt, count));
             // 展开/折叠图标旋转（对标私钥管理）
             boolean expanded = groupExpandedMap.getOrDefault(groupName, false);
             vh.ivExpand.setRotation(expanded ? 90 : 0);
@@ -130,12 +133,12 @@ public class DailyStatusAdapter extends RecyclerView.Adapter<RecyclerView.ViewHo
             vh.tvTodayEnter.setText(String.valueOf(item.todayEnter));
             if (item.isFailed) {
                 vh.tvStatusBadge.setVisibility(View.VISIBLE);
-                vh.tvStatusBadge.setText("失败");
+                vh.tvStatusBadge.setText(vh.itemView.getContext().getString(R.string.daily_status_failed));
                 vh.tvStatusBadge.setBackgroundResource(R.drawable.bg_status_badge_fail);
                 vh.itemRoot.setBackgroundColor(0xFFFFFBFB);
             } else {
                 vh.tvStatusBadge.setVisibility(View.VISIBLE);
-                vh.tvStatusBadge.setText("正常");
+                vh.tvStatusBadge.setText(vh.itemView.getContext().getString(R.string.daily_status_normal));
                 vh.tvStatusBadge.setBackgroundResource(R.drawable.bg_status_badge);
                 vh.itemRoot.setBackgroundColor(0xFFFFFFFF);
             }

@@ -64,14 +64,14 @@ public class ChampionshipStatsActivity extends AppCompatActivity {
         initChamps = ic != null ? ic : new ArrayList<>();
 
         if (addrs == null || addrs.isEmpty()) {
-            tvError.setText("没有可查询的账号");
+            tvError.setText(R.string.stats_no_account);
             tvError.setVisibility(View.VISIBLE);
             return;
         }
         if (labels == null) labels = new ArrayList<>();
         if (groups == null) groups = new ArrayList<>();
 
-        tvStatsCount.setText("共 " + addrs.size() + " 个");
+        tvStatsCount.setText(getString(R.string.common_total_fmt, addrs.size()));
 
         adapter = new ChampionStatsAdapter();
         RecyclerView rvStatsList = findViewById(R.id.rv_stats_list);
@@ -124,7 +124,7 @@ public class ChampionshipStatsActivity extends AppCompatActivity {
         } catch (Exception e) {
             Log.e("ChampionshipStats", "load chain data error", e);
             runOnUiThread(() -> tvError.setText(
-                    "链上数据加载失败：" + Web3AndroidUtil.safeMessage(e) + "（当前展示本地账号）"));
+                    getString(R.string.stats_chain_load_failed_fmt, Web3AndroidUtil.safeMessage(e))));
         } finally {
             if (web3j != null) {
                 try { web3j.shutdown(); } catch (Exception ignore) {}
@@ -184,9 +184,10 @@ public class ChampionshipStatsActivity extends AppCompatActivity {
             }
         }
         if (!ungrouped.isEmpty()) {
-            displayItems.add(ChampionStatsAdapter.DisplayItem.header("未分组"));
+            String ungroupedName = getString(R.string.common_ungrouped);
+            displayItems.add(ChampionStatsAdapter.DisplayItem.header(ungroupedName));
             for (ChampionStatsAdapter.ChampionStatsItem ai : ungrouped) {
-                displayItems.add(ChampionStatsAdapter.DisplayItem.account("未分组", ai));
+                displayItems.add(ChampionStatsAdapter.DisplayItem.account(ungroupedName, ai));
             }
         }
         return displayItems;

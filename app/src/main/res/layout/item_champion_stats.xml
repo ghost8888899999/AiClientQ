@@ -44,7 +44,7 @@
                 android:id="@+id/tv_status_tag"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="同步中"
+                android:text="@string/common_tag_syncing"
                 android:textSize="10sp"
                 android:textStyle="bold"
                 android:textColor="#FFFFFF"
@@ -76,7 +76,7 @@
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="总场次"
+                    android:text="@string/common_label_total_battles"
                     android:textSize="9sp"
                     android:textColor="#9E9E9E"/>
             </LinearLayout>
@@ -98,7 +98,7 @@
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="冠军"
+                    android:text="@string/common_label_champion_short"
                     android:textSize="9sp"
                     android:textColor="#9E9E9E"/>
             </LinearLayout>
@@ -120,7 +120,7 @@
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="胜率"
+                    android:text="@string/common_label_win_rate"
                     android:textSize="9sp"
                     android:textColor="#9E9E9E"/>
             </LinearLayout>

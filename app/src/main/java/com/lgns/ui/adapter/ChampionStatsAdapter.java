@@ -92,7 +92,7 @@ public class ChampionStatsAdapter extends RecyclerView.Adapter<RecyclerView.View
             for (DisplayItem d : allList) {
                 if (d.type == TYPE_ACCOUNT && d.groupName.equals(item.groupName)) count++;
             }
-            h.tvGroupCount.setText(count + " 个");
+            h.tvGroupCount.setText(h.itemView.getContext().getString(R.string.common_count_fmt, count));
             boolean expanded = expandedMap.getOrDefault(item.groupName, true);
             h.ivExpand.setRotation(expanded ? 90 : 0);
             h.itemView.setOnClickListener(v -> toggleGroup(item.groupName));
@@ -175,31 +175,33 @@ public class ChampionStatsAdapter extends RecyclerView.Adapter<RecyclerView.View
         }
 
         void bind(ChampionStatsItem item) {
+            android.content.Context ctx = itemView.getContext();
             tvName.setText(item.name);
 
             if (item.address != null && item.address.length() > 10) {
                 tvAddr.setText(item.address.substring(0, 6) + "..." +
                         item.address.substring(item.address.length() - 4));
             } else {
-                tvAddr.setText(item.address != null ? item.address : "--");
+                tvAddr.setText(item.address != null ? item.address : ctx.getString(R.string.common_placeholder));
             }
 
             if (item.championships > 0) {
-                tvStatusTag.setText("冠军");
+                tvStatusTag.setText(ctx.getString(R.string.stats_status_champion));
                 tvStatusTag.setBackgroundResource(R.drawable.bg_tag_green);
             } else if (item.battles > 0) {
-                tvStatusTag.setText("已参赛");
+                tvStatusTag.setText(ctx.getString(R.string.stats_status_joined));
                 tvStatusTag.setBackgroundResource(R.drawable.bg_tag_gray);
             } else {
-                tvStatusTag.setText("未入场");
+                tvStatusTag.setText(ctx.getString(R.string.stats_status_not_entered));
                 tvStatusTag.setBackgroundResource(R.drawable.bg_tag_gray);
             }
 
             tvBattles.setText(String.valueOf(item.battles));
             tvChampion.setText(String.valueOf(item.championships));
-            // 胜率 = 冠军次数(赢场) × 100 / 总场次，battles 为 0 时无法计算显示 "--"
+            // 胜率 = 冠军次数(赢场) × 100 / 总场次，battles 为 0 时无法计算显示占位符
             tvWinRate.setText(item.battles > 0
-                    ? (item.championships * 100 / item.battles) + "%" : "--");
+                    ? (item.championships * 100 / item.battles) + "%"
+                    : ctx.getString(R.string.common_placeholder));
         }
     }
 }

@@ -1,12 +1,16 @@
 package com.lgns.ui.activity;
 
 import android.app.AlertDialog;
+import android.content.res.ColorStateList;
 import android.os.Bundle;
+import android.text.Editable;
 import android.text.InputFilter;
 import android.text.InputType;
+import android.text.TextWatcher;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.WindowManager;
 import android.widget.EditText;
 import android.widget.ImageButton;
 import android.widget.ImageView;
@@ -20,6 +24,7 @@ import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 
 import com.google.android.material.floatingactionbutton.FloatingActionButton;
+import com.lgns.helper.StatusTipDialog;
 import com.lgns.manager.AppGlobal;
 import com.lgns.manager.AppLogDbHelper;
 import com.lgns.manager.KeyStoreManager;
@@ -30,7 +35,9 @@ import java.util.List;
 
 public class GroupManageActivity extends AppCompatActivity {
     private RecyclerView rvGroups;
-    private TextView tvEmpty;
+    private View tvEmpty;
+    private TextView tvGroupTotal, tvSummaryGroups, tvSummaryKeys;
+    private View cardSummary;
     private GroupAdapter adapter;
     private List<String> groupList;
 
@@ -49,6 +56,10 @@ public class GroupManageActivity extends AppCompatActivity {
 
         rvGroups = findViewById(R.id.rv_groups);
         tvEmpty = findViewById(R.id.tv_empty);
+        tvGroupTotal = findViewById(R.id.tv_group_total);
+        tvSummaryGroups = findViewById(R.id.tv_summary_groups);
+        tvSummaryKeys = findViewById(R.id.tv_summary_keys);
+        cardSummary = findViewById(R.id.card_summary);
 
         rvGroups.setLayoutManager(new LinearLayoutManager(this));
         adapter = new GroupAdapter();
@@ -98,9 +109,20 @@ public class GroupManageActivity extends AppCompatActivity {
     private void loadGroups() {
         new Thread(() -> {
             groupList = AppLogDbHelper.getInstance(this).queryAllGroups();
+            int keyCount = 0;
+            try {
+                keyCount = AppGlobal.getKeyStoreManager().loadKeyEntryList().size();
+            } catch (Exception ignored) {
+            }
+            final int totalKeys = keyCount;
             runOnUiThread(() -> {
                 adapter.notifyDataSetChanged();
+                tvGroupTotal.setText(getString(R.string.manage_total_fmt, groupList.size()));
+                tvSummaryGroups.setText(String.valueOf(groupList.size()));
+                tvSummaryKeys.setText(String.valueOf(totalKeys));
+
                 boolean empty = groupList.isEmpty();
+                cardSummary.setVisibility(empty ? View.GONE : View.VISIBLE);
                 tvEmpty.setVisibility(empty ? View.VISIBLE : View.GONE);
                 rvGroups.setVisibility(empty ? View.GONE : View.VISIBLE);
             });
@@ -117,75 +139,123 @@ public class GroupManageActivity extends AppCompatActivity {
     }
 
     private void showAddDialog(String prefill) {
-        final EditText et = new EditText(this);
-        et.setHint("分组名称");
+        View view = LayoutInflater.from(this).inflate(R.layout.dialog_group_name, null);
+        TextView tvTitle = view.findViewById(R.id.tv_title);
+        TextView tvCounter = view.findViewById(R.id.tv_counter);
+        TextView tvError = view.findViewById(R.id.tv_error);
+        EditText et = view.findViewById(R.id.et_group_name);
+
+        final boolean isRename = prefill != null;
+        tvTitle.setText(isRename ? R.string.dialog_rename_group_title : R.string.dialog_add_group_title);
         et.setFilters(new InputFilter[]{new InputFilter.LengthFilter(10)});
         et.setInputType(InputType.TYPE_CLASS_TEXT);
-        et.setPadding(48, 32, 48, 16);
-        if (prefill != null) {
+        if (isRename) {
             et.setText(prefill);
             et.setSelection(prefill.length());
         }
+        updateNameCounter(tvCounter, et.getText().length());
 
-        String title = (prefill != null) ? "重命名分组" : "添加分组";
-        new AlertDialog.Builder(this)
-                .setTitle(title)
-                .setView(et)
-                .setPositiveButton("确认", (d, w) -> {
-                    String name = et.getText().toString().trim();
-                    if (name.isEmpty()) {
-                        Toast.makeText(this, "名称不能为空", Toast.LENGTH_SHORT).show();
+        AlertDialog dialog = new AlertDialog.Builder(this, R.style.AppDialog)
+                .setView(view)
+                .create();
+        dialog.show();
+        if (dialog.getWindow() != null) {
+            dialog.getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_VISIBLE);
+        }
+        et.requestFocus();
+
+        // 输入时实时刷新字数，并隐藏上一次的内联错误
+        et.addTextChangedListener(new TextWatcher() {
+            @Override
+            public void beforeTextChanged(CharSequence s, int start, int count, int after) {
+            }
+
+            @Override
+            public void onTextChanged(CharSequence s, int start, int before, int count) {
+            }
+
+            @Override
+            public void afterTextChanged(Editable s) {
+                updateNameCounter(tvCounter, s.length());
+                if (tvError.getVisibility() == View.VISIBLE) {
+                    tvError.setVisibility(View.GONE);
+                }
+            }
+        });
+
+        view.findViewById(R.id.btn_grp_cancel).setOnClickListener(v -> dialog.dismiss());
+        view.findViewById(R.id.btn_grp_save).setOnClickListener(v -> {
+            String name = et.getText().toString().trim();
+            if (name.isEmpty()) {
+                showNameError(tvError, getString(R.string.err_group_name_empty));
+                return;
+            }
+            if (isRename && name.equals(prefill)) {
+                dialog.dismiss();
+                return;
+            }
+            new Thread(() -> {
+                AppLogDbHelper db = AppLogDbHelper.getInstance(this);
+                boolean exists = db.groupExists(name);
+                if (isRename) {
+                    if (exists && !name.equals(prefill)) {
+                        runOnUiThread(() -> showNameError(tvError, getString(R.string.err_group_name_exists)));
                         return;
                     }
-                    new Thread(() -> {
-                        AppLogDbHelper db = AppLogDbHelper.getInstance(this);
-                        boolean exists = db.groupExists(name);
-                        if (prefill != null) {
-                            if (exists && !name.equals(prefill)) {
-                                runOnUiThread(() -> Toast.makeText(this, "分组名已存在", Toast.LENGTH_SHORT).show());
-                                return;
-                            }
-                            boolean ok = db.renameGroup(prefill, name) > 0;
-                            if (ok) syncKeyStoreRename(prefill, name);
-                            runOnUiThread(() -> {
-                                Toast.makeText(this, ok ? "✅ 重命名成功" : "❌ 操作失败", Toast.LENGTH_SHORT).show();
-                                loadGroups();
-                            });
-                        } else {
-                            if (exists) {
-                                runOnUiThread(() -> Toast.makeText(this, "分组已存在", Toast.LENGTH_SHORT).show());
-                                return;
-                            }
-                            boolean ok = db.insertGroup(name) > 0;
-                            runOnUiThread(() -> {
-                                Toast.makeText(this, ok ? "✅ 添加成功" : "❌ 操作失败", Toast.LENGTH_SHORT).show();
-                                loadGroups();
-                            });
-                        }
-                    }).start();
-                })
-                .setNegativeButton("取消", null)
-                .show();
+                    boolean ok = db.renameGroup(prefill, name) > 0;
+                    if (ok) syncKeyStoreRename(prefill, name);
+                    runOnUiThread(() -> {
+                        Toast.makeText(this, ok ? R.string.toast_group_renamed : R.string.toast_op_failed_plain,
+                                Toast.LENGTH_SHORT).show();
+                        if (ok) dialog.dismiss();
+                        loadGroups();
+                    });
+                } else {
+                    if (exists) {
+                        runOnUiThread(() -> showNameError(tvError, getString(R.string.err_group_exists)));
+                        return;
+                    }
+                    boolean ok = db.insertGroup(name) > 0;
+                    runOnUiThread(() -> {
+                        Toast.makeText(this, ok ? R.string.toast_group_added : R.string.toast_op_failed_plain,
+                                Toast.LENGTH_SHORT).show();
+                        if (ok) dialog.dismiss();
+                        loadGroups();
+                    });
+                }
+            }).start();
+        });
+    }
+
+    private void updateNameCounter(TextView tvCounter, int length) {
+        tvCounter.setText(getString(R.string.dialog_group_name_counter_fmt, length, 10));
+    }
+
+    private void showNameError(TextView tvError, String message) {
+        tvError.setText(message);
+        tvError.setVisibility(View.VISIBLE);
     }
 
     private void showDeleteConfirm(String name) {
         new Thread(() -> {
             int usedCount = countKeysInGroup(name);
             String hint = usedCount > 0
-                    ? "⚠ 该分组下有 " + usedCount + " 个密钥，删除后将变为未分组状态"
-                    : "该分组下没有密钥";
-            runOnUiThread(() -> new AlertDialog.Builder(this)
-                    .setTitle("删除分组")
-                    .setMessage("确定删除分组「" + name + "」？\n\n" + hint)
-                    .setPositiveButton("删除", (d, w) -> new Thread(() -> {
+                    ? getString(R.string.grp_delete_has_keys_fmt, usedCount)
+                    : getString(R.string.grp_delete_no_keys);
+            runOnUiThread(() -> StatusTipDialog.showDanger(this, StatusTipDialog.TONE_WARN,
+                    R.drawable.ic_delete_warn_svg,
+                    getString(R.string.dialog_delete_group_title),
+                    getString(R.string.grp_delete_msg_v2_fmt, name, hint),
+                    getString(R.string.grp_delete_confirm_btn),
+                    () -> new Thread(() -> {
                         boolean ok = AppLogDbHelper.getInstance(this).deleteGroup(name) > 0;
                         runOnUiThread(() -> {
-                            Toast.makeText(this, ok ? "✅ 已删除" : "❌ 删除失败", Toast.LENGTH_SHORT).show();
+                            Toast.makeText(this, ok ? R.string.toast_key_deleted : R.string.toast_delete_failed,
+                                    Toast.LENGTH_SHORT).show();
                             loadGroups();
                         });
-                    }).start())
-                    .setNegativeButton("取消", null)
-                    .show());
+                    }).start(),
+                    getString(R.string.btn_cancel), null));
         }).start();
     }
 
@@ -232,10 +302,12 @@ public class GroupManageActivity extends AppCompatActivity {
             String name = groupList.get(position);
             holder.tvName.setText(name);
             holder.tvBadge.setText(String.valueOf(name.isEmpty() ? '?' : name.charAt(0)).toUpperCase());
-            holder.tvBadge.setBackgroundColor(getBadgeColor(name));
+            holder.tvBadge.setBackgroundTintList(ColorStateList.valueOf(getBadgeColor(name)));
 
             int count = countKeysInGroup(name);
-            holder.tvCount.setText(count > 0 ? count + " 个密钥" : "空分组");
+            holder.tvCount.setText(count > 0
+                    ? holder.itemView.getContext().getString(R.string.grp_key_pill_fmt, count)
+                    : holder.itemView.getContext().getString(R.string.group_empty_tag));
 
             holder.btnEdit.setOnClickListener(v -> showAddDialog(name));
             holder.btnDelete.setOnClickListener(v -> showDeleteConfirm(name));

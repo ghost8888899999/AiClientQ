@@ -1,32 +1,188 @@
 <resources>
     <string name="app_name">武灵助手</string>
 
-    <!-- 通用按钮 -->
+    <!-- ══════════ 通用：按钮 ══════════ -->
     <string name="btn_ok">知道了</string>
     <string name="btn_got_it">我知道了</string>
     <string name="btn_cancel">取消</string>
     <string name="btn_confirm">确认</string>
+    <string name="btn_save">保存</string>
+    <string name="btn_delete">删除</string>
+    <string name="btn_clear">清空</string>
+    <string name="btn_init">初始化</string>
     <string name="btn_add_confirm">确认添加</string>
     <string name="btn_delete_confirm">确认删除</string>
     <string name="btn_clear_confirm">确认清空</string>
     <string name="btn_fund_confirm">确认充值</string>
+    <string name="btn_change_pwd_confirm">确认修改</string>
 
-    <!-- 通用提示 -->
+    <!-- ══════════ 通用：无障碍描述（contentDescription） ══════════ -->
+    <string name="cd_back">返回</string>
+    <string name="cd_edit">编辑</string>
+    <string name="cd_delete">删除</string>
+    <string name="cd_add_key">添加私钥</string>
+    <string name="cd_change_crypto_key">修改加解密密码</string>
+    <string name="cd_pwd_visibility_toggle">显示/隐藏密码</string>
+    <string name="cd_crypto_help">密码安全说明</string>
+
+    <!-- ══════════ 通用：占位 / 单位 / 计数 ══════════ -->
+    <string name="common_placeholder" translatable="false">--</string>
+    <string name="common_ungrouped">未分组</string>
+    <string name="common_count_fmt">%1$d 个</string>
+    <string name="common_items_fmt">共 %1$d 条</string>
+    <string name="common_total_fmt">共 %1$d 个</string>
+    <string name="common_error">错误</string>
+    <string name="arrow_collapsed" translatable="false">▶</string>
+    <string name="arrow_expanded" translatable="false">▼</string>
+
+    <!-- ══════════ 时间单位 / 入场模式（arrays.xml 引用） ══════════ -->
+    <string name="unit_minute">分钟</string>
+    <string name="unit_hour">小时</string>
+    <string name="unit_day">天</string>
+    <string name="play_mode_flexible">能打就打</string>
+    <string name="play_mode_together">等齐再打</string>
+
+    <!-- ══════════ 状态徽章 ══════════ -->
+    <string name="stats_status_full">已满</string>
+    <string name="stats_status_running">进行中</string>
+    <string name="stats_status_not_entered">未入场</string>
+    <string name="stats_status_champion">冠军</string>
+    <string name="stats_status_joined">已参赛</string>
+    <string name="daily_status_failed">失败</string>
+    <string name="daily_status_normal">正常</string>
+    <string name="daily_group_count_fmt">%1$d 条</string>
+    <string name="state_enabled">已开启</string>
+    <string name="state_disabled">已关闭</string>
+
+    <!-- ══════════ 分组管理 ══════════ -->
+    <string name="hint_group_name">分组名称</string>
+    <string name="dialog_add_group_title">添加分组</string>
+    <string name="dialog_rename_group_title">重命名分组</string>
+    <string name="dialog_group_name_subtitle">给分组起个名字，最多 10 个字符</string>
+    <string name="dialog_group_name_counter_fmt">%1$d/%2$d</string>
+    <string name="dialog_delete_group_title">删除分组</string>
+    <string name="dialog_delete_group_msg_fmt">确定删除分组「%1$s」？\n\n%2$s</string>
+    <string name="group_has_keys_warn_fmt">⚠ 该分组下有 %1$d 个密钥，删除后将变为未分组状态</string>
+    <string name="group_no_keys">该分组下没有密钥</string>
+    <string name="group_key_count_fmt">%1$d 个密钥</string>
+    <string name="group_empty_tag">空分组</string>
+    <string name="err_group_name_empty">名称不能为空</string>
+    <string name="err_group_name_exists">分组名已存在</string>
+    <string name="err_group_exists">分组已存在</string>
+    <string name="toast_group_added">✅ 添加成功</string>
+    <string name="toast_group_renamed">✅ 重命名成功</string>
+    <string name="toast_op_failed_plain">❌ 操作失败</string>
+
+    <!-- ══════════ 日志页 ══════════ -->
+    <string name="dialog_clear_log_title">清空日志</string>
+    <string name="dialog_clear_log_msg">确定清空所有日志吗？</string>
+    <string name="clip_label_operation_log">操作日志</string>
+    <string name="toast_log_cleared">日志已清空</string>
+    <string name="toast_clear_failed_fmt">清空失败: %1$s</string>
+    <string name="toast_no_log_to_copy">没有日志可复制</string>
+    <string name="toast_log_copied_fmt">已复制 %1$d 条日志\n可粘贴到记事本或Excel</string>
+    <string name="toast_copy_failed_fmt">复制失败: %1$s</string>
+
+    <!-- ══════════ 系统配置页 ══════════ -->
+    <string name="dialog_init_db_title">初始化数据库</string>
+    <string name="dialog_init_db_msg">确定重新初始化数据库吗？\n\n将删除以下表并重建：\n• 当日状态\n• 失败日志\n• 操作日志\n\n分组信息不会被删除。</string>
+    <string name="toast_db_initialized">数据库已初始化</string>
+    <string name="toast_init_failed_fmt">初始化失败: %1$s</string>
+    <string name="toast_config_saved">配置已保存</string>
+    <string name="toast_auto_clear_state_fmt">自动清除状态: %1$s</string>
+    <string name="err_clear_interval_positive">清除间隔必须大于0</string>
+    <string name="err_log_interval_positive">日志清除间隔必须大于0</string>
+    <string name="err_invalid_number">请输入有效的数字</string>
+
+    <!-- ══════════ 锦标赛统计页 ══════════ -->
+    <string name="stats_no_account">没有可查询的账号</string>
+    <string name="stats_no_enabled_account">没有启用的账号可统计，请先在私钥管理启用账号</string>
+    <string name="stats_chain_load_failed_fmt">链上数据加载失败：%1$s（当前展示本地账号）</string>
+
+    <!-- ══════════ 通用提示 ══════════ -->
     <string name="task_running">任务执行中，请勿重复点击</string>
     <string name="no_enabled_key">没有启用的私钥，请先在私钥管理中启用</string>
+    <string name="toast_op_failed_fmt">❌ %1$s</string>
 
-    <!-- 主号相关 -->
+    <!-- ══════════ 页面标题 ══════════ -->
+    <string name="title_private_key_manage">私钥管理</string>
+    <string name="title_batch_fund">批量充值</string>
+
+    <!-- ══════════ 主号相关 ══════════ -->
     <string name="master_not_set_title">未设置主号</string>
     <string name="master_not_set_msg">请先在私钥管理中编辑某个私钥，勾选「设为主号」</string>
     <string name="master_error_msg">主号信息异常，请重新设置</string>
 
-    <!-- 批量充值 -->
-    <string name="fund_no_need_title">批量充值</string>
+    <!-- ══════════ 批量充值 ══════════ -->
     <string name="fund_no_need_msg">所有账号余额均 ≥ 100，无需充值</string>
-    <string name="fund_confirm_title">批量充值</string>
     <string name="fund_query_fail">查询失败: %s</string>
+    <string name="fund_master_info">主号信息</string>
+    <string name="fund_master_balance_label">主号余额</string>
+    <string name="fund_list_title">需要补齐到以下账号</string>
+    <string name="fund_balance_fmt">%1$s fLGNS</string>
+    <string name="fund_summary_fmt">共 %1$d 个账号 · 需转入合计 %2$s fLGNS</string>
+    <string name="fund_label_current_balance">当前余额 (fLGNS)</string>
+    <string name="fund_label_need_amount">本次充值 (fLGNS)</string>
+    <string name="fund_tag_sufficient">足额</string>
+    <string name="fund_already_sufficient">已足额</string>
+    <string name="fund_amount_plus_fmt">+%1$s</string>
+    <string name="fund_seq_fmt">#%1$d</string>
 
-    <!-- 锦标赛/地址迁移 -->
+    <!-- ══════════ 私钥管理页 ══════════ -->
+    <string name="key_empty_hint">暂无私钥\n点击右下角 + 添加</string>
+    <string name="key_addr_unknown">地址未知</string>
+    <string name="key_default_code_fmt">%03d</string>
+    <string name="key_master_label_fmt">[主] %1$s</string>
+
+    <!-- ══════════ 添加私钥对话框 ══════════ -->
+    <string name="dialog_add_key_title">添加私钥</string>
+    <string name="dialog_add_key_subtitle">分两段粘贴私钥，设置编号和分组</string>
+    <string name="hint_custom_code_optional">自定义编号（可选，如 a001）</string>
+    <string name="hint_pk_part1">私钥 前半段</string>
+    <string name="hint_pk_part2">私钥 后半段</string>
+    <string name="label_crypto_key">加解密密码</string>
+    <string name="hint_crypto_key">输入加解密Key,建议7位字母+数字组合及以上</string>
+    <string name="toast_key_added">✅ 添加成功</string>
+
+    <!-- ══════════ 编辑私钥对话框 ══════════ -->
+    <string name="dialog_edit_key_title">编辑私钥信息</string>
+    <string name="hint_custom_code">自定义编号</string>
+    <string name="label_set_master">设为主号（用于批量充值）</string>
+    <string name="toast_master_set_disabled">已设为主号并自动禁用</string>
+    <string name="toast_save_failed_fmt">❌ 保存失败: %1$s</string>
+
+    <!-- ══════════ 删除私钥 ══════════ -->
+    <string name="dialog_delete_key_title">删除私钥</string>
+    <string name="dialog_delete_key_msg_fmt">确定删除「%1$s」？\n\n%2$s</string>
+    <string name="toast_key_deleted">✅ 已删除</string>
+    <string name="toast_delete_failed">❌ 删除失败</string>
+
+    <!-- ══════════ 修改加解密密码 ══════════ -->
+    <string name="dialog_change_pwd_title">修改加解密密码</string>
+    <string name="dialog_change_pwd_subtitle">全部私钥密文将用新密码重加密，请先牢记新密码</string>
+    <string name="hint_old_pwd">旧密码</string>
+    <string name="hint_new_pwd">新密码</string>
+    <string name="hint_new_pwd_confirm">确认新密码</string>
+    <string name="err_old_pwd_empty">请输入旧密码</string>
+    <string name="err_new_pwd_empty">请输入新密码</string>
+    <string name="err_new_pwd_mismatch">两次输入的新密码不一致</string>
+    <string name="err_new_pwd_same_as_old">新密码不能与旧密码相同</string>
+    <string name="err_pwd_empty">请输入加解密密码</string>
+    <string name="err_custom_code_empty">请输入自定义编号</string>
+    <string name="err_custom_code_too_long">自定义编号不能超过10个字符</string>
+    <string name="err_custom_code_duplicated">自定义编号已存在</string>
+    <string name="err_pk_content_empty">私钥内容不能为空</string>
+    <string name="err_pk_format">私钥格式错误：只能包含 0-9 和 a-f 字符（可带 0x 前缀）</string>
+    <string name="err_pk_duplicated_fmt">私钥已存在！对应编号: %1$s，地址: %2$s</string>
+    <string name="err_pk_verify_failed_fmt">私钥校验失败: %1$s</string>
+    <string name="toast_change_pwd_success_fmt">✅ 修改成功，共重加密 %1$d 条私钥</string>
+
+    <!-- ══════════ 解密密码对话框 ══════════ -->
+    <string name="dialog_decrypt_pwd_title">输入解密密码</string>
+    <string name="dialog_decrypt_pwd_subtitle">执行任务前需验证解密密码</string>
+    <string name="hint_decrypt_pwd">解密密码</string>
+
+    <!-- ══════════ 锦标赛 / 地址迁移 ══════════ -->
     <string name="dialog_select_accounts">请先勾选要查询的账号</string>
     <string name="dialog_no_addr_title">地址未生成</string>
     <string name="dialog_no_addr_msg">所选账号均为旧密钥，没有地址信息。\n\n请使用菜单「补全密钥地址」输入密码一次性迁移。</string>
@@ -35,46 +191,113 @@
     <string name="migrate_none">所有密钥均已有地址，无需补全</string>
     <string name="migrate_decrypt_fail">补全失败：无法解密私钥，请确认密码是否正确</string>
 
-    <!-- 密码安全 -->
-    <string name="dialog_security_title">密码安全说明</string>
-    <string name="dialog_security_msg">设备丢失时，黑客可拿到加密数据离线暴力破解：\n\n6 位纯数字 → 约 3~14 小时可破解\n\n7 位纯数字 → 约 1~6 天可破解\n\n7 位字母+数字 → 约 1100 年\n\n8 位字母+数字 → 约 10 万年\n\n10 位混合 → 千万年级别\n\n建议：至少 7 位字母+数字组合，越长越安全。\n密码仅在内存中使用，关闭 APP 即清除。</string>
-
-    <!-- 添加密钥 -->
+    <!-- ══════════ 密码安全说明 ══════════ -->
+    <string name="dialog_security_title">密码强度说明（离线爆破估算）</string>
+    <string name="dialog_security_warn_title">安全风险提醒</string>
+    <string name="dialog_security_msg">【事实·代码可查】AES-256-GCM 加密；每把钥匙独立随机 salt/IV；PBKDF2-SHA256 65536 轮派生密钥；密码仅存内存、退出即清零。\n\n【假设·保守基准】设备丢失后攻击者离线爆破，按单张现代 GPU ≈10^5 次/秒估算；以下为破解时间下限，攻击者越弱实际越久。\n公式：期望时间 ≈ 密码空间 ÷ (2 × 猜测速度)\n\n≤7 位字母+数字 → 数月~1 年 ❌\n8 位字母+数字 → 数十年（多卡集群数年）⚠️\n10 位字母+数字 → 十万年以上 ✅\n12 位含符号 → 亿年以上 ✅✅\n\n建议：至少 10 位，最好 12 位并混合大小写/数字/符号。</string>
+    <string name="dialog_security_warn_msg">1. 本APP仅为链上操作工具，不是硬件钱包，请勿存放大额资产私钥\n\n2. 手机若已Root，任何APP都可能读取私钥，存在被盗风险\n\n3. 解密密码仅在运行时使用，关闭APP后即清除，不会保存在手机中\n\n4. 配置私钥自动清除，若手机开启了省电/后台限制，清除时间可能延迟，重新打开APP会立即清除</string>
+    <!-- ══════════ 添加密钥校验（既有） ══════════ -->
     <string name="dialog_select_group">请选择分组！</string>
     <string name="dialog_key_empty">密钥内容不能为空！</string>
 
-    <!-- 密码校验 -->
+    <!-- ══════════ 密码校验 ══════════ -->
     <string name="dialog_pwd_error_title">密码错误</string>
     <string name="dialog_pwd_error_msg">解密密码校验失败，请核对密码后重新输入！</string>
 
-    <!-- 安全提醒 -->
-    <string name="dialog_security_warn_title">安全风险提醒</string>
-    <string name="dialog_security_warn_msg">1. 本APP仅为链上操作工具，不是硬件钱包，请勿存放大额资产私钥\n\n2. 手机若已Root，任何APP都可能读取私钥，存在被盗风险\n\n3. 解密密码仅在运行时使用，关闭APP后即清除，不会保存在手机中\n\n4. 配置私钥自动清除，若手机开启了省电/后台限制，清除时间可能延迟，重新打开APP会立即清除</string>
-
-    <!-- 清空密钥 -->
+    <!-- ══════════ 清空密钥 ══════════ -->
     <string name="dialog_clear_all_title">确认清空全部密钥</string>
     <string name="dialog_clear_all_msg">将删除本地全部保存的密钥密文，不可恢复！</string>
 
-    <!-- 删除密钥 -->
+    <!-- ══════════ 批量删除（主界面） ══════════ -->
     <string name="dialog_select_delete">请先勾选需要删除的密钥</string>
     <string name="dialog_delete_title">确认删除</string>
     <string name="dialog_delete_msg_fmt">确定删除选中 %d 条密钥？该操作不可恢复！</string>
 
-    <!-- 日志/状态 -->
+    <!-- ══════════ 日志 / 状态 ══════════ -->
     <string name="log_db_cleared">数据库日志已全部清空</string>
     <string name="log_keys_cleared">全部密钥已清空</string>
     <string name="log_clear_error_fmt">错误：清空密钥异常：%s</string>
     <string name="log_deleted_fmt">已删除选中 %d 条密钥</string>
     <string name="log_delete_error_fmt">删除选中密钥异常：%s</string>
 
-    <!-- 入场模式 -->
+    <!-- ══════════ 入场模式 ══════════ -->
     <string name="mode_flexible_log">已切换入场模式：能打就打，自动过滤不可执行账号</string>
     <string name="mode_together_log">已切换入场模式：等齐再打，全部模拟通过才提交交易</string>
 
-    <!-- 会话 -->
+    <!-- ══════════ 会话 ══════════ -->
     <string name="session_expired">会话已过期，请重新输入密码解锁</string>
     <string name="session_restored">密码验证成功，会话已恢复</string>
     <string name="pwd_verify_fail_fmt">错误：密码验证失败：%s</string>
 
+    <!-- ══════════ 通用：跨页面复用（layout/activity/item 中重复出现的静态中文） ══════════ -->
+    <string name="common_btn_security_warn">⚠安全提醒</string>
+    <string name="common_cd_more_settings">更多设置菜单</string>
+    <string name="common_cd_copy_log">复制日志</string>
+    <string name="common_cd_clear_log">清空日志</string>
+    <string name="common_cd_add_group">添加分组</string>
+    <string name="common_cd_drag_sort">拖拽排序</string>
+    <string name="common_cd_expand_toggle">展开/折叠</string>
+    <string name="common_btn_batch_enter">批量入场</string>
+    <string name="common_btn_batch_claim">批量领取</string>
+    <string name="common_btn_full_workflow">完整流程</string>
+    <string name="common_label_running_log">运行日志</string>
+    <string name="common_label_today_enter">今日入场</string>
+    <string name="common_label_today_champion">今日冠军</string>
+    <string name="common_label_total_champion">累计冠军</string>
+    <string name="common_label_total_prize">累计收益</string>
+    <string name="common_label_total_battles">总场次</string>
+    <string name="common_label_champion_count">冠军次数</string>
+    <string name="common_label_win_rate">胜率</string>
+    <string name="common_label_champion_short">冠军</string>
+    <string name="common_label_claimable_reward">可领取奖励</string>
+    <string name="common_label_jiazi_withdraw_short">甲子可提</string>
+    <string name="common_label_jiazi_withdraw_full">甲子可提取</string>
+    <string name="common_label_account_balance">账户余额</string>
+    <string name="common_label_today_entered">今日已入场</string>
+    <string name="common_label_reset_countdown">距离重置</string>
+    <string name="common_label_balance_short">余额</string>
+    <string name="common_label_enter_short">入场</string>
+    <string name="common_tag_enterable">可入场</string>
+    <string name="common_tag_syncing">同步中</string>
+    <string name="common_col_time">时间</string>
+    <string name="common_col_code">编号</string>
+    <string name="common_col_type">类型</string>
+    <string name="common_col_content">内容</string>
+    <string name="common_title_system_config">系统配置</string>
+    <string name="common_title_group_manage">分组管理</string>
+    <string name="common_title_log_manage">日志管理</string>
+    <string name="common_title_championship_stats">锦标赛统计</string>
+    <string name="common_title_stats_dashboard">数据总览</string>
+    <string name="common_title_operation_log">操作日志</string>
+    <string name="common_title_complete_key_addr">补全密钥地址</string>
+    <string name="common_section_asset_overview">💰 资产总览</string>
+    <string name="common_section_battle_stats">🏆 战绩统计</string>
+    <string name="common_section_today_status">⏱️ 今日状态</string>
+    <string name="common_section_account_detail">📊 账号明细</string>
+
+    <!-- ══════════ 系统配置页 activity_auto_clear ══════════ -->
+    <string name="auto_clear_tv_warn_tip">系统最短15分钟触发；受省电策略影响可能延迟；打开APP会立即校验并清除</string>
+    <string name="auto_clear_tv_switch_label">启用自动清除</string>
+    <string name="auto_clear_tv_clear_key_label">清除私钥</string>
+    <string name="auto_clear_tv_clear_log_label">清除日志</string>
+    <string name="auto_clear_tv_enter_mode_label">入场模式</string>
+    <string name="auto_clear_tv_current_mode_prefix">当前为</string>
+    <string name="auto_clear_tv_status_label">当前状态</string>
+    <string name="auto_clear_et_value_hint">数值</string>
+    <string name="auto_clear_tv_unit_per">每</string>
+    <string name="auto_clear_tv_desc_note">说明：\n• 启用后，到达设定时长会自动清除所有私钥\n• 清除后需重新添加私钥才能使用\n• 打开APP时会立即校验是否到期\n• 建议设置15分钟以上</string>
+
+    <!-- ══════════ 分组管理 activity_group_manage ══════════ -->
+    <string name="group_manage_tv_empty">暂无分组\n点击右下角 + 添加</string>
+
+    <!-- ══════════ 日志页 activity_log_view ══════════ -->
+    <string name="log_view_tv_empty">暂无日志记录</string>
+
+    <!-- ══════════ 统计概览 layout_stats_overview ══════════ -->
+    <string name="stats_overview_section_core">📊 核心指标</string>
+    <string name="stats_overview_card_balance_title">💰 账户余额</string>
+    <string name="stats_overview_card_today_champion_title">🏆 今日冠军</string>
+    <string name="stats_overview_card_enter_stats_title">🎯 入场统计</string>
+    <string name="stats_overview_section_asset_detail">💎 资产明细</string>
 
 </resources>

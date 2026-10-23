@@ -75,7 +75,8 @@ public class ArenaConfig {
     // 入场模式
     public static int playModeIndex = 0; // 0=能打就打,1=等齐再打
 
-    // 自动清除日志
+    // 自动清除日志（独立开关：只删除早于间隔的旧记录，保留最近数据）
+    public static boolean logClearEnable = true; // 默认开，兼容旧版本“日志总是清理”的行为
     public static int logClearIntervalValue = 1; // 默认1天
     public static int logClearIntervalUnitIndex = 2; // 0=分钟,1=小时,2=天
 
@@ -88,6 +89,7 @@ public class ArenaConfig {
         editor.putInt("auto_clear_interval_value", autoClearIntervalValue);
         editor.putInt("auto_clear_interval_unit_index", autoClearIntervalUnitIndex);
         editor.putInt("play_mode_index", playModeIndex);
+        editor.putBoolean("log_clear_enable", logClearEnable);
         editor.putInt("log_clear_interval_value", logClearIntervalValue);
         editor.putInt("log_clear_interval_unit_index", logClearIntervalUnitIndex);
 
@@ -102,6 +104,7 @@ public class ArenaConfig {
         autoClearIntervalValue = sp.getInt("auto_clear_interval_value", 1);
         autoClearIntervalUnitIndex = sp.getInt("auto_clear_interval_unit_index", 1);
         playModeIndex = sp.getInt("play_mode_index", 0);
+        logClearEnable = sp.getBoolean("log_clear_enable", true);
         logClearIntervalValue = sp.getInt("log_clear_interval_value", 1);
         logClearIntervalUnitIndex = sp.getInt("log_clear_interval_unit_index", 2);
     }

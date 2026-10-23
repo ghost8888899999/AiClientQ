@@ -17,6 +17,8 @@ public class AppGlobal {
     private static KeyStoreManager sKeyStoreManager;
     private static volatile Context sAppCtx;
     private static TaskLogCallback sLogCallback;
+    // 仅上屏的日志回调：定时任务等自动过程用，不写数据库
+    private static TaskLogCallback sUiLogCallback;
 
     // 空闲自动上锁
     private static final AtomicLong LAST_ACTIVE_TS = new AtomicLong(System.currentTimeMillis());
@@ -60,16 +62,27 @@ public class AppGlobal {
         sLogCallback = callback;
     }
 
+    public static void setUiLogCallback(TaskLogCallback callback) {
+        sUiLogCallback = callback;
+    }
+
+    // 非用户点击触发的提示：只上屏，不落库
+    public static void logUi(String msg) {
+        if (sUiLogCallback != null) {
+            sUiLogCallback.onLog(null, null, msg);
+        }
+    }
+
     public static void logConfigChange(String msg) {
         if (sLogCallback != null) {
             sLogCallback.onLog(null, "CONFIG", msg);
         }
     }
 
-    // 启动定时清除日志任务（根据配置的间隔）
+    // 启动定时清理日志任务：只删除早于「保留时长」的旧记录，保留最近数据
     public static synchronized void startLogClearScheduler(long intervalMinutes) {
         stopLogClearScheduler();
-        if (intervalMinutes <= 0) return;
+        if (!ArenaConfig.logClearEnable || intervalMinutes <= 0) return;
 
         logClearScheduler = Executors.newSingleThreadScheduledExecutor(r -> {
             Thread t = new Thread(r, "log-clear-timer");
@@ -79,23 +92,25 @@ public class AppGlobal {
 
         logClearTask = logClearScheduler.scheduleWithFixedDelay(() -> {
             try {
+                long cutoff = System.currentTimeMillis() - TimeUnit.MINUTES.toMillis(intervalMinutes);
                 AppLogDbHelper dbHelper = AppLogDbHelper.getInstance(sAppCtx);
-                int deletedCount = dbHelper.clearAllLogData();
+                int deletedCount = dbHelper.deleteLogsOlderThan(cutoff)
+                        + dbHelper.deleteDailyStatusOlderThan(cutoff)
+                        + dbHelper.deleteFailureLogsOlderThan(cutoff);
 
                 SharedPreferences sp = AppPrefs.get(sAppCtx);
                 sp.edit().putLong("last_log_clear_timestamp", System.currentTimeMillis()).apply();
 
-                Log.d("AppGlobal", "定时清除日志完成，共删除 " + deletedCount + " 条");
+                Log.d("AppGlobal", "定时清理日志完成，共删除 " + deletedCount + " 条历史记录");
 
-                if (sLogCallback != null) {
-                    sLogCallback.onLog(null, "CONFIG", "定时清除日志，共删除 " + deletedCount + " 条");
-                }
+                // 自动清理只上屏提示，不再写回日志表，避免“写日志→清日志”互刷数据
+                logUi("定时清理日志，共删除 " + deletedCount + " 条历史记录");
             } catch (Exception e) {
-                Log.e("AppGlobal", "定时清除日志失败", e);
+                Log.e("AppGlobal", "定时清理日志失败", e);
             }
         }, intervalMinutes, intervalMinutes, TimeUnit.MINUTES);
 
-        Log.d("AppGlobal", "日志定时清除已启动，间隔=" + intervalMinutes + "分钟");
+        Log.d("AppGlobal", "日志定时清理已启动，保留最近 " + intervalMinutes + " 分钟");
     }
 
     // 停止定时清除日志任务

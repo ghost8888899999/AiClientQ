@@ -54,20 +54,22 @@ public class LogViewActivity extends AppCompatActivity {
         findViewById(R.id.btn_back).setOnClickListener(v -> onBackPressed());
         findViewById(R.id.btn_export_log).setOnClickListener(v -> copyLogsToClipboard());
         findViewById(R.id.btn_clear_log).setOnClickListener(v -> new AlertDialog.Builder(this)
-                .setTitle("清空日志")
-                .setMessage("确定清空所有日志吗？")
-                .setPositiveButton("清空", (d, w) -> new Thread(() -> {
+                .setTitle(R.string.dialog_clear_log_title)
+                .setMessage(R.string.dialog_clear_log_msg)
+                .setPositiveButton(R.string.btn_clear, (d, w) -> new Thread(() -> {
                     try {
                         AppLogDbHelper.getInstance(this).clearAllLogData();
                         runOnUiThread(() -> {
-                            Toast.makeText(this, "日志已清空", Toast.LENGTH_SHORT).show();
+                            Toast.makeText(this, R.string.toast_log_cleared, Toast.LENGTH_SHORT).show();
                             loadLogs(tvLogCount, tvLogEmpty);
                         });
                     } catch (Exception e) {
-                        runOnUiThread(() -> Toast.makeText(this, "清空失败: " + e.getMessage(), Toast.LENGTH_SHORT).show());
+                        runOnUiThread(() -> Toast.makeText(this,
+                                getString(R.string.toast_clear_failed_fmt, e.getMessage()),
+                                Toast.LENGTH_SHORT).show());
                     }
                 }).start())
-                .setNegativeButton("取消", null)
+                .setNegativeButton(R.string.btn_cancel, null)
                 .show());
     }
 
@@ -86,10 +88,10 @@ public class LogViewActivity extends AppCompatActivity {
                         findViewById(R.id.rv_log).setVisibility(View.VISIBLE);
                         logAdapter.setItems(logList);
                     }
-                    tvLogCount.setText("共 " + count + " 条");
+                    tvLogCount.setText(getString(R.string.common_items_fmt, count));
                 });
             } catch (Exception e) {
-                runOnUiThread(() -> tvLogCount.setText("错误"));
+                runOnUiThread(() -> tvLogCount.setText(R.string.common_error));
             }
         }).start();
     }
@@ -100,7 +102,7 @@ public class LogViewActivity extends AppCompatActivity {
                 List<TaskLogItem> logList = AppLogDbHelper.getInstance(this).queryAllLogDesc();
                 
                 if (logList == null || logList.isEmpty()) {
-                    runOnUiThread(() -> Toast.makeText(this, "没有日志可复制", Toast.LENGTH_SHORT).show());
+                    runOnUiThread(() -> Toast.makeText(this, R.string.toast_no_log_to_copy, Toast.LENGTH_SHORT).show());
                     return;
                 }
 
@@ -119,15 +121,17 @@ public class LogViewActivity extends AppCompatActivity {
 
                 String logText = sb.toString();
                 ClipboardManager clipboard = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
-                ClipData clip = ClipData.newPlainText("操作日志", logText);
+                ClipData clip = ClipData.newPlainText(getString(R.string.clip_label_operation_log), logText);
                 clipboard.setPrimaryClip(clip);
 
-                runOnUiThread(() -> 
-                    Toast.makeText(this, "已复制 " + logList.size() + " 条日志\n可粘贴到记事本或Excel", Toast.LENGTH_LONG).show()
+                final int copiedCount = logList.size();
+                runOnUiThread(() ->
+                    Toast.makeText(this, getString(R.string.toast_log_copied_fmt, copiedCount), Toast.LENGTH_LONG).show()
                 );
 
             } catch (Exception e) {
-                runOnUiThread(() -> Toast.makeText(this, "复制失败: " + e.getMessage(), Toast.LENGTH_SHORT).show());
+                runOnUiThread(() -> Toast.makeText(this,
+                        getString(R.string.toast_copy_failed_fmt, e.getMessage()), Toast.LENGTH_SHORT).show());
             }
         }).start();
     }

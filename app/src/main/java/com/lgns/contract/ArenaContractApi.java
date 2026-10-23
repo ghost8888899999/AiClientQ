@@ -1,10 +1,7 @@
 package com.lgns.contract;
 
-import android.content.Context;
 import android.util.Log;
 
-import com.lgns.manager.AppGlobal;
-import com.lgns.manager.AppLogDbHelper;
 import com.lgns.model.ArenaConfig;
 import com.lgns.util.Web3AndroidUtil;
 
@@ -86,8 +83,8 @@ public class ArenaContractApi {
             throw new Exception("playerSummary rpc error:" + ethCall.getError().getMessage());
         }
         String hexValue = ethCall.getValue();
+        // 只输出 logcat 调试信息，不写数据库：批量刷新时每个账号都会走到这里，落库会迅速撑大 db
         Log.d("RPC_DEBUG", "playerSummary[" + playerAddr + "] 原始返回：" + hexValue);
-        logRpcToDb(null, "playerSummary[" + playerAddr + "] 原始返回长度：" + hexValue.length());
         return decodePlayerSummary(hexValue);
     }
 
@@ -165,7 +162,6 @@ public class ArenaContractApi {
         if (res.hasError()) throw new Exception("jiaziCount error:" + res.getError().getMessage());
         String hexValue = res.getValue();
         Log.d("RPC_DEBUG", "jiaziCount[" + owner + "] 原始返回：" + hexValue);
-        logRpcToDb(null, "jiaziCount[" + owner + "] 原始返回长度：" + hexValue.length());
         return decodeUint256At(hexValue, 0);
     }
 
@@ -187,7 +183,6 @@ public class ArenaContractApi {
             if (res.hasError()) return null;
             String hexValue = res.getValue();
             Log.d("RPC_DEBUG", "activityOf[" + owner + "] 原始返回：" + hexValue);
-            logRpcToDb(null, "activityOf[" + owner + "] 原始返回长度：" + hexValue.length());
             // activityOf 返回 (fullDays, day, matchesToday, firstIncomplete)，matchesToday 为第 3 个字
             BigInteger val = decodeUint256At(hexValue, 2);
             return val.intValue();
@@ -214,7 +209,6 @@ public class ArenaContractApi {
             if (res.hasError()) return null;
             String hexRaw = Numeric.cleanHexPrefix(res.getValue());
             Log.d("RPC_DEBUG", "playerHistoryLatest[" + owner + "] 原始返回长度: " + hexRaw.length());
-            logRpcToDb(null, "playerHistoryLatest[" + owner + "] 原始返回长度: " + hexRaw.length());
             if (hexRaw.length() < 64) return 0;
 
             int arrOffset;
@@ -554,11 +548,9 @@ public class ArenaContractApi {
         PlayerSummary s = new PlayerSummary();
         String hex = Numeric.cleanHexPrefix(hexValue);
         Log.d("RPC_DEBUG", "decodePlayerSummary 输入 hex 长度: " + (hex != null ? hex.length() : "null"));
-        logRpcToDb(null, "decodePlayerSummary 输入 hex 长度: " + (hex != null ? hex.length() : "null"));
 
         if (hex == null || hex.length() < 1024) {
-            Log.w("RPC_DEBUG", "decodePlayerSummary hex 长度不足 1024，返回默认值");
-            logRpcToDb(null, "decodePlayerSummary hex 长度不足 1024，实际: " + (hex != null ? hex.length() : "null"));
+            Log.w("RPC_DEBUG", "decodePlayerSummary hex 长度不足 1024，实际: " + (hex != null ? hex.length() : "null"));
             throw new RuntimeException("decodePlayerSummary 返回数据长度不足：期望 1024，实际 " + (hex != null ? hex.length() : "null"));
         }
 
@@ -581,7 +573,6 @@ public class ArenaContractApi {
 
         String result = "wallet=" + s.walletBalance + ", prize=" + s.prize + ", remaining=" + s.entriesRemainingToday;
         Log.d("RPC_DEBUG", "decodePlayerSummary 解析结果: " + result);
-        logRpcToDb(null, "decodePlayerSummary 解析结果: " + result);
         return s;
     }
 
@@ -616,14 +607,4 @@ public class ArenaContractApi {
         return (List<TypeReference<Type>>) (List<?>) outputs;
     }
 
-    private static void logRpcToDb(String keyNo, String content) {
-        try {
-            Context ctx = AppGlobal.getAppContext();
-            if (ctx == null) return;
-            AppLogDbHelper db = AppLogDbHelper.getInstance(ctx);
-            new Thread(() -> db.insertLog(keyNo, "RPC_DEBUG", content, System.currentTimeMillis())).start();
-        } catch (Exception e) {
-            Log.e("RPC_DEBUG", "写入数据库失败: " + e.getMessage());
-        }
-    }
 }

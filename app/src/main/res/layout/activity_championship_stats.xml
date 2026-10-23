@@ -21,14 +21,14 @@
             android:layout_width="48dp"
             android:layout_height="48dp"
             android:background="?android:attr/selectableItemBackgroundBorderless"
-            android:contentDescription="返回"
+            android:contentDescription="@string/cd_back"
             android:src="@drawable/ic_back_svg" />
 
         <TextView
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
-            android:text="锦标赛统计"
+            android:text="@string/common_title_championship_stats"
             android:textColor="@color/white"
             android:textSize="18sp"
             android:textStyle="bold" />
@@ -67,7 +67,7 @@
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="总场次"
+                android:text="@string/common_label_total_battles"
                 android:textSize="10sp"
                 android:textColor="#757575" />
         </LinearLayout>
@@ -91,7 +91,7 @@
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="冠军次数"
+                android:text="@string/common_label_champion_count"
                 android:textSize="10sp"
                 android:textColor="#757575" />
         </LinearLayout>
@@ -115,7 +115,7 @@
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="胜率"
+                android:text="@string/common_label_win_rate"
                 android:textSize="10sp"
                 android:textColor="#757575" />
         </LinearLayout>

@@ -16,6 +16,11 @@ import java.util.concurrent.TimeUnit;
 
 public class AutoClearWorker extends Worker {
 
+    // 注意：当前项目未通过 WorkManager 入队本类，它不会被执行。
+    // 实际逻辑在 MainActivity.checkAutoClearBoot()（打开 APP 校验）
+    // 与 AppGlobal.startLogClearScheduler()（运行期定时清理）中。
+    // 保留此类是为了旧版本曾入队的历史任务在升级后仍能反序列化，不报 ClassNotFound。
+
     public AutoClearWorker(Context context, WorkerParameters params) {
         super(context, params);
     }

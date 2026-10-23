@@ -1,9 +1,12 @@
 package com.lgns.helper;
 
 import android.content.SharedPreferences;
+import android.graphics.Color;
+import android.graphics.drawable.ColorDrawable;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.FrameLayout;
 import android.widget.PopupWindow;
 
 import com.lgns.R;
@@ -32,7 +35,9 @@ public class MainMenuHelper {
             mPopupWindow.dismiss();
             return;
         }
-        View popView = LayoutInflater.from(activity).inflate(R.layout.layout_pop_menu, null);
+        // 带临时 parent 保证根布局的尺寸属性能被解析（实际窗口宽度以下面的代码为准）
+        View popView = LayoutInflater.from(activity)
+                .inflate(R.layout.layout_pop_menu, new FrameLayout(activity), false);
 
         popView.findViewById(R.id.menu_key_manage).setOnClickListener(v -> {
             activity.setRefreshLocalOnlyOnResume();
@@ -66,9 +71,23 @@ public class MainMenuHelper {
             dismissPopup();
         });
 
-        mPopupWindow = new PopupWindow(popView, ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, true);
+        // 窗口比卡片四周多 14dp，留给 MaterialCardView 的投影，避免阴影被窗口边界裁掉
+        int cardWidth = dp(212);
+        int shadowPad = dp(14);
+        mPopupWindow = new PopupWindow(popView, cardWidth + shadowPad * 2,
+                ViewGroup.LayoutParams.WRAP_CONTENT, true);
         mPopupWindow.setOutsideTouchable(true);
-        mPopupWindow.showAsDropDown(anchorView, 0, 4);
+        // 透明背景保证点外部可关闭
+        mPopupWindow.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
+        mPopupWindow.setAnimationStyle(R.style.PopMenuAnim);
+
+        // 卡片右边缘对齐齿轮右边缘，卡片顶边距齿轮底部 6dp
+        int dx = anchorView.getWidth() - cardWidth - shadowPad;
+        mPopupWindow.showAsDropDown(anchorView, dx, dp(6) - shadowPad);
+    }
+
+    private int dp(int value) {
+        return Math.round(value * activity.getResources().getDisplayMetrics().density);
     }
 
     public void openSysConfig() {

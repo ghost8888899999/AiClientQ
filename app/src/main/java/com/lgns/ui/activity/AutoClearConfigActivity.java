@@ -3,8 +3,10 @@ package com.lgns.ui.activity;
 import android.content.SharedPreferences;
 import android.os.Bundle;
 import android.util.Log;
+import android.view.LayoutInflater;
 import android.view.View;
 import android.widget.EditText;
+import android.widget.LinearLayout;
 import android.widget.Spinner;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -16,6 +18,7 @@ import com.lgns.R;
 import com.lgns.model.ArenaConfig;
 import com.lgns.manager.AppLogDbHelper;
 import com.lgns.manager.AppGlobal;
+import com.lgns.util.Web3AndroidUtil;
 
 public class AutoClearConfigActivity extends AppCompatActivity {
 
@@ -23,8 +26,11 @@ public class AutoClearConfigActivity extends AppCompatActivity {
     private EditText etAutoClearVal;
     private Spinner spTimeUnit;
     private Spinner spPlayMode;
+    private SwitchCompat swLogClearEnable;
     private EditText etLogClearVal;
     private Spinner spLogTimeUnit;
+    private LinearLayout layoutLogInterval;
+    private TextView tvAutoClearStatus;
     private TextView btnSave;
 
     @Override
@@ -41,20 +47,44 @@ public class AutoClearConfigActivity extends AppCompatActivity {
     }
 
     private void showInitDbDialog() {
-        new AlertDialog.Builder(this)
-                .setTitle("初始化数据库")
-                .setMessage("确定重新初始化数据库吗？\n\n将删除以下表并重建：\n• 当日状态\n• 失败日志\n• 操作日志\n\n分组信息不会被删除。")
-                .setPositiveButton("初始化", (d, w) -> new Thread(() -> {
-                    try {
-                        AppLogDbHelper db = AppLogDbHelper.getInstance(this);
-                        db.recreateTablesExceptGroups();
-                        runOnUiThread(() -> Toast.makeText(this, "数据库已初始化", Toast.LENGTH_SHORT).show());
-                    } catch (Exception e) {
-                        runOnUiThread(() -> Toast.makeText(this, "初始化失败: " + e.getMessage(), Toast.LENGTH_SHORT).show());
-                    }
-                }).start())
-                .setNegativeButton("取消", null)
-                .show();
+        View view = LayoutInflater.from(this).inflate(R.layout.dialog_init_db, null);
+        final AlertDialog dialog = new AlertDialog.Builder(this, R.style.AppDialog)
+                .setView(view)
+                .create();
+        dialog.show();
+
+        // 按钮在弹窗布局内自绘：左取消、右危险确认，避免系统按钮栏贴边裁切
+        final TextView btnConfirm = view.findViewById(R.id.btn_dialog_confirm);
+        final TextView btnCancel = view.findViewById(R.id.btn_dialog_cancel);
+
+        btnConfirm.setOnClickListener(v -> {
+            // 初始化期间锁定两个按钮，避免重复点击反复重建表结构
+            btnConfirm.setEnabled(false);
+            btnCancel.setEnabled(false);
+            btnConfirm.setText(R.string.db_init_running);
+            new Thread(() -> {
+                try {
+                    AppLogDbHelper.getInstance(getApplicationContext()).recreateTablesExceptGroups();
+                    runOnUiThread(() -> {
+                        if (dialog.isShowing()) dialog.dismiss();
+                        Toast.makeText(this, R.string.toast_db_initialized, Toast.LENGTH_SHORT).show();
+                    });
+                } catch (Exception e) {
+                    Log.e("AutoClearConfig", "初始化数据库失败", e);
+                    runOnUiThread(() -> {
+                        btnConfirm.setEnabled(true);
+                        btnCancel.setEnabled(true);
+                        btnConfirm.setText(R.string.db_init_confirm);
+                        Toast.makeText(this,
+                                getString(R.string.toast_init_failed_fmt, Web3AndroidUtil.safeMessage(e)),
+                                Toast.LENGTH_LONG).show();
+                    });
+                }
+            }).start();
+        });
+
+        // 取消只关闭弹窗，不触发任何数据变更
+        btnCancel.setOnClickListener(v -> dialog.dismiss());
     }
 
     private void initViews() {
@@ -62,9 +92,22 @@ public class AutoClearConfigActivity extends AppCompatActivity {
         etAutoClearVal = findViewById(R.id.et_auto_clear_val);
         spTimeUnit = findViewById(R.id.sp_time_unit);
         spPlayMode = findViewById(R.id.sp_play_mode);
+        swLogClearEnable = findViewById(R.id.sw_log_clear_enable);
         etLogClearVal = findViewById(R.id.et_log_clear_val);
         spLogTimeUnit = findViewById(R.id.sp_log_time_unit);
+        layoutLogInterval = findViewById(R.id.layout_log_interval);
+        tvAutoClearStatus = findViewById(R.id.tv_auto_clear_status);
         btnSave = findViewById(R.id.btn_save_auto_clear);
+
+        // 两个开关各自管自己的间隔输入，关闭时置灰并禁用，避免改了却不生效
+        swAutoEnable.setOnCheckedChangeListener((b, checked) -> {
+            applyKeyIntervalEnabled(checked);
+            updateStatusText();
+        });
+        swLogClearEnable.setOnCheckedChangeListener((b, checked) -> {
+            applyLogIntervalEnabled(checked);
+            updateStatusText();
+        });
     }
 
     private void loadConfigs() {
@@ -103,6 +146,11 @@ public class AutoClearConfigActivity extends AppCompatActivity {
                 logTimeUnitIndex = 2; // 默认：天
             }
             spLogTimeUnit.setSelection(logTimeUnitIndex);
+
+            swLogClearEnable.setChecked(ArenaConfig.logClearEnable);
+            applyKeyIntervalEnabled(swAutoEnable.isChecked());
+            applyLogIntervalEnabled(swLogClearEnable.isChecked());
+            updateStatusText();
         } catch (Exception e) {
             String errMsg = "加载配置异常: " + e.getClass().getSimpleName() + " - " + e.getMessage();
             Log.e("AutoClearConfig", errMsg, e);
@@ -113,8 +161,12 @@ public class AutoClearConfigActivity extends AppCompatActivity {
             etAutoClearVal.setText("1");
             spTimeUnit.setSelection(1);
             spPlayMode.setSelection(0);
+            swLogClearEnable.setChecked(true);
             etLogClearVal.setText("1");
             spLogTimeUnit.setSelection(2);
+            applyKeyIntervalEnabled(false);
+            applyLogIntervalEnabled(true);
+            updateStatusText();
         }
     }
 
@@ -136,13 +188,13 @@ public class AutoClearConfigActivity extends AppCompatActivity {
         try {
             int intervalValue = Integer.parseInt(etAutoClearVal.getText().toString());
             if (intervalValue <= 0) {
-                Toast.makeText(this, "清除间隔必须大于0", Toast.LENGTH_SHORT).show();
+                Toast.makeText(this, R.string.err_clear_interval_positive, Toast.LENGTH_SHORT).show();
                 return;
             }
 
             int logIntervalValue = Integer.parseInt(etLogClearVal.getText().toString());
             if (logIntervalValue <= 0) {
-                Toast.makeText(this, "日志清除间隔必须大于0", Toast.LENGTH_SHORT).show();
+                Toast.makeText(this, R.string.err_log_interval_positive, Toast.LENGTH_SHORT).show();
                 return;
             }
 
@@ -150,6 +202,7 @@ public class AutoClearConfigActivity extends AppCompatActivity {
             ArenaConfig.autoClearIntervalValue = intervalValue;
             ArenaConfig.autoClearIntervalUnitIndex = spTimeUnit.getSelectedItemPosition();
             ArenaConfig.playModeIndex = spPlayMode.getSelectedItemPosition();
+            ArenaConfig.logClearEnable = swLogClearEnable.isChecked();
             ArenaConfig.logClearIntervalValue = logIntervalValue;
             ArenaConfig.logClearIntervalUnitIndex = spLogTimeUnit.getSelectedItemPosition();
 
@@ -157,23 +210,28 @@ public class AutoClearConfigActivity extends AppCompatActivity {
 
             // 记录日志到数据库
             String configLog = "系统配置已保存: " +
-                    "自动清除=" + (ArenaConfig.autoClearEnable ? "开启" : "关闭") + ", " +
-                    "清除间隔=" + ArenaConfig.autoClearIntervalValue + " " + getTimeUnitText(ArenaConfig.autoClearIntervalUnitIndex) + ", " +
+                    "私钥自动清除=" + (ArenaConfig.autoClearEnable ? "开启" : "关闭") + ", " +
+                    "私钥清除间隔=" + ArenaConfig.autoClearIntervalValue + " " + getTimeUnitText(ArenaConfig.autoClearIntervalUnitIndex) + ", " +
                     "入场模式=" + getPlayModeText(ArenaConfig.playModeIndex) + ", " +
-                    "日志清除=" + ArenaConfig.logClearIntervalValue + " " + getTimeUnitText(ArenaConfig.logClearIntervalUnitIndex);
+                    "日志自动清除=" + (ArenaConfig.logClearEnable ? "开启" : "关闭") + ", " +
+                    "日志保留=" + ArenaConfig.logClearIntervalValue + " " + getTimeUnitText(ArenaConfig.logClearIntervalUnitIndex);
             AppLogDbHelper dbHelper = AppLogDbHelper.getInstance(this);
             dbHelper.insertLog(null, "CONFIG", configLog, System.currentTimeMillis());
             AppGlobal.logConfigChange(configLog);
 
-            // 重启定时清除调度器（使用新配置的间隔）
-            long logClearMinutes = AppGlobal.getIntervalInMinutes(
-                    ArenaConfig.logClearIntervalValue, ArenaConfig.logClearIntervalUnitIndex);
-            AppGlobal.startLogClearScheduler(logClearMinutes);
+            // 日志自动清除开关决定是否重启定时清理任务
+            if (ArenaConfig.logClearEnable) {
+                long logClearMinutes = AppGlobal.getIntervalInMinutes(
+                        ArenaConfig.logClearIntervalValue, ArenaConfig.logClearIntervalUnitIndex);
+                AppGlobal.startLogClearScheduler(logClearMinutes);
+            } else {
+                AppGlobal.stopLogClearScheduler();
+            }
 
-            Toast.makeText(this, "配置已保存", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, R.string.toast_config_saved, Toast.LENGTH_SHORT).show();
             Log.d("AutoClearConfigActivity", configLog);
         } catch (NumberFormatException e) {
-            Toast.makeText(this, "请输入有效的数字", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, R.string.err_invalid_number, Toast.LENGTH_SHORT).show();
         }
     }
 
@@ -182,7 +240,7 @@ public class AutoClearConfigActivity extends AppCompatActivity {
         if (unitIndex >= 0 && unitIndex < timeUnits.length) {
             return timeUnits[unitIndex];
         }
-        return "小时";
+        return getString(R.string.unit_hour);
     }
 
     private String getPlayModeText(int modeIndex) {
@@ -190,11 +248,27 @@ public class AutoClearConfigActivity extends AppCompatActivity {
         if (modeIndex >= 0 && modeIndex < playModes.length) {
             return playModes[modeIndex];
         }
-        return "能打就打";
+        return getString(R.string.play_mode_flexible);
     }
 
-    public void showCurrentStatus(View view) {
-        String status = ArenaConfig.autoClearEnable ? "已开启" : "已关闭";
-        Toast.makeText(this, "自动清除状态: " + status, Toast.LENGTH_SHORT).show();
+    private void applyKeyIntervalEnabled(boolean enabled) {
+        View layout = findViewById(R.id.layout_time_setting);
+        if (layout != null) layout.setAlpha(enabled ? 1f : 0.4f);
+        etAutoClearVal.setEnabled(enabled);
+        spTimeUnit.setEnabled(enabled);
+    }
+
+    private void applyLogIntervalEnabled(boolean enabled) {
+        if (layoutLogInterval != null) layoutLogInterval.setAlpha(enabled ? 1f : 0.4f);
+        etLogClearVal.setEnabled(enabled);
+        spLogTimeUnit.setEnabled(enabled);
+    }
+
+    // 当前状态卡片：同时展示两个开关，避免只看到私钥状态
+    private void updateStatusText() {
+        if (tvAutoClearStatus == null) return;
+        String keyState = getString(swAutoEnable.isChecked() ? R.string.state_enabled : R.string.state_disabled);
+        String logState = getString(swLogClearEnable.isChecked() ? R.string.state_enabled : R.string.state_disabled);
+        tvAutoClearStatus.setText(getString(R.string.auto_clear_status_pair_fmt, keyState, logState));
     }
 }

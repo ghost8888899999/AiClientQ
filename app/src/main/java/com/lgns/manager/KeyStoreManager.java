@@ -256,6 +256,40 @@ public class KeyStoreManager {
         db.updateKeyEntry(id, customCode, groupNo, enabled);
     }
 
+    /**
+     * 修改加解密密码：先用旧密码解密全部密钥（任一条失败即整体中止、不做任何修改），
+     * 再全部用新密码重加密，事务性回写（saveKeyEntryList 内部为事务）
+     * @return 重加密的密钥条数
+     */
+    public int changeCryptoKey(char[] oldKey, char[] newKey) throws Exception {
+        List<KeyEntry> list = loadKeyEntryList();
+        if (list.isEmpty()) throw new Exception("暂无可修改的私钥");
+        List<String> plains = new ArrayList<>(list.size());
+        for (int i = 0; i < list.size(); i++) {
+            KeyEntry e = list.get(i);
+            if (e.cipherText == null || e.cipherText.isEmpty()) {
+                throw new Exception("第 " + (i + 1) + " 条密钥密文缺失，无法改密");
+            }
+            try {
+                plains.add(decryptCipherText(e.cipherText, oldKey));
+            } catch (Exception ex) {
+                throw new Exception("旧密码不正确（第 " + (i + 1) + " 条解密失败），未做任何修改");
+            }
+        }
+        List<KeyEntry> updated = new ArrayList<>(list.size());
+        try {
+            for (int i = 0; i < list.size(); i++) {
+                KeyEntry e = list.get(i);
+                updated.add(new KeyEntry(e.id, e.customCode, e.groupNo,
+                        encrypt(plains.get(i), newKey), e.address, e.enabled));
+            }
+        } finally {
+            for (int i = 0; i < plains.size(); i++) plains.set(i, null);
+        }
+        saveKeyEntryList(updated);
+        return updated.size();
+    }
+
     public void clearAllKeys() {
         db.clearAllKeyEntries();
         db.putMetaValue("next_id", "1");

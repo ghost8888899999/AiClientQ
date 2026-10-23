@@ -103,6 +103,7 @@ public class AppLogDbHelper extends SQLiteOpenHelper {
                 COL_DS_TODAY_QD + " INTEGER DEFAULT 0," +
                 COL_DS_TODAY_ENTER + " INTEGER DEFAULT 0," +
                 COL_DS_TOKENS + " INTEGER DEFAULT 0," +
+                COL_DS_IS_FAILED + " INTEGER DEFAULT 0," +
                 COL_DS_UPDATED + " INTEGER NOT NULL);");
         db.execSQL("CREATE TABLE IF NOT EXISTS " + TABLE_FAILURE_LOG + "(" +
                 COL_ID + " INTEGER PRIMARY KEY AUTOINCREMENT," +
@@ -151,16 +152,19 @@ public class AppLogDbHelper extends SQLiteOpenHelper {
                     COL_ID + " INTEGER PRIMARY KEY AUTOINCREMENT," +
                     COL_DS_KEY_ID + " INTEGER NOT NULL," +
                     COL_DS_KEY_NO + " TEXT," +
+                    COL_DS_GROUP_NO + " TEXT DEFAULT ''," +
                     COL_DS_DATE + " TEXT NOT NULL," +
                     COL_DS_TOTAL_QD + " INTEGER DEFAULT 0," +
                     COL_DS_TODAY_QD + " INTEGER DEFAULT 0," +
                     COL_DS_TODAY_ENTER + " INTEGER DEFAULT 0," +
                     COL_DS_TOKENS + " INTEGER DEFAULT 0," +
+                    COL_DS_IS_FAILED + " INTEGER DEFAULT 0," +
                     COL_DS_UPDATED + " INTEGER NOT NULL);");
             db.execSQL("CREATE TABLE IF NOT EXISTS " + TABLE_FAILURE_LOG + "(" +
                     COL_ID + " INTEGER PRIMARY KEY AUTOINCREMENT," +
                     COL_FL_KEY_ID + " INTEGER NOT NULL," +
                     COL_FL_KEY_NO + " TEXT," +
+                    COL_FL_GROUP_NO + " TEXT DEFAULT ''," +
                     COL_FL_DATE + " TEXT NOT NULL," +
                     COL_FL_TYPE + " TEXT," +
                     COL_FL_REASON + " TEXT," +
@@ -389,6 +393,12 @@ public class AppLogDbHelper extends SQLiteOpenHelper {
             db.setTransactionSuccessful();
         } finally {
             db.endTransaction();
+        }
+        // 重建后回收空间，避免 db 文件只增不减
+        try {
+            db.execSQL("VACUUM");
+        } catch (Exception e) {
+            Log.w("AppLogDbHelper", "VACUUM 失败: " + e.getMessage());
         }
     }
 

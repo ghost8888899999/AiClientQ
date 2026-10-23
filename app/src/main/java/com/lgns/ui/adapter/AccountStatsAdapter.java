@@ -112,7 +112,7 @@ public class AccountStatsAdapter extends RecyclerView.Adapter<RecyclerView.ViewH
             for (DisplayItem d : allList) {
                 if (d.type == TYPE_ACCOUNT && d.groupName.equals(item.groupName)) count++;
             }
-            h.tvGroupCount.setText(count + " 个");
+            h.tvGroupCount.setText(h.itemView.getContext().getString(R.string.common_count_fmt, count));
             boolean expanded = expandedMap.getOrDefault(item.groupName, true);
             h.ivExpand.setRotation(expanded ? 90 : 0);
             h.itemView.setOnClickListener(v -> toggleGroup(item.groupName));
@@ -208,24 +208,25 @@ public class AccountStatsAdapter extends RecyclerView.Adapter<RecyclerView.ViewH
         }
 
         void bind(AccountStatsItem item) {
+            android.content.Context ctx = itemView.getContext();
             tvName.setText(item.name);
 
             if (item.address != null && item.address.length() > 10) {
                 tvAddr.setText(item.address.substring(0, 6) + "..." +
                         item.address.substring(item.address.length() - 4));
             } else {
-                tvAddr.setText(item.address != null ? item.address : "--");
+                tvAddr.setText(item.address != null ? item.address : ctx.getString(R.string.common_placeholder));
             }
 
             int maxEntries = item.entriesToday + item.entriesRemaining;
             if (item.entriesRemaining == 0) {
-                tvStatusTag.setText("已满");
+                tvStatusTag.setText(ctx.getString(R.string.stats_status_full));
                 tvStatusTag.setBackgroundResource(R.drawable.bg_tag_red);
             } else if (item.entriesToday > 0) {
-                tvStatusTag.setText("进行中");
+                tvStatusTag.setText(ctx.getString(R.string.stats_status_running));
                 tvStatusTag.setBackgroundResource(R.drawable.bg_tag_green);
             } else {
-                tvStatusTag.setText("未入场");
+                tvStatusTag.setText(ctx.getString(R.string.stats_status_not_entered));
                 tvStatusTag.setBackgroundResource(R.drawable.bg_tag_gray);
             }
 

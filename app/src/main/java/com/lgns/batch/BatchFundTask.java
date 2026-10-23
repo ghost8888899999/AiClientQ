@@ -261,6 +261,7 @@ public class BatchFundTask {
             }
         } catch (Exception e) {
             android.util.Log.e("BatchFundTask", "queryFundPreview error", e);
+            result.error = e;
         }
         return result;
     }
@@ -344,7 +345,7 @@ public class BatchFundTask {
         activity.runOnUiThread(() -> {
             if (addrs.isEmpty()) {
                 dialogHelper.styledDialog()
-                        .setTitle(R.string.fund_no_need_title)
+                        .setTitle(R.string.title_batch_fund)
                         .setMessage(R.string.fund_no_need_msg)
                         .setPositiveButton(R.string.btn_ok, (d, w) -> buttonController.setRunning(false))
                         .setOnCancelListener(d -> buttonController.setRunning(false))
@@ -364,7 +365,7 @@ public class BatchFundTask {
             sb.append("\n共 ").append(addrs.size()).append(" 个账号，需转入合计 ").append(totalF).append(" fLGNS");
 
             dialogHelper.styledDialog()
-                    .setTitle(R.string.fund_confirm_title)
+                    .setTitle(R.string.title_batch_fund)
                     .setMessage(sb.toString())
                     .setPositiveButton(R.string.btn_fund_confirm, (d, w) -> {
                         dialogHelper.showDecryptPasswordDialog(pwdCharArray ->
@@ -445,6 +446,8 @@ public class BatchFundTask {
 
     public static class FundPreviewResult {
         public boolean hasMaster = false;
+        // 查询异常：非空表示余额没能读完（网络/节点问题），不能当成“无需充值”
+        public Exception error = null;
         public KeyStoreManager.KeyEntry masterEntry = null;
         public BigInteger masterBalance = BigInteger.ZERO;
         // 主号行展示数据：与列表主号行同源（调试开关 ON 时为替换后地址及其实查余额）

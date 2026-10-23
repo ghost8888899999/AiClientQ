@@ -86,15 +86,8 @@ public class Web3AndroidUtil {
                 return rawGas.multiply(GAS_LIMIT_RATIO).divide(GAS_LIMIT_BASE);
             } catch (Exception e) {
                 String errMsg = "eth_estimateGas 失败：" + e.getMessage() + " | from=" + from + " | to=" + to + " | 节点:" + currentRpcUrl();
+                // 仅 logcat：这是自动估算过程，不落库，避免 db 膨胀
                 Log.e("GAS_ESTIMATE", errMsg);
-                // 写入数据库日志
-                try {
-                    android.content.Context ctx = com.lgns.manager.AppGlobal.getAppContext();
-                    com.lgns.manager.AppLogDbHelper dbHelper = com.lgns.manager.AppLogDbHelper.getInstance(ctx);
-                    if (dbHelper != null) {
-                        dbHelper.insertLog(null, "GAS_EST", errMsg, System.currentTimeMillis());
-                    }
-                } catch (Exception ignore) {}
                 // 不直接 throw，让 rpcRetryCall 决定是否重试
                 throw new RuntimeException(errMsg, e);
             }
@@ -109,14 +102,8 @@ public class Web3AndroidUtil {
             } catch (Exception e) {
                 lastEx = e;
                 if (isRevert(e)) throw e;
-                // 记录重试日志到数据库
-                try {
-                    android.content.Context ctx = com.lgns.manager.AppGlobal.getAppContext();
-                    com.lgns.manager.AppLogDbHelper dbHelper = com.lgns.manager.AppLogDbHelper.getInstance(ctx);
-                    if (dbHelper != null) {
-                        dbHelper.insertLog(null, "RPC_RETRY", "重试 " + (i+1) + "/" + RPC_MAX_RETRY + "：" + safeMessage(e) + " | 节点:" + currentRpcUrl(), System.currentTimeMillis());
-                    }
-                } catch (Exception ignore) {}
+                // 自动重试只打 logcat，不写数据库：节点不稳定时一轮任务就能刷出成百上千条
+                Log.w("RPC_RETRY", "重试 " + (i + 1) + "/" + RPC_MAX_RETRY + "：" + safeMessage(e) + " | 节点:" + currentRpcUrl());
                 long delay = RPC_RETRY_INTERVAL_MS * (1L << Math.min(i, 4));
                 Thread.sleep(delay);
             }
