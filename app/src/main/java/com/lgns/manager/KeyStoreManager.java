@@ -236,8 +236,14 @@ public class KeyStoreManager {
         String addr = "0x" + org.web3j.crypto.Keys.getAddress(
                 org.web3j.crypto.ECKeyPair.create(org.web3j.utils.Numeric.toBigInt(rawPrivateKey)));
         
-        int sortOrder = db.getKeyEntryCount();
-        db.insertKeyEntry((int) nextId, customCode, groupNo, cipherText, addr, true, sortOrder);
+        // sort_order 取现有最大值 +1：用表行数会在删过密钥后与老记录撞号，导致新密钥排序随机
+        int sortOrder = 0;
+        for (int[] idAndSort : db.queryKeyEntryIdAndSort()) {
+            if (idAndSort[1] >= sortOrder) sortOrder = idAndSort[1] + 1;
+        }
+        long row = db.insertKeyEntry((int) nextId, customCode, groupNo, cipherText, addr, true, sortOrder);
+        // 插入失败必须抛错：旧实现忽略返回值，会提示“添加成功”但库里根本没有
+        if (row < 0) throw new Exception("私钥写入失败，请重试");
         db.putMetaValue("next_id", String.valueOf(nextId + 1));
         
         return new KeyEntry(nextId, customCode, groupNo, cipherText, addr);
@@ -254,6 +260,26 @@ public class KeyStoreManager {
 
     public void updateKeyEntry(int id, String customCode, String groupNo, boolean enabled) {
         db.updateKeyEntry(id, customCode, groupNo, enabled);
+    }
+
+    /** 只改启用状态，返回受影响行数（0 表示这条已不存在或写失败） */
+    public int setKeyEnabled(long id, boolean enabled) {
+        return db.updateKeyEnabled((int) id, enabled);
+    }
+
+    /** 只改编号/分组，不动 enabled，避免编辑保存时把开关状态覆盖成内存里的旧值 */
+    public void updateKeyMeta(int id, String customCode, String groupNo) {
+        db.updateKeyEntryMeta(id, customCode, groupNo);
+    }
+
+    /** 只补地址，供「补全密钥地址」逐条写入，替代整表覆盖 */
+    public void updateKeyEntryAddress(int id, String address) {
+        db.updateKeyEntryAddress(id, address);
+    }
+
+    /** 分组重命名：一条 UPDATE 改完同组记录 */
+    public int renameKeyGroup(String oldGroup, String newGroup) {
+        return db.updateKeyGroupNo(oldGroup, newGroup);
     }
 
     /**
@@ -305,6 +331,7 @@ public class KeyStoreManager {
             KeyEntry e = new KeyEntry();
             e.id = cursor.getLong(cursor.getColumnIndexOrThrow(AppLogDbHelper.COL_KE_ID));
             e.customCode = cursor.getString(cursor.getColumnIndexOrThrow(AppLogDbHelper.COL_KE_CUSTOM_CODE));
+            if (e.customCode == null) e.customCode = "";
             e.groupNo = cursor.getString(cursor.getColumnIndexOrThrow(AppLogDbHelper.COL_KE_GROUP_NO));
             e.cipherText = cursor.getString(cursor.getColumnIndexOrThrow(AppLogDbHelper.COL_KE_CIPHER_TEXT));
             e.address = cursor.getString(cursor.getColumnIndexOrThrow(AppLogDbHelper.COL_KE_ADDRESS));
@@ -315,14 +342,16 @@ public class KeyStoreManager {
         return res;
     }
 
-    public void saveKeyEntryList(List<KeyEntry> list) {
+    public void saveKeyEntryList(List<KeyEntry> list) throws Exception {
         android.database.sqlite.SQLiteDatabase sqliteDb = db.getWritableDatabase();
         sqliteDb.beginTransaction();
         try {
             sqliteDb.delete(AppLogDbHelper.TABLE_KEY_ENTRY, null, null);
             for (int i = 0; i < list.size(); i++) {
                 KeyEntry e = list.get(i);
-                db.insertKeyEntry((int) e.id, e.customCode, e.groupNo, e.cipherText, e.address, e.enabled, i);
+                long row = db.insertKeyEntry((int) e.id, e.customCode, e.groupNo, e.cipherText, e.address, e.enabled, i);
+                // “先删后插”一旦某条插失败会整表丢数据，必须抛错让事务回滚
+                if (row < 0) throw new Exception("写入第 " + (i + 1) + " 条密钥失败，已回滚");
             }
             sqliteDb.setTransactionSuccessful();
         } finally {

@@ -103,10 +103,9 @@ public class BatchFundTask {
                 for (KeyListItem item : enabledList) {
                     // 主号保护用 keyId：地址可能已被调试开关替换，地址比较不可靠
                     if (item.keyId == masterId) continue;
-                    // 护栏：调试地址永不作为真实转账目的地
+                    // 护栏：调试地址（单条/地址池）永不作为真实转账目的地
                     if (ArenaConfig.DEBUG_FIXED_ADDR_ENABLE
-                            && item.address != null
-                            && item.address.equalsIgnoreCase(ArenaConfig.DEBUG_FIXED_ADDR)) continue;
+                            && ArenaConfig.isDebugAddr(item.address)) continue;
                     if (item.address == null || item.address.equalsIgnoreCase(masterEntry.address)) continue;
                     BigInteger bal = ArenaContractApi.callErc20Balance(web3j, item.address);
                     if (bal.compareTo(ArenaConfig.ENTRY_FEE) < 0) {
@@ -174,21 +173,22 @@ public class BatchFundTask {
         }
     }
 
-    // 预览查询（供 MainDialogHelper 调用）
+    // 预览查询（供 BatchFundConfirmActivity 调用）
+
+    // 每查完一个账号回调一次：done/total 给进度，detail 用于该行原位回填
+    public interface ProgressCallback {
+        void onProgress(int done, int total, FundPreviewResult.FundDetail detail);
+    }
 
     public static FundPreviewResult queryFundPreview(List<KeyListItem> enabledList) {
+        return queryFundPreview(enabledList, null);
+    }
+
+    public static FundPreviewResult queryFundPreview(List<KeyListItem> enabledList, ProgressCallback callback) {
         FundPreviewResult result = new FundPreviewResult();
         try {
-            // 调试专用：无条件替换"列表第一个账号（即主号）"的地址为 DEBUG_FIXED_ADDR，
-            // 不再看 enabled（主号设主后自动禁用，看 enabled 会跳过主号）
-            if (ArenaConfig.DEBUG_FIXED_ADDR_ENABLE && !enabledList.isEmpty()) {
-                KeyListItem first = enabledList.get(0);
-                if (first.address != null && !first.address.isEmpty()) {
-                    android.util.Log.d("DEBUG_ADDR", "充值预览地址替换: "
-                            + first.address + " -> " + ArenaConfig.DEBUG_FIXED_ADDR);
-                    first.address = ArenaConfig.DEBUG_FIXED_ADDR;
-                }
-            }
+            // 调试地址替换已上移到 MainDataLoader.applyDebugFixedAddr（按分组平分地址池）：
+            // 这份 KeyListItem 与主界面共用，就地改写会把主界面那一行的地址串掉
 
             KeyStoreManager mgr = AppGlobal.getKeyStoreManager();
             long masterId = mgr.getMasterAccountId();
@@ -227,6 +227,12 @@ public class BatchFundTask {
                         : String.format(java.util.Locale.getDefault(), "%03d", result.masterEntry.id);
 
                 // 展示行：仅非主号的启用账号（主号只进卡片；禁用账号不充值不上列表）
+                int total = 0;
+                for (KeyListItem item : enabledList) {
+                    if (item.address == null || item.keyId == masterId || !item.enabled) continue;
+                    total++;
+                }
+                int done = 0;
                 for (KeyListItem item : enabledList) {
                     if (item.address == null) continue;
                     if (item.keyId == masterId) continue;
@@ -234,6 +240,7 @@ public class BatchFundTask {
                     String no = (item.customCode != null && !item.customCode.isEmpty())
                             ? item.customCode : item.displayNo;
                     BigInteger bal = ArenaContractApi.callErc20Balance(web3j, item.address);
+                    done++;
                     BigDecimal balF = new BigDecimal(bal).divide(
                             new BigDecimal(BigInteger.TEN.pow(18)), 2, java.math.RoundingMode.HALF_UP);
 
@@ -245,12 +252,13 @@ public class BatchFundTask {
                             new FundPreviewResult.FundDetail(no, item.address, balF, needF);
                     d.sufficient = bal.compareTo(ArenaConfig.ENTRY_FEE) >= 0;
                     result.fundDetails.add(d);
+                    // 结果先入列表再回调，页面拿到 detail 即可立刻回填这一行
+                    if (callback != null) callback.onProgress(done, total, d);
 
-                    // 合计与真实充值只统计：启用 + 非主号 + 余额不足 + 非调试地址
-                    boolean willTransfer = bal.compareTo(ArenaConfig.ENTRY_FEE) < 0
-                            && !(ArenaConfig.DEBUG_FIXED_ADDR_ENABLE
-                                 && item.address.equalsIgnoreCase(ArenaConfig.DEBUG_FIXED_ADDR));
-                    if (willTransfer) {
+                    // 合计只用于页面展示：调试地址也要计入，否则调试模式下合计恒为 0、
+                    // 确认按钮被置灰，看不到真实效果；真实转账由 executeAutoFund /
+                    // processBatchFund 里的 isDebugAddr 护栏拦截
+                    if (bal.compareTo(ArenaConfig.ENTRY_FEE) < 0) {
                         result.totalNeeded = result.totalNeeded.add(diff);
                         result.needFundAddrs.add(item.address);
                         result.needFundLabels.add(no + " (余额:" + balF + ")");
@@ -305,10 +313,8 @@ public class BatchFundTask {
         for (KeyListItem item : getEnabledItems(keyListItemList)) {
             // 主号保护用 keyId：地址可能已被调试开关替换，地址比较不可靠
             if (item.keyId == masterEntry.id) continue;
-            // 护栏：调试地址永不作为真实转账目的地
-            if (ArenaConfig.DEBUG_FIXED_ADDR_ENABLE
-                    && item.address != null
-                    && item.address.equalsIgnoreCase(ArenaConfig.DEBUG_FIXED_ADDR)) continue;
+            // 护栏：调试地址（单条/地址池）永不作为真实转账目的地
+            if (ArenaConfig.DEBUG_FIXED_ADDR_ENABLE && ArenaConfig.isDebugAddr(item.address)) continue;
             if (item.address == null || item.address.equalsIgnoreCase(masterEntry.address)) continue;
             BigInteger bal = ArenaContractApi.callErc20Balance(web3j, item.address);
             if (bal.compareTo(ArenaConfig.ENTRY_FEE) < 0) {

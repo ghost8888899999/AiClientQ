@@ -48,6 +48,7 @@
     <string name="stats_status_not_entered">未入场</string>
     <string name="stats_status_champion">冠军</string>
     <string name="stats_status_joined">已参赛</string>
+    <string name="stats_status_unknown">未查到</string>
     <string name="daily_status_failed">失败</string>
     <string name="daily_status_normal">正常</string>
     <string name="daily_group_count_fmt">%1$d 条</string>
@@ -97,10 +98,16 @@
     <!-- ══════════ 锦标赛统计页 ══════════ -->
     <string name="stats_no_account">没有可查询的账号</string>
     <string name="stats_no_enabled_account">没有启用的账号可统计，请先在私钥管理启用账号</string>
-    <string name="stats_chain_load_failed_fmt">链上数据加载失败：%1$s（当前展示本地账号）</string>
+    <string name="stats_chain_load_failed_fmt">链上数据加载失败：%1$s，请返回后重试</string>
+    <string name="stats_all_unknown">链上未返回任何账号数据，请返回后重试</string>
+    <string name="stats_partial_unknown_fmt">有 %1$d 个账号链上数据未返回，已从合计中排除</string>
 
     <!-- ══════════ 通用提示 ══════════ -->
     <string name="task_running">任务执行中，请勿重复点击</string>
+    <string name="account_loading_hint">账号数据加载中，请稍候再试</string>
+    <string name="stats_load_failed_retry">统计加载失败，点此重试</string>
+    <string name="stats_load_failed_hint">链上统计未加载成功，请点击汇总栏重试</string>
+    <string name="summary_enter_label_fmt">今日入场·%1$d 个</string>
     <string name="no_enabled_key">没有启用的私钥，请先在私钥管理中启用</string>
     <string name="toast_op_failed_fmt">❌ %1$s</string>
 
@@ -150,6 +157,9 @@
     <string name="label_set_master">设为主号（用于批量充值）</string>
     <string name="toast_master_set_disabled">已设为主号并自动禁用</string>
     <string name="toast_save_failed_fmt">❌ 保存失败: %1$s</string>
+    <string name="toast_master_enabled_hint">主号已启用：将参与入场/领取；充值仍由主号支付，不会给自身转账</string>
+    <string name="toast_enabled_save_failed">❌ 启用状态保存失败，已恢复原状态</string>
+    <string name="toast_master_cleared_on_delete">✅ 已删除，主号设置同时清除</string>
 
     <!-- ══════════ 删除私钥 ══════════ -->
     <string name="dialog_delete_key_title">删除私钥</string>

@@ -125,12 +125,14 @@ public class MainDialogHelper {
                         String addr = "0x" + org.web3j.crypto.Keys.getAddress(
                                 org.web3j.crypto.ECKeyPair.create(org.web3j.utils.Numeric.toBigInt(pk)));
                         entry.address = addr;
+                        // 只写这一条的 address：旧实现最后 saveKeyEntryList 整表覆盖，
+                        // 会把解密期间用户改的启用状态全部冲回旧值
+                        mgr.updateKeyEntryAddress((int) entry.id, addr);
                         migrated++;
                     } catch (Exception ignore) {
                         failed++;
                     }
                 }
-                mgr.saveKeyEntryList(entries);
                 final int count = migrated;
                 final int failCount = failed;
                 activity.runOnUiThread(() -> {
@@ -461,92 +463,29 @@ public class MainDialogHelper {
                 .show();
     }
 
-    // 批量充值确认页面
+    // 批量充值：只做毫秒级本地校验后立即进入确认页；
+    // 链上余额查询搬到 BatchFundConfirmActivity 内异步执行，避免主页被模态弹框长时间遮挡
     public void showBatchFundDialog() {
-        if (activity.isFinishing() || fundQuerying) return;
-        fundQuerying = true;
+        if (activity.isFinishing() || activity.isDestroyed()) return;
 
-        // 链上余额逐账户读取，账号多时需要数秒，先给出明确的查询反馈
-        final AlertDialog loadingDialog = StatusTipDialog.showLoading(activity,
-                activity.getString(R.string.fund_loading_title),
-                activity.getString(R.string.fund_loading_msg));
+        long masterId;
+        try {
+            masterId = AppGlobal.getKeyStoreManager().getMasterAccountId();
+        } catch (Exception e) {
+            masterId = -1;
+        }
+        if (masterId <= 0) {
+            StatusTipDialog.show(activity, StatusTipDialog.TONE_WARN, R.drawable.ic_key_svg,
+                    activity.getString(R.string.master_not_set_title),
+                    activity.getString(R.string.master_not_set_msg),
+                    activity.getString(R.string.fund_go_settings),
+                    () -> activity.startActivity(new Intent(activity, PrivateKeyManageActivity.class)),
+                    activity.getString(R.string.btn_cancel), null);
+            return;
+        }
 
-        new Thread(() -> {
-            BatchFundTask.FundPreviewResult preview;
-            try {
-                preview = BatchFundTask.queryFundPreview(activity.getAllKeyItems());
-            } catch (Exception e) {
-                preview = new BatchFundTask.FundPreviewResult();
-                preview.error = e;
-            }
-            final BatchFundTask.FundPreviewResult fPreview = preview;
-
-            activity.runOnUiThread(() -> {
-                fundQuerying = false;
-                if (loadingDialog != null && loadingDialog.isShowing()) {
-                    loadingDialog.dismiss();
-                }
-                if (activity.isFinishing() || activity.isDestroyed()) return;
-
-                // 网络/节点失败与「无需充值」必须区分，避免误导
-                if (fPreview.error != null) {
-                    StatusTipDialog.show(activity, StatusTipDialog.TONE_ERROR, R.drawable.ic_warning_svg,
-                            activity.getString(R.string.fund_query_fail_title),
-                            activity.getString(R.string.fund_query_fail_msg_fmt,
-                                    Web3AndroidUtil.safeMessage(fPreview.error)),
-                            activity.getString(R.string.btn_retry), this::showBatchFundDialog,
-                            activity.getString(R.string.btn_cancel), null);
-                    return;
-                }
-
-                if (!fPreview.hasMaster) {
-                    StatusTipDialog.show(activity, StatusTipDialog.TONE_WARN, R.drawable.ic_key_svg,
-                            activity.getString(R.string.master_not_set_title),
-                            activity.getString(R.string.master_not_set_msg),
-                            activity.getString(R.string.fund_go_settings),
-                            () -> activity.startActivity(new Intent(activity, PrivateKeyManageActivity.class)),
-                            activity.getString(R.string.btn_cancel), null);
-                    return;
-                }
-
-                if (!fPreview.needsFunding()) {
-                    StatusTipDialog.show(activity, StatusTipDialog.TONE_SUCCESS,
-                            R.drawable.ic_menu_check_svg,
-                            activity.getString(R.string.fund_no_need_title),
-                            activity.getString(R.string.fund_no_need_msg_v2));
-                    return;
-                }
-
-                // 构建 FundItem 列表：全量启用账号（含主号与余额充足者），
-                // 地址/差额/足额标记均取自 fundDetails，不再解析标签字符串
-                ArrayList<BatchFundConfirmActivity.FundItem> fundItems = new ArrayList<>();
-                for (int i = 0; i < fPreview.fundDetails.size(); i++) {
-                    BatchFundTask.FundPreviewResult.FundDetail d = fPreview.fundDetails.get(i);
-                    fundItems.add(new BatchFundConfirmActivity.FundItem(
-                            d.keyNo,
-                            d.currentBalance.toPlainString(),
-                            d.neededAmount.toPlainString(),
-                            d.address,
-                            d.sufficient));
-                }
-
-                // 启动确认页面
-                Intent intent = new Intent(activity, BatchFundConfirmActivity.class);
-                // 主号卡片与列表主号行同源：开关 ON 时展示替换后地址及其实查余额，OFF 时即真实数据
-                intent.putExtra(BatchFundConfirmActivity.EXTRA_MASTER_ADDR,
-                        fPreview.masterShowAddr != null ? fPreview.masterShowAddr : fPreview.masterEntry.address);
-                intent.putExtra(BatchFundConfirmActivity.EXTRA_MASTER_KEYNO,
-                        fPreview.masterKeyNo == null ? "" : fPreview.masterKeyNo);
-                java.math.BigDecimal masterShowBalF = new java.math.BigDecimal(fPreview.masterShowBalance).divide(
-                        new java.math.BigDecimal(java.math.BigInteger.TEN.pow(18)), 2, java.math.RoundingMode.HALF_UP);
-                intent.putExtra(BatchFundConfirmActivity.EXTRA_MASTER_BALANCE,
-                        String.valueOf(masterShowBalF));
-                intent.putExtra(BatchFundConfirmActivity.EXTRA_FUND_LIST, fundItems);
-                intent.putExtra(BatchFundConfirmActivity.EXTRA_TOTAL_AMOUNT,
-                        String.valueOf(fPreview.getTotalNeededFormatted()));
-                activity.startActivityForResult(intent, REQUEST_BATCH_FUND);
-            });
-        }).start();
+        Intent intent = new Intent(activity, BatchFundConfirmActivity.class);
+        activity.startActivityForResult(intent, REQUEST_BATCH_FUND);
     }
 
     private static final int REQUEST_BATCH_FUND = 1001;

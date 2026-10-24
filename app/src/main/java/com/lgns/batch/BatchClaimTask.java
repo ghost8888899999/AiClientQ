@@ -323,9 +323,9 @@ public class BatchClaimTask {
         Integer wendToday = ArenaContractApi.callPlayerHistoryLatestWendToday(web3j, addr);
         logSb.append(" | 第").append(index).append("个号");
         if (wendToday == null) {
-            logSb.append(" | 当日问鼎:查询失败");
+            logSb.append(" | 今日冠军:查询失败");
         } else {
-            logSb.append(" | 当日问鼎:").append(wendToday).append("次");
+            logSb.append(" | 今日冠军:").append(wendToday).append("次");
         }
         if (matchesToday != null) {
             logSb.append(" | 今日入场:").append(matchesToday);

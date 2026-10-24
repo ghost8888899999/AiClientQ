@@ -45,6 +45,10 @@ public class AccountStatsAdapter extends RecyclerView.Adapter<RecyclerView.ViewH
         public BigInteger prize;
         public BigInteger totalEarnings;
         public String groupNo;
+        // 本轮结果还没回来（首次上屏/刷新中）：数值显示占位，状态位留空
+        public boolean pending;
+        // 本轮查询结束但链上没返回这个地址：显示“未查到”
+        public boolean unknown;
 
         public AccountStatsItem(String name, String address, BigInteger balance,
                                 int entriesToday, int entriesRemaining,
@@ -152,6 +156,20 @@ public class AccountStatsAdapter extends RecyclerView.Adapter<RecyclerView.ViewH
         return map;
     }
 
+    // 当前展示中的账号行（引用直连：分批回填时直接写字段，再调 notifyStatsChanged）
+    public List<AccountStatsItem> accountItems() {
+        List<AccountStatsItem> out = new ArrayList<>();
+        for (DisplayItem d : allList) {
+            if (d.type == TYPE_ACCOUNT && d.account != null) out.add(d.account);
+        }
+        return out;
+    }
+
+    // 局部回填后刷新：行结构不变、只改数值，不会打乱滚动位置
+    public void notifyStatsChanged() {
+        notifyDataSetChanged();
+    }
+
     private void toggleGroup(String groupName) {
         expandedMap.put(groupName, !expandedMap.getOrDefault(groupName, true));
         rebuildVisibleList();
@@ -218,6 +236,36 @@ public class AccountStatsAdapter extends RecyclerView.Adapter<RecyclerView.ViewH
                 tvAddr.setText(item.address != null ? item.address : ctx.getString(R.string.common_placeholder));
             }
 
+            // 还没查到结果：批量查询是一次性返回的，行与行不会先后完成，
+            // 所以这里不伪造逐行“同步中”进度，只在全局汇总栏提示同步中；
+            // 整行降透明度做骨架化处理，让“未就绪”和“已就绪”一眼能分（对标大厂骨架屏）
+            if (item.pending) {
+                itemView.setAlpha(0.45f);
+                tvStatusTag.setVisibility(View.GONE);
+                tvStatusTag.setText("");
+                tvBalance.setText(R.string.common_placeholder);
+                tvEntries.setText(R.string.common_placeholder);
+                tvTodayChampion.setText(R.string.common_placeholder);
+                tvTotalChampion.setText(R.string.common_placeholder);
+                tvPrize.setText(R.string.common_placeholder);
+                return;
+            }
+            // 视图复用：非 pending 行必须把状态位与透明度恢复出来
+            itemView.setAlpha(1f);
+            tvStatusTag.setVisibility(View.VISIBLE);
+
+            // 整行未查到：所有数值位显示 -- ，避免把“查不到”误读成“余额 0 / 今日未入场”
+            if (item.unknown) {
+                tvStatusTag.setText(ctx.getString(R.string.stats_status_unknown));
+                tvStatusTag.setBackgroundResource(R.drawable.bg_tag_red);
+                tvBalance.setText(R.string.common_placeholder);
+                tvEntries.setText(R.string.common_placeholder);
+                tvTodayChampion.setText(R.string.common_placeholder);
+                tvTotalChampion.setText(R.string.common_placeholder);
+                tvPrize.setText(R.string.common_placeholder);
+                return;
+            }
+
             int maxEntries = item.entriesToday + item.entriesRemaining;
             if (item.entriesRemaining == 0) {
                 tvStatusTag.setText(ctx.getString(R.string.stats_status_full));
@@ -232,7 +280,10 @@ public class AccountStatsAdapter extends RecyclerView.Adapter<RecyclerView.ViewH
 
             tvBalance.setText(formatToken(item.balance));
             tvEntries.setText(item.entriesToday + "/" + maxEntries);
-            tvTodayChampion.setText(String.valueOf(item.todayChampion));
+            // 今日冠军单独查不到时用 -1 标记，显示 -- ，不混进真实的 0
+            tvTodayChampion.setText(item.todayChampion < 0
+                    ? ctx.getString(R.string.common_placeholder)
+                    : String.valueOf(item.todayChampion));
             tvTotalChampion.setText(String.valueOf(item.totalChampion));
             tvPrize.setText(formatToken(item.totalEarnings));
         }

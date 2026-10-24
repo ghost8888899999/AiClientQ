@@ -39,6 +39,10 @@ public class ChampionStatsAdapter extends RecyclerView.Adapter<RecyclerView.View
         public String groupNo;
         public long battles;
         public long championships;
+        // 本轮链上数据还没回来：场次/胜率给占位，不把 0 当成真实值
+        public boolean pending;
+        // 本轮查询结束但链上没返回这个地址：整行占位 + “未查到”
+        public boolean unknown;
 
     }
 
@@ -185,6 +189,27 @@ public class ChampionStatsAdapter extends RecyclerView.Adapter<RecyclerView.View
                 tvAddr.setText(item.address != null ? item.address : ctx.getString(R.string.common_placeholder));
             }
 
+            // 还没查到结果：不伪造状态位；场次/胜率留占位，冠军沿用主界面已加载值（>=0 才可信）
+            if (item.pending) {
+                tvStatusTag.setVisibility(View.GONE);
+                tvBattles.setText(R.string.common_placeholder);
+                tvChampion.setText(item.championships >= 0
+                        ? String.valueOf(item.championships)
+                        : ctx.getString(R.string.common_placeholder));
+                tvWinRate.setText(R.string.common_placeholder);
+                return;
+            }
+            // 视图复用：非 pending 行必须把状态位恢复出来
+            tvStatusTag.setVisibility(View.VISIBLE);
+            if (item.unknown) {
+                tvStatusTag.setText(ctx.getString(R.string.stats_status_unknown));
+                tvStatusTag.setBackgroundResource(R.drawable.bg_tag_red);
+                tvBattles.setText(R.string.common_placeholder);
+                tvChampion.setText(R.string.common_placeholder);
+                tvWinRate.setText(R.string.common_placeholder);
+                return;
+            }
+
             if (item.championships > 0) {
                 tvStatusTag.setText(ctx.getString(R.string.stats_status_champion));
                 tvStatusTag.setBackgroundResource(R.drawable.bg_tag_green);
@@ -198,9 +223,9 @@ public class ChampionStatsAdapter extends RecyclerView.Adapter<RecyclerView.View
 
             tvBattles.setText(String.valueOf(item.battles));
             tvChampion.setText(String.valueOf(item.championships));
-            // 胜率 = 冠军次数(赢场) × 100 / 总场次，battles 为 0 时无法计算显示占位符
+            // 胜率 = 冠军次数(赢场) / 总场次；保留 1 位小数，避免 1/3 被截成 33% 丢掉精度
             tvWinRate.setText(item.battles > 0
-                    ? (item.championships * 100 / item.battles) + "%"
+                    ? String.format(java.util.Locale.US, "%.1f%%", item.championships * 100.0 / item.battles)
                     : ctx.getString(R.string.common_placeholder));
         }
     }

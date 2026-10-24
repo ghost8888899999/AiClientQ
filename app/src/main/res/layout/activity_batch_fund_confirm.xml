@@ -58,7 +58,63 @@
         android:layout_below="@id/toolbar"
         android:clipToPadding="false"
         android:paddingTop="2dp"
-        android:paddingBottom="8dp" />
+        android:paddingBottom="8dp"
+        android:visibility="invisible" />
+
+    <!-- 查询中 / 查询失败 占位：与列表同区域，切换时页面不跳动 -->
+    <LinearLayout
+        android:id="@+id/layout_state"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_above="@id/layout_footer"
+        android:layout_below="@id/toolbar"
+        android:gravity="center"
+        android:orientation="vertical"
+        android:paddingStart="36dp"
+        android:paddingEnd="36dp">
+
+        <ProgressBar
+            android:id="@+id/pb_state"
+            android:layout_width="34dp"
+            android:layout_height="34dp"
+            android:indeterminateTint="@color/primary" />
+
+        <TextView
+            android:id="@+id/tv_state_title"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="14dp"
+            android:text="@string/fund_loading_title"
+            android:textColor="@color/text_primary"
+            android:textSize="15sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/tv_state_msg"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:gravity="center"
+            android:lineSpacingExtra="3dp"
+            android:text="@string/fund_loading_msg"
+            android:textColor="@color/text_secondary"
+            android:textSize="12sp" />
+
+        <TextView
+            android:id="@+id/btn_state_action"
+            android:layout_width="wrap_content"
+            android:layout_height="40dp"
+            android:layout_marginTop="18dp"
+            android:background="@drawable/bg_btn_secondary"
+            android:gravity="center"
+            android:minWidth="128dp"
+            android:paddingStart="20dp"
+            android:paddingEnd="20dp"
+            android:textColor="#616161"
+            android:textSize="13sp"
+            android:textStyle="bold"
+            android:visibility="gone" />
+    </LinearLayout>
 
     <!-- 底部汇总 + 操作栏 -->
     <LinearLayout

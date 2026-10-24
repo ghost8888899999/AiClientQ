@@ -84,17 +84,18 @@ public class ChampionshipStatsActivity extends AppCompatActivity {
     private void loadData() {
         // 第一步：数据库分组 + 零值默认立即上屏，冠军次数继承主界面已加载值（对标 applyLocalDefaults）
         List<String> groupNames = AppLogDbHelper.getInstance(this).queryAllGroups();
-        List<ChampionStatsAdapter.ChampionStatsItem> placeholderItems = buildItems(groupNames, null);
+        List<ChampionStatsAdapter.ChampionStatsItem> placeholderItems = buildItems(groupNames, null, false);
         long inheritChamps = 0;
         for (ChampionStatsAdapter.ChampionStatsItem it : placeholderItems) {
-            inheritChamps += it.championships;
+            if (it.championships > 0) inheritChamps += it.championships;
         }
         final long fInheritChamps = inheritChamps;
         runOnUiThread(() -> {
             adapter.setItems(groupItems(groupNames, placeholderItems));
-            tvSummaryBattles.setText("0");
+            // 场次/胜率还没查：占位，避免把占位的 0 当成真实战绩
+            tvSummaryBattles.setText(R.string.common_placeholder);
             tvSummaryChamps.setText(String.valueOf(fInheritChamps));
-            tvSummaryRate.setText("--");
+            tvSummaryRate.setText(R.string.common_placeholder);
         });
 
         // 第二步：链上真实数据异步回填，数据源与主界面一致（playerSummary）
@@ -104,27 +105,59 @@ public class ChampionshipStatsActivity extends AppCompatActivity {
             Map<String, ArenaContractApi.PlayerSummary> result =
                     ArenaContractApi.callPlayerSummaryBatch(web3j, addrs);
 
-            List<ChampionStatsAdapter.ChampionStatsItem> realItems = buildItems(groupNames, result);
+            List<ChampionStatsAdapter.ChampionStatsItem> realItems = buildItems(groupNames, result, false);
 
             long grandBattles = 0, grandChamps = 0;
+            int valid = 0, missing = 0;
             for (ChampionStatsAdapter.ChampionStatsItem it : realItems) {
+                // 未查到的行不计入合计：它们盖着占位值，算进去会把总战绩拉低
+                if (it.unknown) { missing++; continue; }
+                valid++;
                 grandBattles += it.battles;
                 grandChamps += it.championships;
             }
             final long gBattles = grandBattles;
             final long gChamps = grandChamps;
+            final int fValid = valid;
+            final int fMissing = missing;
 
             runOnUiThread(() -> {
                 adapter.setItems(groupItems(groupNames, realItems));
+                if (fValid == 0) {
+                    // 一个地址都没返回：汇总没有意义，明说而不是给一堆 0
+                    tvSummaryBattles.setText(R.string.common_placeholder);
+                    tvSummaryChamps.setText(R.string.common_placeholder);
+                    tvSummaryRate.setText(R.string.common_placeholder);
+                    tvError.setText(R.string.stats_all_unknown);
+                    tvError.setVisibility(View.VISIBLE);
+                    return;
+                }
                 tvSummaryBattles.setText(String.valueOf(gBattles));
                 tvSummaryChamps.setText(String.valueOf(gChamps));
-                // 汇总胜率 = 全部账号冠军总次数 × 100 / 总场次
-                tvSummaryRate.setText(gBattles > 0 ? (gChamps * 100 / gBattles) + "%" : "--");
+                // 汇总胜率 = 全部账号冠军总次数 / 总场次；保留 1 位小数
+                tvSummaryRate.setText(gBattles > 0
+                        ? String.format(java.util.Locale.US, "%.1f%%", gChamps * 100.0 / gBattles)
+                        : getString(R.string.common_placeholder));
+                if (fMissing > 0) {
+                    tvError.setText(getString(R.string.stats_partial_unknown_fmt, fMissing));
+                    tvError.setVisibility(View.VISIBLE);
+                } else {
+                    tvError.setVisibility(View.GONE);
+                }
             });
         } catch (Exception e) {
             Log.e("ChampionshipStats", "load chain data error", e);
-            runOnUiThread(() -> tvError.setText(
-                    getString(R.string.stats_chain_load_failed_fmt, Web3AndroidUtil.safeMessage(e))));
+            // 首轮失败：把占位行改成“未查到”，别让它们永远停在骨架态
+            List<ChampionStatsAdapter.ChampionStatsItem> failedItems = buildItems(groupNames, null, true);
+            runOnUiThread(() -> {
+                adapter.setItems(groupItems(groupNames, failedItems));
+                tvSummaryBattles.setText(R.string.common_placeholder);
+                tvSummaryChamps.setText(R.string.common_placeholder);
+                tvSummaryRate.setText(R.string.common_placeholder);
+                tvError.setText(getString(R.string.stats_chain_load_failed_fmt,
+                        Web3AndroidUtil.safeMessage(e)));
+                tvError.setVisibility(View.VISIBLE);
+            });
         } finally {
             if (web3j != null) {
                 try { web3j.shutdown(); } catch (Exception ignore) {}
@@ -133,7 +166,7 @@ public class ChampionshipStatsActivity extends AppCompatActivity {
     }
 
     private List<ChampionStatsAdapter.ChampionStatsItem> buildItems(
-            List<String> groupNames, Map<String, ArenaContractApi.PlayerSummary> result) {
+            List<String> groupNames, Map<String, ArenaContractApi.PlayerSummary> result, boolean failed) {
         List<ChampionStatsAdapter.ChampionStatsItem> items = new ArrayList<>();
         for (int i = 0; i < addrs.size(); i++) {
             String addr = addrs.get(i);
@@ -144,13 +177,23 @@ public class ChampionshipStatsActivity extends AppCompatActivity {
             item.address = addr;
             item.groupNo = i < groups.size() ? groups.get(i) : null;
             if (result == null) {
-                // 零值默认；冠军次数继承主界面快照（-1 表示主界面尚未加载，退回 0）
-                int inherit = i < initChamps.size() ? initChamps.get(i) : -1;
-                item.championships = inherit >= 0 ? inherit : 0;
+                if (failed) {
+                    // 首轮失败：明确标未查到，不要留成永远骨架
+                    item.unknown = true;
+                } else {
+                    // 加载中：场次未知，但冠军次数可继承主界面已加载值（-1 表示主界面也没有）
+                    item.pending = true;
+                    item.championships = i < initChamps.size() ? initChamps.get(i) : -1;
+                }
             } else {
                 ArenaContractApi.PlayerSummary s = result.get(addr);
-                item.battles = (s != null && s.battles != null) ? s.battles.longValue() : 0;
-                item.championships = (s != null && s.championships != null) ? s.championships.longValue() : 0;
+                if (s == null) {
+                    // 链上没返回这个地址：保留行并标未查到，不显示成 0 场 0 冠军
+                    item.unknown = true;
+                } else {
+                    item.battles = (s.battles != null) ? s.battles.longValue() : 0;
+                    item.championships = (s.championships != null) ? s.championships.longValue() : 0;
+                }
             }
             items.add(item);
         }

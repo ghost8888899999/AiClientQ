@@ -71,8 +71,10 @@
                 android:textStyle="bold"
                 android:textColor="#4CAF50" />
             <TextView
+                android:id="@+id/tv_summary_enter_label"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
+                android:maxLines="1"
                 android:text="@string/common_label_today_enter"
                 android:textSize="10sp"
                 android:textColor="#757575" />
@@ -131,7 +133,7 @@
         <LinearLayout
             android:layout_width="0dp"
             android:layout_height="wrap_content"
-            android:layout_weight="1"
+            android:layout_weight="1.6"
             android:orientation="vertical"
             android:gravity="center">
             <TextView
@@ -150,6 +152,19 @@
                 android:textColor="#757575" />
         </LinearLayout>
     </LinearLayout>
+
+    <!-- 列表级同步进度：两波查询（主体数据 + 今日冠军）各占一半，走完自动隐藏 -->
+    <ProgressBar
+        android:id="@+id/pb_stats_sync"
+        style="?android:attr/progressBarStyleHorizontal"
+        android:layout_width="match_parent"
+        android:layout_height="2dp"
+        android:indeterminate="false"
+        android:max="100"
+        android:progress="0"
+        android:progressTint="#4CAF50"
+        android:progressBackgroundTint="#EEEEEE"
+        android:visibility="gone" />
 
     <androidx.recyclerview.widget.RecyclerView
         android:id="@+id/rv_account_list"

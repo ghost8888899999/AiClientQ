@@ -249,6 +249,13 @@ public class GroupManageActivity extends AppCompatActivity {
                     getString(R.string.grp_delete_confirm_btn),
                     () -> new Thread(() -> {
                         boolean ok = AppLogDbHelper.getInstance(this).deleteGroup(name) > 0;
+                        // 同组账号的 group_no 一并清空：否则账号挂着已删除的组名，
+                        // 列表归到“未分组”但库里仍是旧名字，编辑保存时会被静默改组
+                        if (ok) {
+                            try {
+                                AppGlobal.getKeyStoreManager().renameKeyGroup(name, "");
+                            } catch (Exception ignored) {}
+                        }
                         runOnUiThread(() -> {
                             Toast.makeText(this, ok ? R.string.toast_key_deleted : R.string.toast_delete_failed,
                                     Toast.LENGTH_SHORT).show();
@@ -272,16 +279,9 @@ public class GroupManageActivity extends AppCompatActivity {
 
     private void syncKeyStoreRename(String oldName, String newName) {
         try {
-            KeyStoreManager mgr = AppGlobal.getKeyStoreManager();
-            List<KeyStoreManager.KeyEntry> entries = mgr.loadKeyEntryList();
-            boolean changed = false;
-            for (KeyStoreManager.KeyEntry e : entries) {
-                if (oldName.equals(e.groupNo)) {
-                    e.groupNo = newName;
-                    changed = true;
-                }
-            }
-            if (changed) mgr.saveKeyEntryList(entries);
+            // 一条 UPDATE ... WHERE group_no=? 改完同组记录；
+            // 旧实现读整表再 saveKeyEntryList，会把期间改动的开关状态回滚
+            AppGlobal.getKeyStoreManager().renameKeyGroup(oldName, newName);
         } catch (Exception ignored) {}
     }
 

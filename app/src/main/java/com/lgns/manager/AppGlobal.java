@@ -29,6 +29,8 @@ public class AppGlobal {
     // 定时清除日志
     private static ScheduledExecutorService logClearScheduler;
     private static ScheduledFuture<?> logClearTask;
+    // 当前调度器用的间隔：onResume 会反复调 start，间隔没变就不重建
+    private static long logClearIntervalMinutes = -1L;
 
     public static void initKeyManager(Context context) throws Exception {
         sAppCtx = context.getApplicationContext();
@@ -81,8 +83,18 @@ public class AppGlobal {
 
     // 启动定时清理日志任务：只删除早于「保留时长」的旧记录，保留最近数据
     public static synchronized void startLogClearScheduler(long intervalMinutes) {
+        if (!ArenaConfig.logClearEnable || intervalMinutes <= 0) {
+            stopLogClearScheduler();
+            return;
+        }
+
+        // 同一间隔已经在跑就直接复用：onResume 每次都会调本方法，
+        // 重复 stop+start 会把首次执行时间一直往后推（间隔 1 天就等于永不执行）
+        if (logClearTask != null && !logClearTask.isDone()
+                && logClearIntervalMinutes == intervalMinutes) {
+            return;
+        }
         stopLogClearScheduler();
-        if (!ArenaConfig.logClearEnable || intervalMinutes <= 0) return;
 
         logClearScheduler = Executors.newSingleThreadScheduledExecutor(r -> {
             Thread t = new Thread(r, "log-clear-timer");
@@ -90,6 +102,10 @@ public class AppGlobal {
             return t;
         });
 
+        // 首轮不等到一个完整间隔：保留期是 1 天时，否则要开着 App 天天不关才会清一次。
+        // 清理是按保留期删旧记录，天然幂等，启动后一分钟跑一次没有副作用
+        long initialDelayMin = Math.min(intervalMinutes, 1L);
+        logClearIntervalMinutes = intervalMinutes;
         logClearTask = logClearScheduler.scheduleWithFixedDelay(() -> {
             try {
                 long cutoff = System.currentTimeMillis() - TimeUnit.MINUTES.toMillis(intervalMinutes);
@@ -103,18 +119,22 @@ public class AppGlobal {
 
                 Log.d("AppGlobal", "定时清理日志完成，共删除 " + deletedCount + " 条历史记录");
 
-                // 自动清理只上屏提示，不再写回日志表，避免“写日志→清日志”互刷数据
-                logUi("定时清理日志，共删除 " + deletedCount + " 条历史记录");
+                // 自动清理只上屏提示，不再写回日志表，避免“写日志→清日志”互刷数据；
+                // 首轮清理会在启动后很快跑一次，没删到东西就不上屏，不然每次开 App 都多一行
+                if (deletedCount > 0) {
+                    logUi("定时清理日志，共删除 " + deletedCount + " 条历史记录");
+                }
             } catch (Exception e) {
                 Log.e("AppGlobal", "定时清理日志失败", e);
             }
-        }, intervalMinutes, intervalMinutes, TimeUnit.MINUTES);
+        }, initialDelayMin, intervalMinutes, TimeUnit.MINUTES);
 
         Log.d("AppGlobal", "日志定时清理已启动，保留最近 " + intervalMinutes + " 分钟");
     }
 
     // 停止定时清除日志任务
     public static synchronized void stopLogClearScheduler() {
+        logClearIntervalMinutes = -1L;
         if (logClearTask != null) {
             logClearTask.cancel(false);
             logClearTask = null;

@@ -428,6 +428,30 @@ public class AppLogDbHelper extends SQLiteOpenHelper {
         return getWritableDatabase().update(TABLE_KEY_ENTRY, cv, COL_KE_ID + "=?", new String[]{String.valueOf(id)});
     }
 
+    // 只改启用状态：开关走这里，绝不碰 custom_code / group_no / cipher_text
+    // 返回受影响行数，调用方据此判断是否落库成功
+    public int updateKeyEnabled(int id, boolean enabled) {
+        ContentValues cv = new ContentValues();
+        cv.put(COL_KE_ENABLED, enabled ? 1 : 0);
+        return getWritableDatabase().update(TABLE_KEY_ENTRY, cv, COL_KE_ID + "=?", new String[]{String.valueOf(id)});
+    }
+
+    // 只改编号和分组：编辑弹窗保存走这里，不再顺带回写 enabled 这种会竞态的字段
+    public int updateKeyEntryMeta(int id, String customCode, String groupNo) {
+        ContentValues cv = new ContentValues();
+        cv.put(COL_KE_CUSTOM_CODE, customCode != null ? customCode : "");
+        cv.put(COL_KE_GROUP_NO, groupNo != null ? groupNo : "");
+        return getWritableDatabase().update(TABLE_KEY_ENTRY, cv, COL_KE_ID + "=?", new String[]{String.valueOf(id)});
+    }
+
+    // 分组重命名：一条 UPDATE 改完同组全部记录，替代“整表读改写”
+    public int updateKeyGroupNo(String oldGroup, String newGroup) {
+        ContentValues cv = new ContentValues();
+        cv.put(COL_KE_GROUP_NO, newGroup != null ? newGroup : "");
+        return getWritableDatabase().update(TABLE_KEY_ENTRY, cv,
+                COL_KE_GROUP_NO + "=?", new String[]{oldGroup == null ? "" : oldGroup});
+    }
+
     public int updateKeyEntryAddress(int id, String address) {
         ContentValues cv = new ContentValues();
         cv.put(COL_KE_ADDRESS, address);

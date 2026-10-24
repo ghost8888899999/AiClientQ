@@ -306,12 +306,15 @@
                         android:textColor="@color/text_secondary"
                         android:textSize="11sp" />
 
+                    <!-- 默认勾选：与 ArenaConfig.logClearEnable 的默认值一致，
+                         避免配置加载前首帧显示成关闭 -->
                     <androidx.appcompat.widget.SwitchCompat
                         android:id="@+id/sw_log_clear_enable"
                         style="@style/AppSwitch"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:layout_marginStart="10dp" />
+                        android:layout_marginStart="10dp"
+                        android:checked="true" />
                 </LinearLayout>
 
                 <LinearLayout

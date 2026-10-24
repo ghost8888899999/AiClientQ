@@ -75,32 +75,33 @@ public class AutoClearWorker extends Worker {
 
     private void checkAndClearLogsAndData() {
         try {
-            long currentTime = System.currentTimeMillis();
-            long logClearThreshold = currentTime - getLogClearThresholdMs();
+            // 语义必须与系统配置页一致：开关关闭时一条旧记录也不删
+            ArenaConfig.loadConfig(getApplicationContext());
+            if (!ArenaConfig.logClearEnable) return;
 
-            // 检查是否到达日志清除时间
-            if (currentTime >= logClearThreshold) {
-                Log.d("AutoClearWorker", "=======到期执行清除日志和数据=======");
-                
-                AppLogDbHelper dbHelper = AppLogDbHelper.getInstance(getApplicationContext());
-                
-                // 清除旧日志
-                int deletedLogCount = dbHelper.deleteLogsOlderThan(logClearThreshold);
-                
-                // 清除旧的当日状态数据
-                int deletedStatusCount = dbHelper.deleteDailyStatusOlderThan(logClearThreshold);
-                
-                // 清除旧的失败日志
-                int deletedFailureCount = dbHelper.deleteFailureLogsOlderThan(logClearThreshold);
-                
-                Log.d("AutoClearWorker", "=======数据清除完成=======");
-                Log.d("AutoClearWorker", "删除日志: " + deletedLogCount + " 条");
-                Log.d("AutoClearWorker", "删除状态: " + deletedStatusCount + " 条");
-                Log.d("AutoClearWorker", "删除失败日志: " + deletedFailureCount + " 条");
-                
-                // 更新下次清除时间
-                updateLastLogClearTimestamp(currentTime, getApplicationContext());
-            }
+            long currentTime = System.currentTimeMillis();
+            // 按保留期删除，天然幂等，不需要再拿上次执行时间做闸门
+            long logClearThreshold = currentTime - getLogClearThresholdMs();
+            Log.d("AutoClearWorker", "=======开始清除日志和数据=======");
+
+            AppLogDbHelper dbHelper = AppLogDbHelper.getInstance(getApplicationContext());
+
+            // 清除旧日志
+            int deletedLogCount = dbHelper.deleteLogsOlderThan(logClearThreshold);
+
+            // 清除旧的当日状态数据
+            int deletedStatusCount = dbHelper.deleteDailyStatusOlderThan(logClearThreshold);
+
+            // 清除旧的失败日志
+            int deletedFailureCount = dbHelper.deleteFailureLogsOlderThan(logClearThreshold);
+
+            Log.d("AutoClearWorker", "=======数据清除完成=======");
+            Log.d("AutoClearWorker", "删除日志: " + deletedLogCount + " 条");
+            Log.d("AutoClearWorker", "删除状态: " + deletedStatusCount + " 条");
+            Log.d("AutoClearWorker", "删除失败日志: " + deletedFailureCount + " 条");
+
+            // 更新下次清除时间
+            updateLastLogClearTimestamp(currentTime, getApplicationContext());
         } catch (Exception e) {
             Log.e("AutoClearWorker", "清除日志和数据失败", e);
         }

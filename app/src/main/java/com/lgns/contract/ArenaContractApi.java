@@ -192,23 +192,88 @@ public class ArenaContractApi {
     }
 
     /**
-     * playerHistoryLatest(player,count) selector:0x0810151a
+     * playerHistoryLatest(address,uint256) selector:0x2e1f91b9
+     * selector 取自当前部署合约（0xff06…aAaA）字节码里的 dispatcher 常量；
+     * 旧值 0x0810151a 在当前合约里不存在，eth_call 会直接落到 fallback 回 revert,
+     * 导致今日冠军永远查不到（表现为整列“--”）
      * 修复:增加 hex 解析异常捕获,畸形数据直接返回 null,不向外抛 NumberFormatException
      */
     public static Integer callPlayerHistoryLatestWendToday(Web3j web3j, String owner) {
         try {
-            String addrNo0x = Numeric.cleanHexPrefix(owner);
-            String countHex = Numeric.toHexStringNoPrefixZeroPadded(BigInteger.valueOf(100), 64);
-            String data = "0x0810151a"
-                    + String.format("%64s", addrNo0x).replace(' ', '0')
-                    + countHex;
             EthCall res = web3j.ethCall(
-                    Transaction.createEthCallTransaction(null, ARENA_ADDR, data),
+                    Transaction.createEthCallTransaction(null, ARENA_ADDR, encodePlayerHistoryLatestData(owner)),
                     DefaultBlockParameterName.LATEST
             ).send();
             if (res.hasError()) return null;
-            String hexRaw = Numeric.cleanHexPrefix(res.getValue());
-            Log.d("RPC_DEBUG", "playerHistoryLatest[" + owner + "] 原始返回长度: " + hexRaw.length());
+            Log.d("RPC_DEBUG", "playerHistoryLatest[" + owner + "] 原始返回长度: "
+                    + Numeric.cleanHexPrefix(res.getValue()).length());
+            return decodeWinCountToday(res.getValue());
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /**
+     * 批量查询今日胜场：与 playerSummary 同样用 sendAsync 真并发（OkHttp 默认 5 连接/host 限流），
+     * 单批最多 ArenaConfig.BATCH_CALL_SIZE，超过自动切片。
+     * 返回 Map<地址, 今日胜场>；查询/解析失败的地址不会出现在 Map 里，由调用方标记为“未查到”
+     */
+    public static Map<String, Integer> callPlayerHistoryLatestWendTodayBatch(
+            Web3j web3j, Collection<String> owners) {
+        Map<String, Integer> out = new LinkedHashMap<>();
+        if (web3j == null || owners == null || owners.isEmpty()) return out;
+        List<String> addrs = new ArrayList<>(owners);
+        for (int start = 0; start < addrs.size(); start += ArenaConfig.BATCH_CALL_SIZE) {
+            int end = Math.min(start + ArenaConfig.BATCH_CALL_SIZE, addrs.size());
+            List<String> slice = addrs.subList(start, end);
+            List<CompletableFuture<EthCall>> futures = new ArrayList<>(slice.size());
+            try {
+                for (String addr : slice) {
+                    futures.add(web3j.ethCall(
+                            Transaction.createEthCallTransaction(null, ARENA_ADDR,
+                                    encodePlayerHistoryLatestData(addr)),
+                            DefaultBlockParameterName.LATEST).sendAsync());
+                }
+                CompletableFuture.allOf(futures.toArray(new CompletableFuture[0]))
+                        .get(ArenaConfig.RPC_CALL_TIMEOUT_SEC * 2L, TimeUnit.SECONDS);
+            } catch (Exception e) {
+                // 并发失败：降级为逐个查，与 playerSummary 批量保持一致的降级策略
+                for (String addr : slice) {
+                    Integer v = callPlayerHistoryLatestWendToday(web3j, addr);
+                    if (v != null) out.put(addr, v);
+                }
+                continue;
+            }
+            for (int i = 0; i < futures.size(); i++) {
+                try {
+                    EthCall ec = futures.get(i).get();
+                    if (ec == null || ec.hasError()) continue;
+                    Integer v = decodeWinCountToday(ec.getValue());
+                    if (v != null) out.put(slice.get(i), v);
+                } catch (Exception ignore) {}
+            }
+        }
+        return out;
+    }
+
+    // playerHistoryLatest(address,uint256) 的 4 字节选择器（与部署合约字节码一致）
+    private static final String SEL_PLAYER_HISTORY_LATEST = "0x2e1f91b9";
+
+    private static String encodePlayerHistoryLatestData(String owner) {
+        String addrNo0x = Numeric.cleanHexPrefix(owner);
+        String countHex = Numeric.toHexStringNoPrefixZeroPadded(BigInteger.valueOf(100), 64);
+        return SEL_PLAYER_HISTORY_LATEST
+                + String.format("%64s", addrNo0x).replace(' ', '0')
+                + countHex;
+    }
+
+    /**
+     * 解析 playerHistoryLatest 返回值，统计“当天获胜”的条数；畸形数据返回 null
+     */
+    private static Integer decodeWinCountToday(String hexWith0x) {
+        if (hexWith0x == null) return null;
+        try {
+            String hexRaw = Numeric.cleanHexPrefix(hexWith0x);
             if (hexRaw.length() < 64) return 0;
 
             int arrOffset;
