@@ -41,7 +41,23 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+/**
+ * 私钥管理页（账号池）：管理参与入场与领取的账号——新增、编辑、删除、启用开关、
+ * 分组与排序、设置主号以及修改加密口令。
+ *
+ * <p>安全约定：私钥只以密文落库，明文仅在解密后使用期间存在于内存；
+ * 界面展示一律走短地址，不整串回显。</p>
+ *
+ * <p>主号在该页设定，批量充值、手续费充值、批量转账的出资方都取自这个主号；
+ * 主号 id 缓存在内存里，避免长列表逐行查库造成滑动卡顿。</p>
+ *
+ * <p>列表按分组折叠：{@code allDisplayList} 是完整数据，{@code displayList} 是当前可见部分，
+ * 折叠只影响后者，排序落盘以完整数据为准。</p>
+ */
 public class PrivateKeyManageActivity extends AppCompatActivity {
+
+    // region 视图与数据
+
     private RecyclerView rvKeys;
     private View tvEmpty;
     private TextView tvSummaryAccounts, tvSummaryEnabled, tvSummaryGroups;
@@ -55,20 +71,35 @@ public class PrivateKeyManageActivity extends AppCompatActivity {
     // 本次拖拽所在分组：clearView 时 getAdapterPosition 可能为 NO_POSITION，靠它兜底落库
     private String draggingGroup;
 
+    /** 分组头行：显示分组名与人数，拖动排序时不能被跨过 */
     private static final int TYPE_HEADER = 0;
+    /** 私钥行：一行一个账号，长按可同组内拖动调整顺序 */
     private static final int TYPE_KEY = 1;
 
+    /**
+     * 分组胶囊颜色盘。按分组名 hash 取模选色，同一分组多次刷新颜色不变；
+     * 不按行号取色，否则拖动排序后颜色会整体错位。
+     */
     private static final int[] BADGE_COLORS = {
             0xFF5C6BC0, 0xFF26A69A, 0xFFEF5350, 0xFFAB47BC,
             0xFF42A5F5, 0xFFFFA726, 0xFF66BB6A, 0xFFEC407A,
             0xFF8D6E63, 0xFF78909C
     };
 
+    // endregion
+
+    // region 列表数据模型
+
+    /** 列表行：分组头与私钥行共用，用 {@link #type} 区分 */
     static class DisplayItem {
+        /** 行类型：{@code TYPE_HEADER} 或 {@code TYPE_KEY} */
         int type;
+        /** 所属分组名（含“未分组”兜底值），拖拽时靠它限制同组内换位 */
         String groupName;
+        /** 私钥条目；分组头行为 null */
         KeyStoreManager.KeyEntry entry;
 
+        /** 构造一个分组头行（不带密钥数据） */
         static DisplayItem header(String name) {
             DisplayItem d = new DisplayItem();
             d.type = TYPE_HEADER;
@@ -76,16 +107,26 @@ public class PrivateKeyManageActivity extends AppCompatActivity {
             return d;
         }
 
+        /** 构造一个私钥行，并把分组名统一成列表展示口径（含“未分组”兜底） */
         static DisplayItem keyItem(String groupName, KeyStoreManager.KeyEntry e) {
             DisplayItem d = new DisplayItem();
             d.type = TYPE_KEY;
             d.entry = e;
-            // 统一使用列表展示的分组名（含“未分组”兑底），保证标题计数与拖拽分组一致
+            // 统一使用列表展示的分组名（含“未分组”兜底），保证标题计数与拖拽分组一致
             d.groupName = groupName;
             return d;
         }
     }
 
+    // endregion
+
+    // region 生命周期
+
+    /**
+     * 搭列表与拖拽回调，本身不读库；数据加载统一放在 {@link #onResume()}。
+     *
+     * <p>拖拽只允许长按私钥行发起，且限制在同组内换位（{@code onMove} 里判分组）。</p>
+     */
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -159,12 +200,17 @@ public class PrivateKeyManageActivity extends AppCompatActivity {
         findViewById(R.id.btn_change_pwd).setOnClickListener(v -> showChangeCryptoKeyDialog());
     }
 
+    /** 每次回到页面都重读一次：增删密钥、改分组、改启用状态都可能在别的页面发生 */
     @Override
     protected void onResume() {
         super.onResume();
         loadKeys();
     }
 
+    /**
+     * 离开页面时标记主界面「只重读本地清单」：本页可能从批量充值等非菜单入口进入，
+     * 不通知的话主界面会继续用旧的启用状态与分组。
+     */
     @Override
     protected void onPause() {
         super.onPause();
@@ -174,6 +220,20 @@ public class PrivateKeyManageActivity extends AppCompatActivity {
         if (ma != null && !ma.isFinishing()) ma.setRefreshLocalOnlyOnResume();
     }
 
+    // endregion
+
+    // region 数据加载
+
+    /**
+     * 后台线程重建私钥列表：读库 → 去重 → 按自定义排序 → 按分组切块 → 切回 UI 线程一次性换引用。
+     *
+     * <p>顺序与分组：先按 {@code getCustomSortIdList()} 排（拖动后的顺序落在这里），
+     * 库里新增但排序表里没有的 id 追加到末尾；再按 group_no 分到各分组，
+     * 分组名不在分组表里的归入「未分组」，空分组不占位。</p>
+     *
+     * <p>线程约束：展开态在 UI 线程先快照，后台只写局部变量，
+     * 最后在 {@code runOnUiThread} 里一次性替换引用，避免列表读到「清空了一半」的集合。</p>
+     */
     private void loadKeys() {
         // 展开状态先在 UI 线程快照：后台线程直接读会与 toggleGroup 并发修改
         final Map<String, Boolean> prevExpandedMap = new LinkedHashMap<>(groupExpandedMap);
@@ -285,6 +345,11 @@ public class PrivateKeyManageActivity extends AppCompatActivity {
         }).start();
     }
 
+    // endregion
+
+    // region 分组与排序
+
+    /** 按当前展开态把完整列表摊平成可见列表：折叠的分组只保留标题行 */
     private void rebuildVisibleList() {
         displayList.clear();
         String currentGroup = null;
@@ -300,6 +365,7 @@ public class PrivateKeyManageActivity extends AppCompatActivity {
         }
     }
 
+    /** 点击分组标题：切换展开态后重建可见列表（只改内存，不落盘） */
     private void toggleGroup(String groupName) {
         boolean expanded = groupExpandedMap.getOrDefault(groupName, false);
         groupExpandedMap.put(groupName, !expanded);
@@ -307,6 +373,10 @@ public class PrivateKeyManageActivity extends AppCompatActivity {
         adapter.notifyDataSetChanged();
     }
 
+    /**
+     * 拖拽结束后落盘组内顺序：只重排本组，其他分组的 id 与相对位置保持不变。
+     * 写库放后台线程，主线程不因磁盘 IO 卡顿。
+     */
     private void saveGroupSortOrder(String groupName) {
         // 拖拽后可见列表里本组的顺序，就是新的组内顺序
         List<Long> newGroupOrder = new ArrayList<>();
@@ -337,6 +407,10 @@ public class PrivateKeyManageActivity extends AppCompatActivity {
             } catch (Exception ignored) {}
         }).start();
     }
+
+    // endregion
+
+    // region 新增与编辑
 
     private void showAddKeyDialog() {
         View view = LayoutInflater.from(this).inflate(R.layout.dialog_add_key, null);
@@ -564,6 +638,10 @@ public class PrivateKeyManageActivity extends AppCompatActivity {
         return false;
     }
 
+    // endregion
+
+    // region 删除确认
+
     private void showDeleteConfirm(int position) {
         KeyStoreManager.KeyEntry entry = displayList.get(position).entry;
         String label = entry.customCode.isEmpty()
@@ -599,6 +677,10 @@ public class PrivateKeyManageActivity extends AppCompatActivity {
                 }).start(),
                 getString(R.string.btn_cancel), null);
     }
+
+    // endregion
+
+    // region 行内交互与辅助
 
     // 与主界面账号行一致：0x1234...abcd
     private String shortAddr(String addr) {
@@ -682,6 +764,10 @@ public class PrivateKeyManageActivity extends AppCompatActivity {
         }).start();
     }
 
+    // endregion
+
+    // region 加密口令
+
     private void showChangeCryptoKeyDialog() {
         View view = LayoutInflater.from(this).inflate(R.layout.dialog_change_crypto_key, null);
         EditText etOld = view.findViewById(R.id.et_old_pwd);
@@ -756,6 +842,11 @@ public class PrivateKeyManageActivity extends AppCompatActivity {
         });
     }
 
+    // endregion
+
+    // region 列表适配器
+
+    /** 私钥列表适配器：数据全部取自外部传入的 displayList，自身不持有业务状态 */
     private class KeyAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
         private static final int HEADER_VIEW = 0;
         private static final int KEY_VIEW = 1;
@@ -777,6 +868,15 @@ public class PrivateKeyManageActivity extends AppCompatActivity {
             }
         }
 
+        /**
+         * 绑定一个条目。
+         *
+         * <p>分组头：组名 + 颜色 + 人数（人数从完整列表里捞，所以折叠时计数也准确）+ 展开箭头旋转。</p>
+         *
+         * <p>私钥行：编号与首字徽标、主号高亮、分组胶囊、短地址；
+         * 开关值回填前先把 {@code binding} 置 true 屏蔽回调，避免复用时把旧值当用户操作落库；
+         * 编辑/删除则通过 {@code positionOfEntry} 现查位置，不用 bind 时的旧 position。</p>
+         */
         @Override
         public void onBindViewHolder(@NonNull RecyclerView.ViewHolder holder, int position) {
             DisplayItem item = displayList.get(position);
@@ -802,7 +902,7 @@ public class PrivateKeyManageActivity extends AppCompatActivity {
                 long masterId = masterAccountId;
                 boolean isMaster = masterId == entry.id;
                 h.tvCode.setText(baseLabel);
-                // 徒标取原始编号首字
+                // 徽标取原始编号首字
                 h.tvBadge.setText(baseLabel.isEmpty() ? "?"
                         : String.valueOf(baseLabel.charAt(0)).toUpperCase());
                 h.tvBadge.setBackgroundTintList(ColorStateList.valueOf(getBadgeColor(baseLabel)));
@@ -856,6 +956,7 @@ public class PrivateKeyManageActivity extends AppCompatActivity {
         }
     }
 
+    /** 分组头 ViewHolder：颜色条 + 组名 + 人数 + 展开箭头 */
     static class HeaderVH extends RecyclerView.ViewHolder {
         TextView tvGroupName, tvGroupCount;
         View viewColor;
@@ -870,7 +971,9 @@ public class PrivateKeyManageActivity extends AppCompatActivity {
         }
     }
 
+    /** 私钥行视图：开关只注册一次监听，靠 boundEntry/binding 区分“回填”与“用户操作” */
     static class KeyVH extends RecyclerView.ViewHolder {
+        /** 开关回调：只转发用户真实操作，程序化回填时由 {@code binding} 拦住 */
         interface ToggleCallback {
             void onToggle(KeyVH holder, KeyStoreManager.KeyEntry entry, boolean checked);
         }
@@ -879,8 +982,11 @@ public class PrivateKeyManageActivity extends AppCompatActivity {
         TextView tvBadge, tvCode, tvAddr, tvGroupTag;
         SwitchCompat swEnabled;
         ImageButton btnEdit, btnDelete;
+        /** 当前绑定到本 View 的账号：开关回调与编辑/删除都以它为准，不用旧 position 猜 */
         KeyStoreManager.KeyEntry boundEntry;
+        /** 当前绑定的是否主号（由页面缓存的主号 id 判出） */
         boolean boundIsMaster;
+        /** true 表示正在程序化回填开关值，此时回调里的变更只能忽略 */
         boolean binding;
 
         KeyVH(View v, ToggleCallback callback) {
@@ -902,4 +1008,6 @@ public class PrivateKeyManageActivity extends AppCompatActivity {
             });
         }
     }
+    // endregion
+
 }

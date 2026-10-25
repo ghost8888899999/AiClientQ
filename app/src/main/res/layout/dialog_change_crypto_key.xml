@@ -39,12 +39,14 @@
             android:orientation="vertical">
 
             <TextView
+                android:id="@+id/tv_pwd_title"
                 style="@style/DialogTitleStyle"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="@string/dialog_change_pwd_title" />
 
             <TextView
+                android:id="@+id/tv_pwd_subtitle"
                 style="@style/DialogSubtitleStyle"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"

@@ -33,19 +33,34 @@ import com.lgns.R;
 import java.util.Collections;
 import java.util.List;
 
+/**
+ * 分组管理页：新增、重命名、删除分组并调整顺序，改动同步到私钥库中的分组字段。
+ *
+ * <p>职责边界：分组只是账号上的一个标签，页面负责标签本身的增删改序；
+ * 具体账号移动到哪个分组由私钥管理页完成，这里只校验「组内是否还有账号」以免误删。</p>
+ *
+ * <p>重命名需要同时改写私钥库，两处必须一致，否则账号会落到一个不存在的分组里。</p>
+ */
 public class GroupManageActivity extends AppCompatActivity {
     private RecyclerView rvGroups;
     private View tvEmpty;
     private TextView tvGroupTotal, tvSummaryGroups, tvSummaryKeys;
     private View cardSummary;
     private GroupAdapter adapter;
+    /** 分组名列表：顺序即展示顺序，拖拽只改这份内存，松手后落盘到 sort_order */
     private List<String> groupList;
 
+    /**
+     * 分组胶囊颜色盘。按分组名 hash 取模选色，重命名会换色、刷新不换色；
+     * 与私钥管理页同一套色值，保证同一个组在两处看到颜色一致。
+     */
     private static final int[] BADGE_COLORS = {
             0xFF5C6BC0, 0xFF26A69A, 0xFFEF5350, 0xFFAB47BC,
             0xFF42A5F5, 0xFFFFA726, 0xFF66BB6A, 0xFFEC407A,
             0xFF8D6E63, 0xFF78909C
     };
+
+    // region 生命周期
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -106,6 +121,11 @@ public class GroupManageActivity extends AppCompatActivity {
         loadGroups();
     }
 
+    // endregion
+
+    // region 分组数据
+
+    /** 后台读分组表与账号总数，回 UI 线程一次刷新统计与空态 */
     private void loadGroups() {
         new Thread(() -> {
             groupList = AppLogDbHelper.getInstance(this).queryAllGroups();
@@ -129,6 +149,7 @@ public class GroupManageActivity extends AppCompatActivity {
         }).start();
     }
 
+    /** 拖拽结束后把当前顺序逐行写入 sort_order（后台线程，索引从 0 起） */
     private void saveGroupOrder() {
         new Thread(() -> {
             AppLogDbHelper db = AppLogDbHelper.getInstance(this);
@@ -138,6 +159,17 @@ public class GroupManageActivity extends AppCompatActivity {
         }).start();
     }
 
+    // endregion
+
+    // region 增删改交互
+
+    /**
+     * 新增/重命名分组（共用一个弹窗，具体行为看传入参数）。
+     *
+     * <p>传入 {@code prefill} 即为重命名：同名直接关闭弹窗不写库；
+     * 新名字已被其他组用时在弹窗内提示重名。重命名成功后还要同步改写私钥库的 group_no，
+     * 否则账号会挂在一个已经不存在的组名上。</p>
+     */
     private void showAddDialog(String prefill) {
         View view = LayoutInflater.from(this).inflate(R.layout.dialog_group_name, null);
         TextView tvTitle = view.findViewById(R.id.tv_title);
@@ -236,6 +268,10 @@ public class GroupManageActivity extends AppCompatActivity {
         tvError.setVisibility(View.VISIBLE);
     }
 
+    /**
+     * 删除分组：先在后台数一下组内还有多少账号，把「有没有账号」写进确认文案，
+     * 确认后先删分组、再把同组账号的 group_no 清空（归入未分组）。
+     */
     private void showDeleteConfirm(String name) {
         new Thread(() -> {
             int usedCount = countKeysInGroup(name);
@@ -266,6 +302,11 @@ public class GroupManageActivity extends AppCompatActivity {
         }).start();
     }
 
+    // endregion
+
+    // region 辅助方法
+
+    /** 统计组内账号数：读失败（会话锁定等）按 0 处理，不影响页面展示 */
     private int countKeysInGroup(String groupName) {
         int count = 0;
         try {
@@ -277,6 +318,7 @@ public class GroupManageActivity extends AppCompatActivity {
         return count;
     }
 
+    /** 把私钥库里的旧组名改成新组名（只在分组表改名成功后调用） */
     private void syncKeyStoreRename(String oldName, String newName) {
         try {
             // 一条 UPDATE ... WHERE group_no=? 改完同组记录；
@@ -285,10 +327,16 @@ public class GroupManageActivity extends AppCompatActivity {
         } catch (Exception ignored) {}
     }
 
+    /** 分组名的稳定取色：同一分组名每次绑定颜色一致，不随滚动或排序变化 */
     private int getBadgeColor(String name) {
         return BADGE_COLORS[Math.abs(name.hashCode()) % BADGE_COLORS.length];
     }
 
+    // endregion
+
+    // region 列表适配器
+
+    /** 分组列表适配器：数据源就是外部的 groupList，不另存副本 */
     private class GroupAdapter extends RecyclerView.Adapter<GroupAdapter.VH> {
         @NonNull
         @Override
@@ -297,6 +345,7 @@ public class GroupManageActivity extends AppCompatActivity {
             return new VH(v);
         }
 
+        /** 绑定一行：首字母徽标 + 组名 + 组内账号数（空组显示「空」标记）+ 拖拽/编辑/删除入口 */
         @Override
         public void onBindViewHolder(@NonNull VH holder, int position) {
             String name = groupList.get(position);
@@ -318,6 +367,7 @@ public class GroupManageActivity extends AppCompatActivity {
             return groupList == null ? 0 : groupList.size();
         }
 
+        /** 分组行 ViewHolder：首字色块、分组名、人数 + 编辑/删除/拖拽按钮 */
         class VH extends RecyclerView.ViewHolder {
             TextView tvBadge, tvName, tvCount;
             ImageButton btnEdit, btnDelete;
@@ -334,4 +384,7 @@ public class GroupManageActivity extends AppCompatActivity {
             }
         }
     }
+
+    // endregion
+
 }

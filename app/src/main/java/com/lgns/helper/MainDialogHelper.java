@@ -38,20 +38,50 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 
+/**
+ * 主界面所有弹窗与“确认后开子线程干活”的入口集合。
+ *
+ * <p>职责边界：这里只负责「收集参数 / 二次确认 / 提示结果」，真正的链上或落库动作一律推给
+ * {@link KeyStoreManager}、{@link BatchFundTask} 等下游，并且都在子线程里执行，
+ * 回到 UI 线程只做 {@code appendLog} / 刷新列表 / 弹提示三件事。</p>
+ *
+ * <p>密码约定：所有需要解密的地方统一走 {@link #showDecryptPasswordDialog}，
+ * 密码先用首条密文试解一次验真，确认后才交回业务；密码字符数组用完必须
+ * {@code Arrays.fill(pwd, (char) 0)} 清零，不要留着给 GC 处理。</p>
+ */
 public class MainDialogHelper {
     private final MainActivity activity;
-    // 防止连点重复发起链上余额查询
+    /**
+     * 预留给链上余额查询的防重入开关。
+     *
+     * <p>当前本类内没有任何读写：批量充值已改成只做本地校验就跳确认页，
+     * 余额查询移到 {@code BatchFundConfirmActivity} 内异步执行，主页不再长时间遮挡。</p>
+     */
     private boolean fundQuerying = false;
 
+    /** 只持有宿主 Activity：弹窗需要它的 Context 与当前列表快照，不另建状态 */
     public MainDialogHelper(MainActivity activity) {
         this.activity = activity;
     }
 
+    /** 返回统一使用 {@code AppDialog} 样式的 Builder：全局只此一处，避免各弹窗样式分叉 */
     public AlertDialog.Builder styledDialog() {
         return new AlertDialog.Builder(activity, R.style.AppDialog);
     }
 
-    // 锦标赛统计
+    /**
+     * 结算/锦标赛统计：把当前选中且启用的账号丢给 {@code ChampionshipStatsActivity} 展示。
+     *
+     * <p>几个约定：</p>
+     * <ul>
+     *   <li>禁用账号不参与统计（与主界面展示一致）；</li>
+     *   <li>标签优先用自定义编号 {@code customCode}，没填才回退到 {@code displayNo}；</li>
+     *   <li>已加载的冠军次数从主界面快照带过去（{@code initChamps}），避免统计页先归零再跳数；
+     *   快照里没有的条目传 -1，让统计页自己拉。</li>
+     * </ul>
+     *
+     * <p>三种提前退出：没选中任何账号 / 选中了但全部缺地址 / 选中了但全部被禁用。</p>
+     */
     public void showChampionshipStatsDialog() {
         List<KeyListItem> selectedList = activity.getSelectedKeyItem();
         if (selectedList.isEmpty()) {
@@ -110,7 +140,15 @@ public class MainDialogHelper {
         activity.startActivity(intent);
     }
 
-    // 一键为旧密钥补全地址
+    /**
+     * 一键为旧密钥补全地址：先验密码，再拿密码逐条解出私钥推导地址。
+     *
+     * <p>只处理 {@code address} 为空的条目，已有的跳过；单条解密失败只计数不中断，
+     * 最后按「成功数 > 0 / 全失败 / 无待迁移」三种情况给不同文案。</p>
+     *
+     * <p>注意写库方式：每条只调 {@code updateKeyEntryAddress} 改自己那一行，
+     * 而不是最后整表回存——否则解密期间用户改过的启用状态会被整体冲回旧值。</p>
+     */
     public void showMigrateAddressesDialog() {
         showDecryptPasswordDialog(pwdCharArray -> new Thread(() -> {
             try {
@@ -162,7 +200,15 @@ public class MainDialogHelper {
         }).start());
     }
 
-    // 添加密钥弹窗
+    /**
+     * 添加密钥弹窗：分组下拉 + 私钥两段输入（方便分段粘贴）+ 加密密码 + 密码强度说明入口。
+     *
+     * <p>两段输入在提交时直接拼接，不做长度校验——真正的合法性由
+     * {@code KeyStoreManager.addPrivateKey} 解密/推导地址时决定，失败就回一条错误日志。</p>
+     *
+     * <p>确认按钮不用系统默认行为：点击后先做本地非空校验，通过才在子线程加密入库，
+     * 成功后才 dismiss 并刷新列表，失败时弹窗保留让用户重试。</p>
+     */
     public void showAddKeyDialog() {
         AlertDialog.Builder builder = styledDialog();
         View view = LayoutInflater.from(activity).inflate(R.layout.dialog_add_key, null);
@@ -239,13 +285,31 @@ public class MainDialogHelper {
         });
     }
 
-    // 查看日志
+    /** 打开数据库日志页（独立 Activity，不在弹窗里做分页） */
     public void showViewLogDialog() {
         android.content.Intent intent = new android.content.Intent(activity, LogViewActivity.class);
         activity.startActivity(intent);
     }
 
-    // 解密密码弹窗
+    /**
+     * 解密密码弹窗：整个应用的密码输入唯一入口。
+     *
+     * <p>为什么先试解：GCM 没有独立的密码校验位，所以拿当前列表第一条密文做一次 {@code testDecrypt}，
+     * 能解开才算密码正确。这一步放在子线程，期间只禁用本弹窗的确认按钮（主界面按钮不受影响），
+     * 避免把整个界面锁住。</p>
+     *
+     * <p>交互细节：</p>
+     * <ul>
+     *   <li>弹窗一出现就唤起键盘（{@code SOFT_INPUT_STATE_ALWAYS_VISIBLE}）；</li>
+     *   <li>错误提示内联在 {@code tvError}，重新输入即清掉，不弹二级弹框；</li>
+     *   <li>键盘“完成”等同点击确认；</li>
+     *   <li>校验期间用户取消/返回则不再回调，并把密码字符数组归零。</li>
+     * </ul>
+     *
+     * <p>回调里的字符数组所有权交给调用方，用完自行清零。</p>
+     *
+     * @param callback 密码校验通过后的回调，在 UI 线程执行
+     */
     public void showDecryptPasswordDialog(final MainActivity.PasswordCallback callback) {
         final AlertDialog.Builder builder = styledDialog();
         final View view = LayoutInflater.from(activity).inflate(R.layout.dialog_decrypt_password, null);
@@ -355,7 +419,7 @@ public class MainDialogHelper {
         });
     }
 
-    // 让密码输入框直接拿到焦点并唤起键盘（不改动光标/选区，便于错误重输时保留全选）
+    /** 让密码输入框直接拿到焦点并唤起键盘（不改动光标/选区，便于错误重输时保留全选） */
     private void focusPwdInput(EditText et) {
         et.requestFocus();
         et.post(() -> {
@@ -368,19 +432,26 @@ public class MainDialogHelper {
         });
     }
 
+    /** 在输入框下方显示内联错误文案 */
     private void showPwdError(TextView tvError, String msg) {
         if (tvError == null) return;
         tvError.setText(msg);
         tvError.setVisibility(View.VISIBLE);
     }
 
+    /** 隐藏内联错误文案；已是隐藏态时不做无意义的重设，避免重复触发布局 */
     private void hidePwdError(TextView tvError) {
         if (tvError != null && tvError.getVisibility() == View.VISIBLE) {
             tvError.setVisibility(View.GONE);
         }
     }
 
-    // 安全提醒弹窗：风险清单 + 密码建议，按钮在布局内自绘，避免系统按钮栏贴边
+    /**
+     * 安全提醒弹窗：风险清单 + 密码建议。
+     *
+     * <p>按钮在布局内自绘（不走系统按钮栏），否则在 {@code AppDialog} 样式下会贴边。
+     * 次级入口「密码强度说明」关闭后会重新弹出本提醒，保证用户回到原链路。</p>
+     */
     public void showSecurityWarningDialog() {
         View view = LayoutInflater.from(activity).inflate(R.layout.dialog_security_warn, null);
         final AlertDialog dialog = styledDialog().setView(view).create();
@@ -395,7 +466,7 @@ public class MainDialogHelper {
         });
     }
 
-    // 清空日志确认
+    /** 清空数据库日志（不再弹二次确认，调用方已在菜单里做过提示） */
     public void showConfirmClearLogDb() {
         new Thread(() -> {
             AppLogDbHelper.getInstance(activity).clearAllLog();
@@ -403,7 +474,11 @@ public class MainDialogHelper {
         }).start();
     }
 
-    // 清空密钥确认
+    /**
+     * 清空全部密钥：二次确认后子线程执行，成功后写一条日志并刷新主界面列表。
+     *
+     * <p>不删分组与地址簿——只清私钥本体，避免用户重建密钥后还要重新录入分组配置。</p>
+     */
     public void showConfirmClearAllKey() {
         styledDialog()
                 .setTitle(R.string.dialog_clear_all_title)
@@ -425,7 +500,12 @@ public class MainDialogHelper {
                 .show();
     }
 
-    // 删除选中密钥
+    /**
+     * 删除勾选的密钥：二次确认后逐条删库。
+     *
+     * <p>必须先收集位置再回退遍历删除：{@code removeByIndex} 会让后面元素整体前移，
+     * 正向删会跳掉一条。位置收集的是主界面列表下标，所以删除期间不要触发列表刷新。</p>
+     */
     public void removeSelectedKeys() {
         final List<Integer> deletePosList = new ArrayList<>();
         for (int i = 0; i < activity.keyListItemList.size(); i++) {
@@ -463,8 +543,15 @@ public class MainDialogHelper {
                 .show();
     }
 
-    // 批量充值：只做毫秒级本地校验后立即进入确认页；
-    // 链上余额查询搬到 BatchFundConfirmActivity 内异步执行，避免主页被模态弹框长时间遮挡
+    /**
+     * 批量充值入口：只做毫秒级本地校验，然后立即跳确认页。
+     *
+     * <p>链上余额查询已挪到 {@code BatchFundConfirmActivity} 内异步执行，
+     * 避免主页被模态弹框长时间遮住；这里只负责拦两种前置条件：
+     * Activity 已销毁直接返回，以及主号未设置时提示去设置。</p>
+     *
+     * <p>用 {@code startActivityForResult} 是为了充值结束后能回到主页刷新本地清单。</p>
+     */
     public void showBatchFundDialog() {
         if (activity.isFinishing() || activity.isDestroyed()) return;
 
@@ -488,6 +575,7 @@ public class MainDialogHelper {
         activity.startActivityForResult(intent, REQUEST_BATCH_FUND);
     }
 
+    /** 批量充值确认页的请求码，用于 {@code onActivityResult} 里区分回包来源 */
     private static final int REQUEST_BATCH_FUND = 1001;
 
 }

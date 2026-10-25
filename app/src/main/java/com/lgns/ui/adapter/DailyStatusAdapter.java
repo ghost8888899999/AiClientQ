@@ -17,15 +17,25 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+/**
+ * 每日状态适配器：按分组展示每个账号在当天的入场/领取完成情况，分组头可折叠。
+ *
+ * <p>数据来自 {@code DailyStatusItem}，适配器只做摊平静态展示，不发起任何网络请求；
+ * 页面定时刷新时整表替换，展开态随之重建（第一个分组默认展开）。</p>
+ */
 public class DailyStatusAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
+    /** 分组头行 */
     private static final int TYPE_HEADER = 0;
+    /** 账号每日状态行 */
     private static final int TYPE_ITEM = 1;
 
     private List<Object> allItemList; // 完整列表（所有分组+数据）
     private List<Object> visibleItemList; // 当前可见列表
     private Map<String, Boolean> groupExpandedMap; // 分组展开状态
     private List<String> groupOrder; // 分组顺序
+    // region 构造与数据入口
 
+    /** 空表构造：四个容器全部初始化，展开状态默认全折叠，等 setItems 时再重建 */
     public DailyStatusAdapter() {
         this.allItemList = new ArrayList<>();
         this.visibleItemList = new ArrayList<>();
@@ -33,6 +43,10 @@ public class DailyStatusAdapter extends RecyclerView.Adapter<RecyclerView.ViewHo
         this.groupOrder = new ArrayList<>();
     }
 
+    /**
+     * 整表替换数据：按传入顺序切分组，第一个分组默认展开，其余默认折叠。
+     * 展开状态每次重建（不跨刷新沿用）——这份表看的是「今天」的进度，每天重来一次更符合直觉。
+     */
     public void setItemList(List<DailyStatusItem> list) {
         allItemList.clear();
         visibleItemList.clear();
@@ -81,6 +95,10 @@ public class DailyStatusAdapter extends RecyclerView.Adapter<RecyclerView.ViewHo
             }
         }
     }
+
+    // endregion
+
+    // region 列表回调
 
     @Override
     public int getItemViewType(int position) {
@@ -152,6 +170,7 @@ public class DailyStatusAdapter extends RecyclerView.Adapter<RecyclerView.ViewHo
         notifyDataSetChanged();
     }
 
+    /** 组内序号：从当前位置往前数到本组组头，得到「本组第几」而不是全局第几 */
     private int getItemPosition(int position) {
         int seq = 1;
         for (int i = position - 1; i >= 0; i--) {
@@ -166,6 +185,11 @@ public class DailyStatusAdapter extends RecyclerView.Adapter<RecyclerView.ViewHo
         return visibleItemList.size();
     }
 
+    // endregion
+
+    // region ViewHolder
+
+    /** 分组头 ViewHolder：组名 + 人数 + 颜色条 + 展开箭头 */
     static class HeaderVH extends RecyclerView.ViewHolder {
         TextView tvGroupName, tvGroupCount;
         View viewColor;
@@ -179,6 +203,7 @@ public class DailyStatusAdapter extends RecyclerView.Adapter<RecyclerView.ViewHo
         }
     }
 
+    /** 日结行 ViewHolder：序号、编号、累计次数、今日次数、入场次数、状态徽章 */
     static class ItemVH extends RecyclerView.ViewHolder {
         TextView tvSeq, tvKeyNo, tvTotalQd, tvTodayQd, tvTodayEnter, tvStatusBadge;
         View itemRoot;
@@ -193,4 +218,7 @@ public class DailyStatusAdapter extends RecyclerView.Adapter<RecyclerView.ViewHo
             tvStatusBadge = v.findViewById(R.id.tv_status_badge);
         }
     }
+
+    // endregion
+
 }

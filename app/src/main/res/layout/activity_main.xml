@@ -7,151 +7,198 @@
     android:orientation="vertical"
     android:background="#FAFAFA">
 
+    <!-- 标题栏：与各子页同一套框架（primary 蓝底 / 56dp / 白字 17sp 标题 / 11sp 副标题），
+         从子页返回时不再出现「蓝底 56dp → 白底 48dp」的跳变。
+         左侧用 App 图标顶替子页返回键的位置，右侧文字入口收成胶囊徽标、齿轮补足 44dp 热区。 -->
     <LinearLayout
+        android:id="@+id/toolbar"
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:orientation="horizontal"
+        android:layout_height="56dp"
+        android:background="@color/primary"
+        android:elevation="4dp"
         android:gravity="center_vertical"
-        android:padding="10dp"
-        android:background="#FFFFFF"
-        android:elevation="2dp">
+        android:orientation="horizontal"
+        android:paddingStart="16dp"
+        android:paddingEnd="4dp">
 
-        <TextView
+        <ImageView
+            android:layout_width="26dp"
+            android:layout_height="26dp"
+            android:layout_marginEnd="10dp"
+            android:importantForAccessibility="no"
+            android:src="@drawable/ic_lgns" />
+
+        <!-- 标题 + 状态副标题：副标题由 refreshStatusSubtitle() 按「加载/同步/失败/运行中/就绪」切换 -->
+        <LinearLayout
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
-            android:text="@string/app_name"
-            android:textSize="20sp"
-            android:textStyle="bold"
-            android:textColor="#212121" />
+            android:orientation="vertical">
 
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/app_name"
+                android:textColor="@color/white"
+                android:textSize="17sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/tv_status_sub"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="1dp"
+                android:ellipsize="end"
+                android:maxLines="1"
+                android:text="@string/main_status_loading"
+                android:textColor="#CCFFFFFF"
+                android:textSize="11sp" />
+        </LinearLayout>
+
+        <!-- 安全提醒：文字按钮 → 半透明胶囊 + 14dp 琥珀色三角，保留可读标签又不抢标题权重 -->
         <TextView
             android:id="@+id/btn_security_warn"
             android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:padding="6dp"
-            android:layout_marginEnd="8dp"
-            android:text="@string/common_btn_security_warn"
-            android:textColor="#C62828"
-            android:textSize="16sp"
+            android:layout_height="28dp"
+            android:layout_marginEnd="2dp"
+            android:background="@drawable/bg_pill_white_ripple"
             android:clickable="true"
+            android:drawableStart="@drawable/ic_warning_pill"
+            android:drawablePadding="3dp"
             android:focusable="true"
-            android:foreground="?attr/selectableItemBackground" />
+            android:gravity="center"
+            android:paddingStart="8dp"
+            android:paddingEnd="8dp"
+            android:text="@string/main_btn_security_warn"
+            android:textColor="@color/white"
+            android:textSize="12sp" />
 
         <ImageButton
             android:id="@+id/btn_setting_gear"
-            android:layout_width="40dp"
-            android:layout_height="40dp"
-            android:background="?attr/selectableItemBackgroundBorderless"
+            android:layout_width="44dp"
+            android:layout_height="44dp"
+            android:background="@drawable/bg_ripple_white_circle"
             android:contentDescription="@string/common_cd_more_settings"
-            android:src="@drawable/ic_gear_svg" />
+            android:padding="10dp"
+            android:scaleType="fitCenter"
+            android:src="@drawable/ic_gear_svg"
+            android:tint="@color/white" />
     </LinearLayout>
 
-    <!-- 汇总行（替代旧的信物/问鼎/启用） -->
-    <LinearLayout
+    <!-- 汇总数据卡：从「通栏白条」收成卡片，和蓝色标题栏拉开层次；padding 保持 8dp，高度不增 -->
+    <androidx.cardview.widget.CardView
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:orientation="horizontal"
-        android:padding="8dp"
-        android:background="#FFFFFF"
-        android:elevation="1dp">
+        android:layout_marginStart="12dp"
+        android:layout_marginTop="10dp"
+        android:layout_marginEnd="12dp"
+        app:cardBackgroundColor="@color/card_bg"
+        app:cardCornerRadius="14dp"
+        app:cardElevation="1dp">
 
         <LinearLayout
-            android:layout_width="0dp"
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:orientation="vertical"
-            android:gravity="center">
-            <TextView
-                android:id="@+id/tv_summary_enter"
-                android:layout_width="wrap_content"
+            android:orientation="horizontal"
+            android:padding="8dp">
+
+            <LinearLayout
+                android:layout_width="0dp"
                 android:layout_height="wrap_content"
-                android:text="0/0"
-                android:textSize="16sp"
-                android:textStyle="bold"
-                android:textColor="#4CAF50" />
-            <TextView
-                android:id="@+id/tv_summary_enter_label"
-                android:layout_width="wrap_content"
+                android:layout_weight="1"
+                android:orientation="vertical"
+                android:gravity="center">
+                <TextView
+                    android:id="@+id/tv_summary_enter"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="0/0"
+                    android:textSize="16sp"
+                    android:textStyle="bold"
+                    android:textColor="#4CAF50" />
+                <TextView
+                    android:id="@+id/tv_summary_enter_label"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:maxLines="1"
+                    android:text="@string/common_label_today_enter"
+                    android:textSize="10sp"
+                    android:textColor="#757575" />
+            </LinearLayout>
+
+            <View android:layout_width="1dp" android:layout_height="28dp" android:background="#E0E0E0" />
+
+            <LinearLayout
+                android:layout_width="0dp"
                 android:layout_height="wrap_content"
-                android:maxLines="1"
-                android:text="@string/common_label_today_enter"
-                android:textSize="10sp"
-                android:textColor="#757575" />
+                android:layout_weight="1"
+                android:orientation="vertical"
+                android:gravity="center">
+                <TextView
+                    android:id="@+id/tv_summary_today_win"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="0"
+                    android:textSize="16sp"
+                    android:textStyle="bold"
+                    android:textColor="#FF5722" />
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/common_label_today_champion"
+                    android:textSize="10sp"
+                    android:textColor="#757575" />
+            </LinearLayout>
+
+            <View android:layout_width="1dp" android:layout_height="28dp" android:background="#E0E0E0" />
+
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:orientation="vertical"
+                android:gravity="center">
+                <TextView
+                    android:id="@+id/tv_summary_total_win"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="0"
+                    android:textSize="16sp"
+                    android:textStyle="bold"
+                    android:textColor="#E65100" />
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/common_label_total_champion"
+                    android:textSize="10sp"
+                    android:textColor="#757575" />
+            </LinearLayout>
+
+            <View android:layout_width="1dp" android:layout_height="28dp" android:background="#E0E0E0" />
+
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1.6"
+                android:orientation="vertical"
+                android:gravity="center">
+                <TextView
+                    android:id="@+id/tv_summary_prize"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="0.00"
+                    android:textSize="16sp"
+                    android:textStyle="bold"
+                    android:textColor="#FF9800" />
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/common_label_total_prize"
+                    android:textSize="10sp"
+                    android:textColor="#757575" />
+            </LinearLayout>
         </LinearLayout>
-
-        <View android:layout_width="1dp" android:layout_height="28dp" android:background="#E0E0E0" />
-
-        <LinearLayout
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:orientation="vertical"
-            android:gravity="center">
-            <TextView
-                android:id="@+id/tv_summary_today_win"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="0"
-                android:textSize="16sp"
-                android:textStyle="bold"
-                android:textColor="#FF5722" />
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="@string/common_label_today_champion"
-                android:textSize="10sp"
-                android:textColor="#757575" />
-        </LinearLayout>
-
-        <View android:layout_width="1dp" android:layout_height="28dp" android:background="#E0E0E0" />
-
-        <LinearLayout
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:orientation="vertical"
-            android:gravity="center">
-            <TextView
-                android:id="@+id/tv_summary_total_win"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="0"
-                android:textSize="16sp"
-                android:textStyle="bold"
-                android:textColor="#E65100" />
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="@string/common_label_total_champion"
-                android:textSize="10sp"
-                android:textColor="#757575" />
-        </LinearLayout>
-
-        <View android:layout_width="1dp" android:layout_height="28dp" android:background="#E0E0E0" />
-
-        <LinearLayout
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1.6"
-            android:orientation="vertical"
-            android:gravity="center">
-            <TextView
-                android:id="@+id/tv_summary_prize"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="0.00"
-                android:textSize="16sp"
-                android:textStyle="bold"
-                android:textColor="#FF9800" />
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="@string/common_label_total_prize"
-                android:textSize="10sp"
-                android:textColor="#757575" />
-        </LinearLayout>
-    </LinearLayout>
+    </androidx.cardview.widget.CardView>
 
     <!-- 列表级同步进度：两波查询（主体数据 + 今日冠军）各占一半，走完自动隐藏 -->
     <ProgressBar
@@ -159,6 +206,9 @@
         style="?android:attr/progressBarStyleHorizontal"
         android:layout_width="match_parent"
         android:layout_height="2dp"
+        android:layout_marginStart="12dp"
+        android:layout_marginTop="6dp"
+        android:layout_marginEnd="12dp"
         android:indeterminate="false"
         android:max="100"
         android:progress="0"

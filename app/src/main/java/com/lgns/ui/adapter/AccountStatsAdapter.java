@@ -19,37 +19,72 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+/**
+ * 账号统计列表适配器：把「分组头 + 账号行」摊平成单列表，分组头负责折叠/展开。
+ *
+ * <p>职责边界：只做展示与折叠态维护，统计口径与排序全部由页面算好后以
+ * {@code DisplayItem} 列表塞进来；适配器不查链、不读存储。</p>
+ *
+ * <p>展开状态按分组名存在 {@code expandedMap} 里，刷新数据时保持用户当前的展开结果，
+ * 避免每次定时刷新都把分组弹回默认状态。</p>
+ */
 public class AccountStatsAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
 
+    /** 分组头行：显示分组名、人数与折叠箭头，点击切换折叠 */
     private static final int TYPE_HEADER = 0;
+    /** 账号行：一行一个账号的链上统计 */
     private static final int TYPE_ACCOUNT = 1;
 
+    /**
+     * 分组胶囊颜色盘。同一分组名按 hash 取模，颜色在同一次运行内稳定；
+     * 不依赖分组顺序，重命名才会换色。
+     */
     private static final int[] BADGE_COLORS = {
             0xFF5C6BC0, 0xFF26A69A, 0xFFEF5350, 0xFFAB47BC,
             0xFF42A5F5, 0xFFFFA726, 0xFF66BB6A, 0xFFEC407A,
             0xFF8D6E63, 0xFF78909C
     };
+    // region 数据源与分组状态
 
+    /** 页面塞进来的完整数据（含所有分组与账号），用于计数与回填 */
     private final List<DisplayItem> allList = new ArrayList<>();
+    /** 实际交给 RecyclerView 的可见列表：折叠的分组只保留组头 */
     private final List<DisplayItem> visibleList = new ArrayList<>();
+    /** 分组名 → 是否展开；LinkedHashMap 保证组头顺序与传入顺序一致 */
     private final Map<String, Boolean> expandedMap = new LinkedHashMap<>();
 
+    // endregion
+
+    // region 数据模型
+
+    /** 主界面一个账号行的数据快照：链上数值 + 展示用名称，不含密文与私钥 */
     public static class AccountStatsItem {
+        /** 展示用标签（优先自定义编号，没填用 3 位 displayNo） */
         public String name;
+        /** 账号地址，也是与链上结果匹配的 key */
         public String address;
+        /** 钱包内 fLGNS 余额（wei） */
         public BigInteger balance;
+        /** 今日已入场次数 */
         public int entriesToday;
+        /** 今日剩余入场次数（为 0 表示已打满） */
         public int entriesRemaining;
+        /** 今日冠军次数 */
         public int todayChampion;
+        /** 累计冠军次数 */
         public int totalChampion;
+        /** 可领奖金（wei） */
         public BigInteger prize;
+        /** 待领取的甲子总数（wei），汇总行展示用 */
         public BigInteger totalEarnings;
+        /** 所属分组名，用于按组折叠与上色 */
         public String groupNo;
-        // 本轮结果还没回来（首次上屏/刷新中）：数值显示占位，状态位留空
+        /** 本轮结果还没回来（首次上屏/刷新中）：数值显示占位，状态位留空 */
         public boolean pending;
-        // 本轮查询结束但链上没返回这个地址：显示“未查到”
+        /** 本轮查询结束但链上没返回这个地址：显示“未查到” */
         public boolean unknown;
 
+        /** 账号行数据全量填充：只存字段不做校验，调用方保证地址非空 */
         public AccountStatsItem(String name, String address, BigInteger balance,
                                 int entriesToday, int entriesRemaining,
                                 int todayChampion, int totalChampion, BigInteger prize,
@@ -66,11 +101,16 @@ public class AccountStatsAdapter extends RecyclerView.Adapter<RecyclerView.ViewH
         }
     }
 
+    /** 列表行：组头与账号行共用同一个实体，用 {@link #type} 区分 */
     public static class DisplayItem {
+        /** 行类型，取值同 {@code TYPE_HEADER} / {@code TYPE_ACCOUNT} */
         public int type;
+        /** 所属分组名：组头行直接显示，账号行用于折叠筛选与上色 */
         public String groupName;
+        /** 账号数据；组头行为 null，绑定时必须先判 type 再取 */
         public AccountStatsItem account;
 
+        /** 构造一个分组头行（type=TYPE_HEADER，不带账号数据） */
         public static DisplayItem header(String groupName) {
             DisplayItem d = new DisplayItem();
             d.type = TYPE_HEADER;
@@ -78,6 +118,7 @@ public class AccountStatsAdapter extends RecyclerView.Adapter<RecyclerView.ViewH
             return d;
         }
 
+        /** 构造一个账号行（type=TYPE_ACCOUNT，必须带 account，否则绑定时会空指针） */
         public static DisplayItem account(String groupName, AccountStatsItem account) {
             DisplayItem d = new DisplayItem();
             d.type = TYPE_ACCOUNT;
@@ -86,6 +127,10 @@ public class AccountStatsAdapter extends RecyclerView.Adapter<RecyclerView.ViewH
             return d;
         }
     }
+
+    // endregion
+
+    // region 列表回调
 
     @Override
     public int getItemViewType(int position) {
@@ -130,6 +175,14 @@ public class AccountStatsAdapter extends RecyclerView.Adapter<RecyclerView.ViewH
         return visibleList.size();
     }
 
+    // endregion
+
+    // region 数据更新与分组展开
+
+    /**
+     * 整体换数据：保留各分组上一次的折叠态（新分组默认展开），再重建可见列表。
+     * 定时刷新也走这里，所以不能把展开状态重置，否则用户每次刷新都会被弹回首屏形态。
+     */
     public void setItems(List<DisplayItem> items) {
         Map<String, Boolean> prev = new LinkedHashMap<>(expandedMap);
         allList.clear();
@@ -145,7 +198,7 @@ public class AccountStatsAdapter extends RecyclerView.Adapter<RecyclerView.ViewH
         notifyDataSetChanged();
     }
 
-    // 快照当前展示中的账号数据（地址→数据），供本地结构刷新时继承已加载的链上数值
+    /** 快照当前展示中的账号数据（地址→数据引用），供本地结构刷新时继承已加载的链上数值 */
     public Map<String, AccountStatsItem> snapshotAccountItems() {
         Map<String, AccountStatsItem> map = new java.util.HashMap<>();
         for (DisplayItem d : allList) {
@@ -156,7 +209,7 @@ public class AccountStatsAdapter extends RecyclerView.Adapter<RecyclerView.ViewH
         return map;
     }
 
-    // 当前展示中的账号行（引用直连：分批回填时直接写字段，再调 notifyStatsChanged）
+    /** 当前展示中的账号行（引用直连：分批回填时直接写字段，再调 {@link #notifyStatsChanged}） */
     public List<AccountStatsItem> accountItems() {
         List<AccountStatsItem> out = new ArrayList<>();
         for (DisplayItem d : allList) {
@@ -165,7 +218,7 @@ public class AccountStatsAdapter extends RecyclerView.Adapter<RecyclerView.ViewH
         return out;
     }
 
-    // 局部回填后刷新：行结构不变、只改数值，不会打乱滚动位置
+    /** 局部回填后刷新：行结构不变、只改数值，不会打乱滚动位置 */
     public void notifyStatsChanged() {
         notifyDataSetChanged();
     }
@@ -176,6 +229,7 @@ public class AccountStatsAdapter extends RecyclerView.Adapter<RecyclerView.ViewH
         notifyDataSetChanged();
     }
 
+    /** 按展开状态摊平：折叠的组只留组头，组内账号不进可见列表 */
     private void rebuildVisibleList() {
         visibleList.clear();
         String currentGroup = null;
@@ -191,10 +245,16 @@ public class AccountStatsAdapter extends RecyclerView.Adapter<RecyclerView.ViewH
         }
     }
 
+    /** 分组名的稳定取色：同一分组每次绑定颜色一致，不会随滚动变色 */
     private int getBadgeColor(String name) {
         return BADGE_COLORS[Math.abs(name.hashCode()) % BADGE_COLORS.length];
     }
 
+    // endregion
+
+    // region ViewHolder
+
+    /** 分组头 ViewHolder：组名 + 人数 + 颜色条 + 展开箭头 */
     static class HeaderVH extends RecyclerView.ViewHolder {
         TextView tvGroupName, tvGroupCount;
         View viewColor;
@@ -209,6 +269,7 @@ public class AccountStatsAdapter extends RecyclerView.Adapter<RecyclerView.ViewH
         }
     }
 
+    /** 账号行 ViewHolder：标签/地址/余额/走势与状态位，具体取值在 bind 里回填 */
     static class AccountVH extends RecyclerView.ViewHolder {
         TextView tvName, tvAddr, tvStatusTag;
         TextView tvBalance, tvEntries, tvTodayChampion, tvTotalChampion, tvPrize;
@@ -295,4 +356,7 @@ public class AccountStatsAdapter extends RecyclerView.Adapter<RecyclerView.ViewH
             return bd.toPlainString();
         }
     }
+
+    // endregion
+
 }

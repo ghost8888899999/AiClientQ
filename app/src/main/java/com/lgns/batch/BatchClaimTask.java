@@ -26,18 +26,46 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
+/**
+ * 批量领取任务：对选中的启用账号逐个领取「奖励 / 血脉 / 甲子」三类收益。
+ *
+ * <p>职责边界：只负责领取，不参与入场与充值；所有链上调用统一走 {@link ArenaContractApi}，
+ * 本类只做串行调度、进度落盘与失败归因，不涉及 UI。</p>
+ *
+ * <p>关键约束：</p>
+ * <ul>
+ *   <li>串行执行 + 逐账号落盘，进程被回收后可由 {@code batchClaimAllResume} 续跑。</li>
+ *   <li>revert 类失败会在冷却表里记 10 分钟，避免对同一账号反复提交白烧手续费。</li>
+ *   <li>交易长时间 pending 只告警不重发，防止同一 nonce 重复上链造成双花假象。</li>
+ * </ul>
+ */
 public class BatchClaimTask {
+    // region 常量与运行状态
 
+    /** 交易在节点池超过 60s 未打包就告警一次，超时通常意味着节点拥塞或 gasPrice 偏低 */
     private static final long PENDING_WARN_THRESHOLD_MS = 60_000L;
+
+    /**
+     * 单笔 {@code claimJiazi(from,count)} 的页大小，与合约 {@code MAX_JIAZI_BATCH = 64} 一致。
+     * 甲子俸按序号连续释放，一页 64 个；页大小超过上限会被合约直接拒绝。
+     * 一个账号拿到 200 个甲子时，需要 4 笔才能领完。
+     */
     private static final BigInteger MAX_JIAZI_BATCH = ArenaConfig.MAX_JIAZI_BATCH;
 
+    /** 地址 → 最近一次 revert 时刻。领取 revert 多为「今天没得领」，10 分钟内不再重复提交 */
     private static final Map<String, Long> revertedCooldownMap = new HashMap<>();
     private static final long REVERTED_COOLDOWN_MS = 10 * 60 * 1000L;
 
     private static final Gson gson = new Gson();
+
+    /** 账号级进度所在的 SharedPreferences 文件名，条目 key 为 {@code task_<地址小写>} */
     private static final String SP_TASK_PROGRESS = "task_progress";
 
     private static String msgOf(Throwable e) { return Web3AndroidUtil.safeMessage(e); }
+
+    // endregion
+
+    // region 任务进度持久化
 
     private static SharedPreferences getTaskSp(Context ctx) {
         return ctx.getSharedPreferences(SP_TASK_PROGRESS, Context.MODE_PRIVATE);
@@ -66,6 +94,21 @@ public class BatchClaimTask {
         return st;
     }
 
+    // endregion
+
+    // region 批量领取入口
+
+    /**
+     * 批量领取入口（可续跑）。
+     *
+     * <p>单个账号的判定顺序固定，前面命中就直接跳过，不进入发交易阶段：</p>
+     * <ol>
+     *   <li>入场阶段失败的账号不领（{@code enterFailedAddrSet}）；</li>
+     *   <li>revert 冷却期内的账号不领；</li>
+     *   <li>磁盘上有 TX_SENT 记录：先查回执，成功即算完成，reverted 才重执行；</li>
+     *   <li>以上都不命中，交给 {@link #batchClaimAndVerifyAllSingleAccount} 真正领取。</li>
+     * </ol>
+     */
     public static void batchClaimAllResume(Context ctx, TaskLogCallback callback, int playMode,
                                            List<KeyListItem> selectedList, char[] sessionCryptoKey) throws Exception {
         if (selectedList.isEmpty()) {
@@ -231,6 +274,17 @@ public class BatchClaimTask {
         }
     }
 
+    // endregion
+
+    // region 单号领取
+
+    /**
+     * 单号领取 + 回读校验。
+     *
+     * <p>领完不等于领完：甲子俸一页最多 64 个，序号多的账号需要多笔 claim，
+     * 所以用 {@code jiaziCount} 回读剩余数量，仍有剩余就继续补，最多 {@code maxRetryPerAccount} 轮；
+     * 重试耗尽仍有余量时只报「需要人工处理」，不再硬撞。</p>
+     */
     private static void batchClaimAndVerifyAllSingleAccount(Context ctx, String pk, String keyNo, Web3j web3j,
                                                             TaskLogCallback callback, int maxRetryPerAccount,
                                                             HashMap<String, BigInteger> accountLocalNonceMap) throws Exception {
@@ -258,6 +312,8 @@ public class BatchClaimTask {
                 retryCount++;
                 if (remainJiazi.compareTo(BigInteger.ZERO) > 0) {
                     callback.onLog(keyNo, "CLAIM", "⚠️校验发现仍有可领取甲子:" + remainJiazi + " ,准备重试(" + retryCount + "/" + maxRetryPerAccount + ")");
+                    // 重试会再花一笔 gas：先停一下，让刚确认的回执在轮换到的节点上可见，
+                    // 否则重试里那次 jiaziCount 回读可能还是旧值，白发一笔大概率 revert 的领取
                     Thread.sleep(1500);
                     BigInteger retryNonce = accountLocalNonceMap.get(fromAddr);
                     Pair<ClaimOneResult, BigInteger> retryRet = claimOneAccountOriginal(ctx, fromAddr, web3j, keyPair, retryNonce, 0);
@@ -277,6 +333,14 @@ public class BatchClaimTask {
         }
     }
 
+    /**
+     * 单个账号连续领取三类收益，顺序固定：甲子俸 → 师徒分成 → 擂台奖金。
+     *
+     * <p>三笔各自 try 独立：师徒分成与擂台奖金在没有可领额度时会 revert，属于正常结果，
+     * 记到日志里继续往下走，不能因为它阻断后面的领取。</p>
+     *
+     * <p>nonce 在本方法内逐笔自增，并把最新值交回调用方，同批多账号不必重复去节点取 nonce。</p>
+     */
     private static Pair<ClaimOneResult, BigInteger> claimOneAccountOriginal(Context ctx, String fromAddrLower,
                                                                             Web3j web3j, ECKeyPair keyPair,
                                                                             BigInteger startNonce, int index) throws Exception {
@@ -287,6 +351,7 @@ public class BatchClaimTask {
         BigInteger jiaziTotal = ArenaContractApi.callJiaziCount(web3j, addr);
         BigInteger claimedJ = BigInteger.ZERO;
         if (jiaziTotal.compareTo(BigInteger.ZERO) > 0) {
+            // 甲子俸按序号分批：合约一页最多 64 个，超出必须拆成多笔
             for (BigInteger start = BigInteger.ZERO; start.compareTo(jiaziTotal) < 0; start = start.add(MAX_JIAZI_BATCH)) {
                 BigInteger cnt = MAX_JIAZI_BATCH.min(jiaziTotal.subtract(start));
                 ArenaContractApi.doClaimJiazi(web3j, keyPair, start, cnt, currentNonce, gasPrice,
@@ -294,17 +359,16 @@ public class BatchClaimTask {
                                 new TaskAccountState(TaskAccountState.STATUS_TX_SENT, h, raw)));
                 currentNonce = currentNonce.add(BigInteger.ONE);
                 claimedJ = claimedJ.add(cnt);
-                Thread.sleep(1000);
             }
         }
         logSb.append("甲子:领了 ").append(claimedJ).append(" | ");
+        // 师徒分成只结算「已封盘」那天，当天场次还没走完时领到的是部分额度
         try {
             ArenaContractApi.doClaimLineage(web3j, keyPair, currentNonce, gasPrice,
                     (h, raw) -> saveAccountState(ctx, fromAddrLower,
                             new TaskAccountState(TaskAccountState.STATUS_TX_SENT, h, raw)));
             currentNonce = currentNonce.add(BigInteger.ONE);
             logSb.append("师徒:已领 | ");
-            Thread.sleep(1000);
         } catch (Exception e) {
             String m = msgOf(e);
             logSb.append("师徒失败:").append(m.substring(0, Math.min(50, m.length()))).append(" | ");
@@ -335,13 +399,24 @@ public class BatchClaimTask {
         return new Pair<>(cr, currentNonce);
     }
 
+    // endregion
+
+    // region 结果模型
+
+    /** 单个账号领取的结果：一条现成日志 + 今日夺冠次数（用于回填统计） */
     public static class ClaimOneResult {
+        /** 单号领取的中文日志，由任务层直接追加到日志面板 */
         public String logText;
+        /** 今日夺冠次数；查询失败为 null，与「0 次」区分 */
         public Integer wendToday;
 
+        /** 纯数据载体：只做字段赋值，不在此做日志格式化 */
         public ClaimOneResult(String logText, Integer wendToday) {
             this.logText = logText;
             this.wendToday = wendToday;
         }
     }
+
+    // endregion
+
 }

@@ -64,5 +64,25 @@
             android:label="自动清除配置" />
 
         <activity android:name=".ui.activity.BatchFundConfirmActivity" />
+
+        <activity
+            android:name=".ui.activity.AddressManageActivity"
+            android:exported="false"
+            android:label="接收方管理" />
+
+        <activity
+            android:name=".ui.activity.PayerManageActivity"
+            android:exported="false"
+            android:label="支付方管理" />
+
+        <activity
+            android:name=".ui.activity.BatchGasFundActivity"
+            android:exported="false"
+            android:label="批量充值手续费" />
+
+        <activity
+            android:name=".ui.activity.BatchTransferActivity"
+            android:exported="false"
+            android:label="批量转账" />
     </application>
 </manifest>

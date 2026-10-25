@@ -13,25 +13,60 @@ import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 
+/**
+ * 全局单例容器：解密会话（KeyStoreManager）、日志回调、两个后台定时器。
+ *
+ * <p>三个容易踩的点：</p>
+ * <ul>
+ *   <li>解密会话就是 {@code sKeyStoreManager} 是否为 null：空闲超时后置空，
+ *   之后 {@link #getKeyStoreManager()} 会抛 IllegalStateException，调用方靠它判断“该重新输密码了”。</li>
+ *   <li>两类日志回调分开：{@code sLogCallback} 会落库，{@code sUiLogCallback} 只上屏；
+ *   自动过程用后者，否则会出现「写日志→清日志」互刷。</li>
+ *   <li>定时器都是守护线程，进程退出不影响；重建前必须根据间隔判断是否需要，
+ *   否则反复 stop+start 会把首次执行时间一直往后推。</li>
+ * </ul>
+ */
 public class AppGlobal {
+
+    // region 会话与全局状态
+
+    /** 解密会话：非 null 即已解锁；空闲超时或切后台后被置空 */
     private static KeyStoreManager sKeyStoreManager;
+    /** Application Context，避免持有 Activity 导致泄漏 */
     private static volatile Context sAppCtx;
+    /** 全量日志回调：带落库（任务过程日志走它） */
     private static TaskLogCallback sLogCallback;
-    // 仅上屏的日志回调：定时任务等自动过程用，不写数据库
+    /** 仅上屏的日志回调：定时任务等自动过程用，不写数据库 */
     private static TaskLogCallback sUiLogCallback;
 
-    // 空闲自动上锁
+    /** 最后一次用户活动时间，空闲锁定靠它判定 */
     private static final AtomicLong LAST_ACTIVE_TS = new AtomicLong(System.currentTimeMillis());
+    /** 空闲检查线程（单线程、守护，60 秒一轮） */
     private static ScheduledExecutorService idleScheduler;
+    /** 空闲检查任务句柄，用于取消 */
     private static ScheduledFuture<?> idleTask;
+    /** 空闲到期后的回调（由 UI 层注入，用于回锁屏/跳转解锁页） */
     private static Runnable onIdleLock;
 
-    // 定时清除日志
+    // endregion
+
+    // region 日志定时清理
+
+    /** 日志清理调度线程 */
     private static ScheduledExecutorService logClearScheduler;
+    /** 日志清理任务句柄，用于取消 */
     private static ScheduledFuture<?> logClearTask;
-    // 当前调度器用的间隔：onResume 会反复调 start，间隔没变就不重建
+    /** 当前调度器用的间隔：onResume 会反复调 start，间隔没变就不重建 */
     private static long logClearIntervalMinutes = -1L;
 
+    // endregion
+
+    /**
+     * 初始化全局状态：建 KeyStoreManager、记录活动时间、拉起空闲锁定线程。
+     *
+     * <p>由解锁流程在密码验证通过后调用。虽然构造了 KeyStoreManager，
+     * 但此时还不能解密密文——真正的密码在它内部保存。</p>
+     */
     public static void initKeyManager(Context context) throws Exception {
         sAppCtx = context.getApplicationContext();
         sKeyStoreManager = new KeyStoreManager(sAppCtx);
@@ -39,6 +74,13 @@ public class AppGlobal {
         startIdleLockLoopIfNeeded();
     }
 
+    /**
+     * 取当前解密会话，并顺带刷新活动时间。
+     *
+     * <p>会话为空（空闲超时、进程重建）时直接抛 IllegalStateException，
+     * 而不是返回 null：让每个调用点都不能忘记处理「待重新解锁」。
+     * 因为带刷新副作用，不要在后台循环里高频调，循环开始调一次即可。</p>
+     */
     public static KeyStoreManager getKeyStoreManager() {
         if (sKeyStoreManager == null) {
             throw new IllegalStateException("会话已过期，请重新输入密码解锁");
@@ -47,6 +89,7 @@ public class AppGlobal {
         return sKeyStoreManager;
     }
 
+    /** 取 Application Context；未初始化就抛异常，避免调用方拿到 null 后空指针难查 */
     public static Context getAppContext() {
         if (sAppCtx == null) {
             throw new IllegalStateException("应用未初始化，请重启 App");
@@ -54,34 +97,55 @@ public class AppGlobal {
         return sAppCtx;
     }
 
+    /** 刷新用户活动时间：任何用户交互后都要调，否则会被空闲锁定误判 */
     public static void touch() {
         LAST_ACTIVE_TS.set(System.currentTimeMillis());
     }
 
+    /** 注册空闲到期回调（只在主线程的定时线程里触发，内部自行切 UI 线程） */
     public static void setOnIdleLock(Runnable cb) { onIdleLock = cb; }
 
+    /** 注册带落库的日志回调（任务过程日志） */
     public static void setLogCallback(TaskLogCallback callback) {
         sLogCallback = callback;
     }
 
+    /** 注册仅上屏的日志回调（自动过程用，原因见 {@link #logUi}） */
     public static void setUiLogCallback(TaskLogCallback callback) {
         sUiLogCallback = callback;
     }
 
-    // 非用户点击触发的提示：只上屏，不落库
+    /**
+     * 非用户点击触发的提示：只上屏，不落库。
+     *
+     * <p>keyNo 与 type 都传 null，表示这行不属于任何账号、也不是某种业务动作。</p>
+     */
     public static void logUi(String msg) {
         if (sUiLogCallback != null) {
             sUiLogCallback.onLog(null, null, msg);
         }
     }
 
+    /** 记录配置变更（落库，type 固定为 CONFIG） */
     public static void logConfigChange(String msg) {
         if (sLogCallback != null) {
             sLogCallback.onLog(null, "CONFIG", msg);
         }
     }
 
-    // 启动定时清理日志任务：只删除早于「保留时长」的旧记录，保留最近数据
+    /**
+     * 启动定时清理日志任务：只删除早于「保留时长」的旧记录，保留最近数据。
+     *
+     * <p>两个实现细节都有原因：</p>
+     * <ul>
+     *   <li>同一间隔已在跑就不重建：onResume 每次都会调本方法，
+     *   重复 stop+start 会把首次执行时间一直往后推（间隔 1 天就等于永不执行）；</li>
+     *   <li>首轮不等一个完整间隔：否则保留期是 1 天时，得开着 App 天天不关才会清一次。
+     *   清理按保留期删旧记录，天然幂等，启动后一分钟跑一次没有副作用。</li>
+     * </ul>
+     *
+     * <p>开关关闭或间隔非正数时直接停掉调度，不保留空任务。</p>
+     */
     public static synchronized void startLogClearScheduler(long intervalMinutes) {
         if (!ArenaConfig.logClearEnable || intervalMinutes <= 0) {
             stopLogClearScheduler();
@@ -132,7 +196,9 @@ public class AppGlobal {
         Log.d("AppGlobal", "日志定时清理已启动，保留最近 " + intervalMinutes + " 分钟");
     }
 
-    // 停止定时清除日志任务
+    /**
+     * 停止定时清理。先置空间隔记录再取消，否则下次 start 会因间隔相等而误以为在跑。
+     */
     public static synchronized void stopLogClearScheduler() {
         logClearIntervalMinutes = -1L;
         if (logClearTask != null) {
@@ -145,7 +211,9 @@ public class AppGlobal {
         }
     }
 
-    // 根据配置计算间隔分钟数
+    /**
+     * 把「值 + 单位下标」换算成分钟。下标：0 分钟 / 1 小时 / 2 天，越界按分钟处理。
+     */
     public static long getIntervalInMinutes(int value, int unitIndex) {
         switch (unitIndex) {
             case 0: return value;
@@ -155,6 +223,15 @@ public class AppGlobal {
         }
     }
 
+    // region 空闲自动上锁
+
+    /**
+     * 拉起空闲检查线程（幂等：已在跑就直接返回）。
+     *
+     * <p>每 60 秒检查一次「距上次活动多久」，超过配置的 {@code IDLE_LOCK_SEC} 就：
+     * 把会话置空（等于上锁）→ 异步回调 UI。置空在前、回调在后，
+     * 即使回调漏了也不会出现「已超时但仍能解密」的窗口。</p>
+     */
     private static synchronized void startIdleLockLoopIfNeeded() {
         if (idleScheduler != null) return;
         idleScheduler = Executors.newSingleThreadScheduledExecutor(r -> {
@@ -174,10 +251,13 @@ public class AppGlobal {
         }, 60L, 60L, TimeUnit.SECONDS);
     }
 
+    /** 关闭空闲检查线程（进程退出或彻底登出时调用） */
     public static synchronized void shutdownIdleLockLoop() {
         if (idleTask != null) idleTask.cancel(false);
         if (idleScheduler != null) idleScheduler.shutdownNow();
         idleScheduler = null;
         idleTask = null;
     }
+
+    // endregion
 }

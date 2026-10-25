@@ -1,65 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<!--
+    日志列表的日期分组头：文字由 LogAdapter 按「今天 / 昨天 / MM-dd」填充。
+    这里只负责留白与字色，不画背景，避免和下面的卡片抢视觉重心。
+-->
+<TextView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/tv_log_date"
     android:layout_width="match_parent"
-    android:layout_height="32dp"
-    android:orientation="horizontal"
-    android:gravity="center_vertical"
-    android:background="#F5F5F5">
-
-    <TextView
-        android:layout_width="0dp"
-        android:layout_height="wrap_content"
-        android:layout_weight="1.1"
-        android:gravity="center"
-        android:paddingStart="12dp"
-        android:text="@string/common_col_time"
-        android:textSize="11sp"
-        android:textColor="#616161"
-        android:textStyle="bold" />
-
-    <View
-        android:layout_width="0.5dp"
-        android:layout_height="match_parent"
-        android:background="#D0D0D0" />
-
-    <TextView
-        android:layout_width="0dp"
-        android:layout_height="wrap_content"
-        android:layout_weight="0.7"
-        android:gravity="center"
-        android:text="@string/common_col_code"
-        android:textSize="11sp"
-        android:textColor="#616161"
-        android:textStyle="bold" />
-
-    <View
-        android:layout_width="0.5dp"
-        android:layout_height="match_parent"
-        android:background="#D0D0D0" />
-
-    <TextView
-        android:layout_width="0dp"
-        android:layout_height="wrap_content"
-        android:layout_weight="1"
-        android:gravity="center"
-        android:text="@string/common_col_type"
-        android:textSize="11sp"
-        android:textColor="#616161"
-        android:textStyle="bold" />
-
-    <View
-        android:layout_width="0.5dp"
-        android:layout_height="match_parent"
-        android:background="#D0D0D0" />
-
-    <TextView
-        android:layout_width="0dp"
-        android:layout_height="wrap_content"
-        android:layout_weight="4"
-        android:gravity="center_vertical"
-        android:paddingStart="8dp"
-        android:text="@string/common_col_content"
-        android:textSize="11sp"
-        android:textColor="#616161"
-        android:textStyle="bold" />
-</LinearLayout>
+    android:layout_height="wrap_content"
+    android:paddingStart="4dp"
+    android:paddingTop="10dp"
+    android:paddingEnd="4dp"
+    android:paddingBottom="6dp"
+    android:textColor="#FF90A4AE"
+    android:textSize="11sp"
+    android:textStyle="bold" />

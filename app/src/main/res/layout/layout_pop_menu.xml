@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  齿轮菜单：定宽卡片 + 柔和投影（MaterialCardView 自带 elevation，窗口四周留 12dp 给阴影）
-  分组用细分隔线，不加分组标题以免菜单过高
+  齿轮菜单：定宽卡片 + 柔和投影（MaterialCardView 自带 elevation，窗口四周留 14dp 给阴影）
+  一级项 46dp；「充值管理」「转账管理」是可展开分组，子项缩进一档 42dp，同时只展开一组
 -->
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
@@ -24,7 +24,45 @@
             android:paddingTop="8dp"
             android:paddingBottom="8dp">
 
-            <!-- 第一组：账号数据 -->
+            <!-- 第一组：账号数据（分组管理置顶） -->
+
+            <LinearLayout
+                android:id="@+id/menu_group_manage"
+                android:layout_width="match_parent"
+                android:layout_height="46dp"
+                android:layout_marginStart="6dp"
+                android:layout_marginEnd="6dp"
+                android:background="@drawable/bg_pop_menu_item"
+                android:clickable="true"
+                android:focusable="true"
+                android:gravity="center_vertical"
+                android:orientation="horizontal"
+                android:paddingStart="10dp"
+                android:paddingEnd="10dp">
+
+                <FrameLayout
+                    android:layout_width="30dp"
+                    android:layout_height="30dp"
+                    android:background="@drawable/bg_pop_menu_icon">
+
+                    <ImageView
+                        android:layout_width="17dp"
+                        android:layout_height="17dp"
+                        android:layout_gravity="center"
+                        android:contentDescription="@null"
+                        android:src="@drawable/ic_menu_group_svg"
+                        app:tint="#FF1976D2" />
+                </FrameLayout>
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="12dp"
+                    android:letterSpacing="0.01"
+                    android:text="@string/common_title_group_manage"
+                    android:textColor="#FF1F2937"
+                    android:textSize="14sp" />
+            </LinearLayout>
 
             <LinearLayout
                 android:id="@+id/menu_key_manage"
@@ -64,8 +102,10 @@
                     android:textSize="14sp" />
             </LinearLayout>
 
+            <!-- 充值管理（可展开） -->
+
             <LinearLayout
-                android:id="@+id/menu_group_manage"
+                android:id="@+id/menu_recharge_group"
                 android:layout_width="match_parent"
                 android:layout_height="46dp"
                 android:layout_marginStart="6dp"
@@ -88,18 +128,277 @@
                         android:layout_height="17dp"
                         android:layout_gravity="center"
                         android:contentDescription="@null"
-                        android:src="@drawable/ic_menu_group_svg"
+                        android:src="@drawable/ic_fund_svg"
                         app:tint="#FF1976D2" />
                 </FrameLayout>
 
                 <TextView
-                    android:layout_width="wrap_content"
+                    android:layout_width="0dp"
                     android:layout_height="wrap_content"
                     android:layout_marginStart="12dp"
+                    android:layout_weight="1"
                     android:letterSpacing="0.01"
-                    android:text="@string/common_title_group_manage"
+                    android:text="@string/title_recharge_manage"
                     android:textColor="#FF1F2937"
                     android:textSize="14sp" />
+
+                <ImageView
+                    android:id="@+id/iv_recharge_arrow"
+                    android:layout_width="14dp"
+                    android:layout_height="14dp"
+                    android:contentDescription="@null"
+                    android:src="@drawable/ic_dropdown_arrow_svg"
+                    app:tint="#FF9AA5B1" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/menu_recharge_children"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:visibility="gone">
+
+                <LinearLayout
+                    android:id="@+id/menu_batch_recharge"
+                    android:layout_width="match_parent"
+                    android:layout_height="42dp"
+                    android:layout_marginStart="6dp"
+                    android:layout_marginEnd="6dp"
+                    android:background="@drawable/bg_pop_menu_item"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal"
+                    android:paddingStart="26dp"
+                    android:paddingEnd="10dp">
+
+                    <FrameLayout
+                        android:layout_width="26dp"
+                        android:layout_height="26dp"
+                        android:background="@drawable/bg_pop_menu_icon">
+
+                        <ImageView
+                            android:layout_width="14dp"
+                            android:layout_height="14dp"
+                            android:layout_gravity="center"
+                            android:contentDescription="@null"
+                            android:src="@drawable/ic_fund_svg"
+                            app:tint="#FF1976D2" />
+                    </FrameLayout>
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="10dp"
+                        android:text="@string/title_batch_recharge"
+                        android:textColor="#FF374151"
+                        android:textSize="13sp" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/menu_batch_gas_fund"
+                    android:layout_width="match_parent"
+                    android:layout_height="42dp"
+                    android:layout_marginStart="6dp"
+                    android:layout_marginEnd="6dp"
+                    android:background="@drawable/bg_pop_menu_item"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal"
+                    android:paddingStart="26dp"
+                    android:paddingEnd="10dp">
+
+                    <FrameLayout
+                        android:layout_width="26dp"
+                        android:layout_height="26dp"
+                        android:background="@drawable/bg_pop_menu_icon">
+
+                        <ImageView
+                            android:layout_width="14dp"
+                            android:layout_height="14dp"
+                            android:layout_gravity="center"
+                            android:contentDescription="@null"
+                            android:src="@drawable/ic_menu_timer_svg"
+                            app:tint="#FF1976D2" />
+                    </FrameLayout>
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="10dp"
+                        android:text="@string/title_batch_gas_fund"
+                        android:textColor="#FF374151"
+                        android:textSize="13sp" />
+                </LinearLayout>
+            </LinearLayout>
+
+            <!-- 转账管理（可展开） -->
+
+            <LinearLayout
+                android:id="@+id/menu_transfer_group"
+                android:layout_width="match_parent"
+                android:layout_height="46dp"
+                android:layout_marginStart="6dp"
+                android:layout_marginEnd="6dp"
+                android:background="@drawable/bg_pop_menu_item"
+                android:clickable="true"
+                android:focusable="true"
+                android:gravity="center_vertical"
+                android:orientation="horizontal"
+                android:paddingStart="10dp"
+                android:paddingEnd="10dp">
+
+                <FrameLayout
+                    android:layout_width="30dp"
+                    android:layout_height="30dp"
+                    android:background="@drawable/bg_pop_menu_icon">
+
+                    <ImageView
+                        android:layout_width="17dp"
+                        android:layout_height="17dp"
+                        android:layout_gravity="center"
+                        android:contentDescription="@null"
+                        android:src="@drawable/ic_menu_addr_svg"
+                        app:tint="#FF1976D2" />
+                </FrameLayout>
+
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="12dp"
+                    android:layout_weight="1"
+                    android:letterSpacing="0.01"
+                    android:text="@string/title_transfer_manage"
+                    android:textColor="#FF1F2937"
+                    android:textSize="14sp" />
+
+                <ImageView
+                    android:id="@+id/iv_transfer_arrow"
+                    android:layout_width="14dp"
+                    android:layout_height="14dp"
+                    android:contentDescription="@null"
+                    android:src="@drawable/ic_dropdown_arrow_svg"
+                    app:tint="#FF9AA5B1" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/menu_transfer_children"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:visibility="gone">
+
+                <LinearLayout
+                    android:id="@+id/menu_payer_manage"
+                    android:layout_width="match_parent"
+                    android:layout_height="42dp"
+                    android:layout_marginStart="6dp"
+                    android:layout_marginEnd="6dp"
+                    android:background="@drawable/bg_pop_menu_item"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal"
+                    android:paddingStart="26dp"
+                    android:paddingEnd="10dp">
+
+                    <FrameLayout
+                        android:layout_width="26dp"
+                        android:layout_height="26dp"
+                        android:background="@drawable/bg_pop_menu_icon">
+
+                        <ImageView
+                            android:layout_width="14dp"
+                            android:layout_height="14dp"
+                            android:layout_gravity="center"
+                            android:contentDescription="@null"
+                            android:src="@drawable/ic_menu_key_svg"
+                            app:tint="#FF1976D2" />
+                    </FrameLayout>
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="10dp"
+                        android:text="@string/title_payer_manage"
+                        android:textColor="#FF374151"
+                        android:textSize="13sp" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/menu_address_manage"
+                    android:layout_width="match_parent"
+                    android:layout_height="42dp"
+                    android:layout_marginStart="6dp"
+                    android:layout_marginEnd="6dp"
+                    android:background="@drawable/bg_pop_menu_item"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal"
+                    android:paddingStart="26dp"
+                    android:paddingEnd="10dp">
+
+                    <FrameLayout
+                        android:layout_width="26dp"
+                        android:layout_height="26dp"
+                        android:background="@drawable/bg_pop_menu_icon">
+
+                        <ImageView
+                            android:layout_width="14dp"
+                            android:layout_height="14dp"
+                            android:layout_gravity="center"
+                            android:contentDescription="@null"
+                            android:src="@drawable/ic_menu_addr_svg"
+                            app:tint="#FF1976D2" />
+                    </FrameLayout>
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="10dp"
+                        android:text="@string/title_address_manage"
+                        android:textColor="#FF374151"
+                        android:textSize="13sp" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/menu_batch_transfer"
+                    android:layout_width="match_parent"
+                    android:layout_height="42dp"
+                    android:layout_marginStart="6dp"
+                    android:layout_marginEnd="6dp"
+                    android:background="@drawable/bg_pop_menu_item"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal"
+                    android:paddingStart="26dp"
+                    android:paddingEnd="10dp">
+
+                    <FrameLayout
+                        android:layout_width="26dp"
+                        android:layout_height="26dp"
+                        android:background="@drawable/bg_pop_menu_icon">
+
+                        <ImageView
+                            android:layout_width="14dp"
+                            android:layout_height="14dp"
+                            android:layout_gravity="center"
+                            android:contentDescription="@null"
+                            android:src="@drawable/ic_menu_check_svg"
+                            app:tint="#FF1976D2" />
+                    </FrameLayout>
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="10dp"
+                        android:text="@string/title_batch_transfer"
+                        android:textColor="#FF374151"
+                        android:textSize="13sp" />
+                </LinearLayout>
             </LinearLayout>
 
             <!-- 组间细分割 -->

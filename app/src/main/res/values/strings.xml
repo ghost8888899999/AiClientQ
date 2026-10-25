@@ -302,6 +302,25 @@
 
     <!-- ══════════ 日志页 activity_log_view ══════════ -->
     <string name="log_view_tv_empty">暂无日志记录</string>
+    <string name="log_view_tv_empty_hint">运行任务后产生的日志会显示在这里</string>
+    <string name="log_view_empty_filtered">没有匹配的日志</string>
+    <string name="log_view_empty_filtered_hint">换个关键词，或点「全部」查看完整日志</string>
+    <string name="log_view_search_hint">搜索编号、类型或内容</string>
+    <string name="log_view_search_clear_cd">清除搜索</string>
+    <string name="log_view_filter_all">全部</string>
+    <string name="log_view_count_filtered_fmt">匹配 %1$d / 共 %2$d 条</string>
+    <string name="log_day_today">今天</string>
+    <string name="log_day_yesterday">昨天</string>
+    <!-- 日志类型徽章文案：与 task_log.log_type 的取值一一对应 -->
+    <string name="log_type_enter">入场</string>
+    <string name="log_type_claim">领取</string>
+    <string name="log_type_fund">充值</string>
+    <string name="log_type_gas">手续费</string>
+    <string name="log_type_transfer">转账</string>
+    <string name="log_type_squad">小队</string>
+    <string name="log_type_delegate">委托</string>
+    <string name="log_type_config">配置</string>
+    <string name="log_type_default">日志</string>
 
     <!-- ══════════ 统计概览 layout_stats_overview ══════════ -->
     <string name="stats_overview_section_core">📊 核心指标</string>

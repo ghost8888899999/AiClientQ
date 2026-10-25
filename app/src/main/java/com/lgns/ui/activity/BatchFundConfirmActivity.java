@@ -26,10 +26,22 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 
+/**
+ * 批量充值确认页：把主号给各账号补币的预演结果摊成清单，确认后再真正发起转账。
+ *
+ * <p>「预演 → 确认 → 执行」三段式：预演只读链上余额算差额，不产生交易；
+ * 用户在这里核对金额与主号余额后点确认，才交给 {@link BatchFundTask} 执行。</p>
+ *
+ * <p>页面状态只有三种：加载中、出错（可重试）、有内容，统一通过 {@code showXxxState} 切换，
+ * 避免出现列表与错误提示同时可见的自相矛盾界面。</p>
+ */
 public class BatchFundConfirmActivity extends AppCompatActivity {
 
+    /** 加载中：列表未出，中央显示转圈 */
     private static final int STATE_LOADING = 0;
+    /** 有内容：主号卡 + 待补清单 */
     private static final int STATE_CONTENT = 1;
+    /** 出错（查不到账号/节点不可用）：中央显示错误与重试 */
     private static final int STATE_ERROR = 2;
 
     private TextView tvHeaderCount, tvStateTitle, tvStateMsg;
@@ -50,6 +62,7 @@ public class BatchFundConfirmActivity extends AppCompatActivity {
 
     // 查询中：确认按钮禁用、返回仍可取消
     private volatile boolean querying;
+    // region 生命周期
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -89,6 +102,10 @@ public class BatchFundConfirmActivity extends AppCompatActivity {
         super.onDestroy();
         querying = false;   // 后台线程回来时丢弃结果，避免操作已销毁的 View
     }
+
+    // endregion
+
+    // region 预演与数据装载
 
     /**
      * 两阶段加载：
@@ -160,6 +177,12 @@ public class BatchFundConfirmActivity extends AppCompatActivity {
         startQuery(null);
     }
 
+    /**
+     * 第二阶段：链上预演。
+     *
+     * <p>{@code querying} 防重入：重试按钮连点不会并发发两次查询；已有本地行时只把金额列
+     * 改回占位，列表不闪；每查完一个账号立刻回填一行，顶部胶囊同步显示进度。</p>
+     */
     private void startQuery(List<KeyListItem> prebuilt) {
         if (querying) return;
         querying = true;
@@ -320,6 +343,10 @@ public class BatchFundConfirmActivity extends AppCompatActivity {
                 .toPlainString();
     }
 
+    // endregion
+
+    // region 状态视图
+
     private void showLoadingState() {
         layoutState.setVisibility(View.VISIBLE);
         rvFundList.setVisibility(View.INVISIBLE);
@@ -362,19 +389,39 @@ public class BatchFundConfirmActivity extends AppCompatActivity {
         });
     }
 
+    // endregion
+
+    // region 数据模型
+
+    /**
+     * 充值确认页的单行数据：余额与缺口都是已格式化的字符串，直接绑到 TextView。
+     *
+     * <p>用 Parcelable 而不是内存共享是因为列表可能因系统回收重建；
+     * 金额字段故意用 String 而不是 BigDecimal：一来要显示“查询中…”这类占位文案，
+     * 二来避免 Parcel 序列化精度问题。</p>
+     */
     public static class FundItem implements Parcelable {
-        // 金额列状态：查询中占位 / 已就绪 / 查询失败
+        /** 金额列状态：链上余额还没回来，界面显示占位文案 */
         public static final int STATE_QUERYING = 0;
+        /** 金额列状态：已拿到余额，正常显示 */
         public static final int STATE_READY = 1;
+        /** 金额列状态：查询失败，行内标红提示重试 */
         public static final int STATE_FAILED = 2;
 
+        /** 账号展示编号（优先自定义编号，没填回退到 3 位 displayNo） */
         public String keyNo;
+        /** 当前余额，已格式化的小数字符串 */
         public String currentBalance;
+        /** 还需补多少，已格式化的小数字符串；已足够时为 0 */
         public String needAmount;
+        /** 收款地址，链上转账的实际目标 */
         public String address;
+        /** 余额是否已满足入场费，决定行内金额的字体颜色 */
         public boolean sufficient;
+        /** 金额列当前状态，默认 {@link #STATE_READY}；查询前由页面改成 {@link #STATE_QUERYING} */
         public int state = STATE_READY;
 
+        /** 用本地已知信息先建行（余额、缺口为占位文案），链上结果回来后再逐行改写字段。 */
         public FundItem(String keyNo, String currentBalance, String needAmount, String address, boolean sufficient) {
             this.keyNo = keyNo;
             this.currentBalance = currentBalance;
@@ -383,6 +430,12 @@ public class BatchFundConfirmActivity extends AppCompatActivity {
             this.sufficient = sufficient;
         }
 
+        /**
+         * 从 Parcel 重建对象。
+         *
+         * <p>读取顺序必须与 {@link #writeToParcel} 的写入顺序逐字段一致，
+         * 否则解析出来的字符串会互相串位而不报错。</p>
+         */
         protected FundItem(Parcel in) {
             keyNo = in.readString();
             currentBalance = in.readString();
@@ -407,6 +460,7 @@ public class BatchFundConfirmActivity extends AppCompatActivity {
             return 0;
         }
 
+        /** Parcelable 反序列化入口，系统在恢复列表时调用，内部走 {@link #FundItem(Parcel)} */
         public static final Creator<FundItem> CREATOR = new Creator<FundItem>() {
             @Override
             public FundItem createFromParcel(Parcel in) {
@@ -422,6 +476,10 @@ public class BatchFundConfirmActivity extends AppCompatActivity {
 
     private static final int VIEW_TYPE_HEADER = 0;
     private static final int VIEW_TYPE_ITEM = 1;
+
+    // endregion
+
+    // region 列表适配器
 
     /** 头部（汇总卡/主号卡/明细标题）与明细行共用一个列表，滚动时一起上移 */
     class FundAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
@@ -544,6 +602,7 @@ public class BatchFundConfirmActivity extends AppCompatActivity {
         }
     }
 
+    /** 头部 ViewHolder：合计金额、明细条数、主号卡片与「主号不够」提醒条 */
     static class HeaderVH extends RecyclerView.ViewHolder {
         TextView tvFundTotal, tvDetailCount;
         TextView tvMasterNo, tvMasterAddr, tvMasterBalance, tvMasterTip;
@@ -561,6 +620,7 @@ public class BatchFundConfirmActivity extends AppCompatActivity {
         }
     }
 
+    /** 明细行 ViewHolder：序号/编号/地址/当前余额/待补金额 */
     static class ItemVH extends RecyclerView.ViewHolder {
         TextView tvSeq, tvKeyNo, tvAddr, tvCurrentBalance, tvNeedAmount;
 
@@ -573,4 +633,6 @@ public class BatchFundConfirmActivity extends AppCompatActivity {
             tvNeedAmount = v.findViewById(R.id.tv_need_amount);
         }
     }
+    // endregion
+
 }

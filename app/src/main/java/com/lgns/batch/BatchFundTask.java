@@ -20,15 +20,42 @@ import com.lgns.model.KeyListItem;
 import com.lgns.task.TaskLogCallback;
 import com.lgns.util.Web3AndroidUtil;
 
+/**
+ * 批量充值任务（fLGNS）：由私钥管理的主号给其余启用账号补齐入场所需的代币。
+ *
+ * <p>与 {@link BatchGasFundTask} 的区别：这里充的是入场门票 fLGNS，手续费币 DAI 由后者负责，
+ * 两者不能合并——入场需要「fLGNS 余额 + DAI 手续费」同时满足。</p>
+ *
+ * <p>流程：预览差额（{@code queryFundPreview}）→ 主号余额复核 → 弹窗确认 → 逐笔转账。
+ * 预览与执行之间余额可能变化，因此执行前必须重新校验主号余额，不能直接沿用预览结果。</p>
+ *
+ * <p>依赖 UI 回调（{@link ButtonStateController}）驱动按钮状态，任务本身不直接操作控件。</p>
+ */
 public class BatchFundTask {
+    // region 回调接口
 
+    /**
+     * 按钮互斥状态的最小接口：由页面实现（通常是 Activity 的 isRunning/setRunning），
+     * 任务只靠它判定“是否已有批量任务在跑”并负责收尾解锁。
+     */
     public interface ButtonStateController {
+        /** @return 当前是否已有任务在执行 */
         boolean isRunning();
+
+        /** 由任务在入口/出口置位；任何提前 return 的分支都必须记得改回 false */
         void setRunning(boolean running);
     }
 
-    // 独立按钮触发（含 UI 弹窗确认）
+    // endregion
 
+    // region 对外入口
+
+    /**
+     * 独立按钮触发的批量充值：确认主号 → 算差额 → 弹窗确认 → 输密码 → 逐笔转账。
+     *
+     * <p>整条链路在后台线程执行，弹窗与按钮状态一律切回主线程；任一步退出都要把按钮
+     * 恢复可点，否则界面会卡在「执行中」。</p>
+     */
     public static void handleBatchFund(Activity activity, TaskLogCallback callback,
                                        List<KeyListItem> keyListItemList,
                                        MainDialogHelper dialogHelper,
@@ -74,8 +101,12 @@ public class BatchFundTask {
         }).start();
     }
 
-    // 工作流调用（无 UI，直接执行转账）
-
+    /**
+     * 工作流调用版充值：没有弹窗，直接把差额补齐后返回。
+     *
+     * <p>先筛出 fLGNS 余额低于单席门票（100）的账号，再由主号逐笔转差额。
+     * 每笔转账前重新读一次余额，已够就跳过；单笔失败只记日志，剩下的账号继续。</p>
+     */
     public static void executeAutoFund(List<KeyListItem> enabledList,
                                        char[] pwdCharArray,
                                        TaskLogCallback callback) {
@@ -100,6 +131,7 @@ public class BatchFundTask {
                 List<String> needFundAddrs = new ArrayList<>();
                 List<String> needFundLabels = new ArrayList<>();
 
+                // 先筛一遍需要充值的账号：余额已过 100 的不进转账队列
                 for (KeyListItem item : enabledList) {
                     // 主号保护用 keyId：地址可能已被调试开关替换，地址比较不可靠
                     if (item.keyId == masterId) continue;
@@ -129,6 +161,7 @@ public class BatchFundTask {
                 BigInteger nonce = web3j.ethGetTransactionCount(masterAddr,
                         DefaultBlockParameterName.PENDING).send().getTransactionCount();
 
+                // nonce 在主号上一路递增：同一出资方的多笔 transfer 必须串行，不能并发
                 for (int i = 0; i < needFundAddrs.size(); i++) {
                     if (Web3AndroidUtil.isCancelRequested()) {
                         if (callback != null) callback.onLog("", "FUND", "⚠用户取消充值");
@@ -173,17 +206,35 @@ public class BatchFundTask {
         }
     }
 
-    // 预览查询（供 BatchFundConfirmActivity 调用）
+    // endregion
 
-    // 每查完一个账号回调一次：done/total 给进度，detail 用于该行原位回填
+    // region 预演与校验
+
+    /**
+     * 查询进度回调（供 BatchFundConfirmActivity 使用）。
+     */
     public interface ProgressCallback {
+        /**
+         * 每查完一个账号回调一次。
+         *
+         * @param done   已完成数量
+         * @param total  待查总数（只算非主号且启用的账号）
+         * @param detail 这一行的余额/缺口，页面拿它原位回填
+         */
         void onProgress(int done, int total, FundPreviewResult.FundDetail detail);
     }
 
+    /** 不带进度回调的预览重载（一次性拿全量结果） */
     public static FundPreviewResult queryFundPreview(List<KeyListItem> enabledList) {
         return queryFundPreview(enabledList, null);
     }
 
+    /**
+     * 预览充值需求：主号卡片数据 + 每个启用账号的「当前余额 / 需要补多少」。
+     *
+     * <p>只读不写：不发交易、不改私钥库，结果交给确认页展示与二次确认。
+     * 主号自己、禁用账号都不计入缺口。</p>
+     */
     public static FundPreviewResult queryFundPreview(List<KeyListItem> enabledList, ProgressCallback callback) {
         FundPreviewResult result = new FundPreviewResult();
         try {
@@ -274,8 +325,11 @@ public class BatchFundTask {
         return result;
     }
 
-    // 内部辅助
+    // endregion
 
+    // region 主号与错误提示
+
+    /** 按 id 从库里重新加载主号条目；找不到返回 null（主号可能已被删除） */
     private static KeyStoreManager.KeyEntry findMasterEntry(KeyStoreManager mgr, long masterId) {
         List<KeyStoreManager.KeyEntry> allEntries = mgr.loadKeyEntryList();
         for (KeyStoreManager.KeyEntry e : allEntries) {
@@ -295,6 +349,14 @@ public class BatchFundTask {
         });
     }
 
+    // endregion
+
+    // region 执行流程
+
+    /**
+     * 统计本轮缺口并弹确认框。
+     * 主号自身与调试地址都不进名单：前者不该给自己转账，后者只是界面演示数据。
+     */
     private static void processBatchFund(Activity activity, TaskLogCallback callback,
                                           List<KeyListItem> keyListItemList,
                                           MainDialogHelper dialogHelper,
@@ -340,6 +402,7 @@ public class BatchFundTask {
         return enabled;
     }
 
+    /** 确认框：列出每个待补账号与合计金额，确认后走密码校验再执行 */
     private static void showConfirmDialog(Activity activity, TaskLogCallback callback,
                                            MainDialogHelper dialogHelper,
                                            ButtonStateController buttonController,
@@ -384,6 +447,12 @@ public class BatchFundTask {
         });
     }
 
+    /**
+     * 真正执行转账（后台线程）：主号签名逐笔转 fLGNS。
+     *
+     * <p>每笔前重查余额（确认页停留期间对方可能已经自行充过），结束后清零密码数组
+     * 并恢复按钮状态，避免明文密码在内存里停留。</p>
+     */
     private static void executeBatchTransfer(Activity activity, TaskLogCallback callback,
                                               KeyStoreManager ksMgr,
                                               KeyStoreManager.KeyEntry masterEntry,
@@ -450,40 +519,76 @@ public class BatchFundTask {
         });
     }
 
+    // endregion
+
+    // region 结果模型
+
+    /**
+     * 充值预览结果：主号卡片数据 + 每个启用账号的余额/缺口。
+     *
+     * <p>关键约定：{@link #error} 非空表示余额没读完，此时不能当成“无需充值”——
+     * 否则网络一抖就会把有缺口的账号当成已足够。
+     */
     public static class FundPreviewResult {
+        /** 主号是否存在且带地址；false 时其余字段均无意义 */
         public boolean hasMaster = false;
-        // 查询异常：非空表示余额没能读完（网络/节点问题），不能当成“无需充值”
+        /** 查询异常：非空表示余额没能读完（网络/节点问题），不能当成“无需充值” */
         public Exception error = null;
+        /** 主号在库里的条目（含密文），执行阶段靠它取私钥 */
         public KeyStoreManager.KeyEntry masterEntry = null;
+        /** 主号真实余额（资金源口径，单位 wei） */
         public BigInteger masterBalance = BigInteger.ZERO;
-        // 主号行展示数据：与列表主号行同源（调试开关 ON 时为替换后地址及其实查余额）
+        /** 主号行展示编号（自定义编号优先，否则 id 的 3 位格式） */
         public String masterKeyNo = null;
+        /** 主号行展示地址：与列表主号行同源（调试开关 ON 时为替换后地址） */
         public String masterShowAddr = null;
+        /** 主号行展示余额：展示地址被替换时会与 {@link #masterBalance} 不同 */
         public BigInteger masterShowBalance = BigInteger.ZERO;
+        /** 需补款的地址（执行阶段的转账目的地） */
         public List<String> needFundAddrs = new ArrayList<>();
+        /** 与 {@link #needFundAddrs} 同序的展示标签：编号 + 当前余额 */
         public List<String> needFundLabels = new ArrayList<>();
+        /** 每个启用账号一行的明细，确认页直接拿来铺列表 */
         public List<FundDetail> fundDetails = new ArrayList<>();
+        /** 全部缺口汇总（单位 wei） */
         public BigInteger totalNeeded = BigInteger.ZERO;
 
+        /** 是否真的需要补款：主号存在且有缺口地址 */
         public boolean needsFunding() { return hasMaster && !needFundAddrs.isEmpty(); }
 
+        /** 主号余额转展示用小数值（18 位精度、保留 2 位） */
         public BigDecimal getMasterBalanceFormatted() {
             return new BigDecimal(masterBalance).divide(
                     new BigDecimal(BigInteger.TEN.pow(18)), 2, java.math.RoundingMode.HALF_UP);
         }
 
+        /** 汇总缺口转展示用小数值（18 位精度、保留 2 位） */
         public BigDecimal getTotalNeededFormatted() {
             return new BigDecimal(totalNeeded).divide(
                     new BigDecimal(BigInteger.TEN.pow(18)), 2, java.math.RoundingMode.HALF_UP);
         }
 
+        /**
+         * 单个账号的充值明细（金额已换算成小数，直接可上屏）。
+         */
         public static class FundDetail {
+            /** 账号展示编号 */
             public String keyNo;
+            /** 收款地址 */
             public String address;
+            /** 当前余额（已换算，2 位小数） */
             public BigDecimal currentBalance;
+            /** 还需补多少（已换算，2 位小数；已够时为 0） */
             public BigDecimal neededAmount;
+            /** 余额是否已达入场费；由查询方回填，确定后才能决定行样式 */
             public boolean sufficient;
 
+            /**
+             * 构造明细行：金额必须已经换算成小数（不是 wei），本类不再做单位转换。
+             *
+             * <p>{@code sufficient} 不在这里赋值：余额要等链上查询回来才知道，
+             * 由调用方在拿到结果后置位，默认 false 表示“还没确认够不够”。</p>
+             */
             public FundDetail(String keyNo, String address, BigDecimal currentBalance, BigDecimal neededAmount) {
                 this.keyNo = keyNo;
                 this.address = address;
@@ -492,4 +597,7 @@ public class BatchFundTask {
             }
         }
     }
+
+    // endregion
+
 }

@@ -7,23 +7,58 @@ import com.lgns.manager.AppPrefs;
 
 import java.math.BigInteger;
 
+/**
+ * 全局配置中心：链上常量、RPC 节点、交易参数，以及用户可持久化的几项配置。
+ *
+ * <p>分层：</p>
+ * <ul>
+ *   <li>编译期常量：节点、合约地址、链 ID、手续费/批次相关数值、超时与重试；
+ *   数值口径必须与合约 {@code FunLonginusArena} 保持一致，改合约就要同步这里。</li>
+ *   <li>静态可变字段：自动清理、日志保留、入场模式等，通过 {@link #loadConfig} / {@link #saveConfig}
+ *   在 SharedPreferences 与内存之间同步，页面直接读写这两个静态字段。</li>
+ * </ul>
+ *
+ * <p>使用注意：带 {@code volatile} 的字段会被任务线程与 UI 线程共享；
+ * 其余静态配置字段只在主线程改、后台线程读，不做额外同步。</p>
+ */
 public class ArenaConfig {
-    // 三个节点做熔断轮换
+
+    // region 网络与链上地址
+
+    /** 三个 RPC 节点：按顺序轮换 + 熔断，单节点宕机不会让整批任务停摆 */
     public static final String[] RPC_URLS = {
             "https://rpc.anubispace.org",
             "https://rpc1.anubispace.org",
             "https://rpc2.anubispace.org",
     };
-    // 兼容旧字段,始终指向首个节点。业务代码请改用 RPC_URLS + Web3AndroidUtil.rotateWeb3j()
+    /** 兼容旧字段，始终指向首个节点。业务代码请改用 RPC_URLS + Web3AndroidUtil.rotateWeb3j() */
     public static final String RPC_URL = RPC_URLS[0];
 
+    /** 擂台合约地址（FunLonginusArena）：入场、领取、统计查询都打这个地址 */
     public static final String ARENA_ADDR = "0xff060bAB41e16eBF0eFE4FAd454404Fd5f75aAaA";
+
+    /**
+     * Gas 币：本链的手续费是一枚 ERC20（Dai Stablecoin）。
+     *
+     * <p>eth_getBalance 与它的 balanceOf 完全相等，但原生 value 转账会被节点按「余额不足」拒绝，
+     * 所以补 Gas 只能给它做 transfer。</p>
+     */
+    public static final String GAS_TOKEN_ADDR = "0x83fd06F0846d9D90B3016bF670Efe2E0B11cDe14";
+
+    /** 链 ID：签交易时写进 EIP-155，防跨链重放；pending 恢复时也用它校验是否同一条链 */
     public static final long CHAIN_ID = 6714L;
 
-    // ==================== 调试专用（发版前必须置为 false） ====================
-    // 开启后：主界面列表不再按私钥数量出数，而是把下面的地址池全部列出（按分组平分），
-    // 锦标赛统计同步按这些地址出数；只改内存不写库，私钥管理页与批量任务仍用真实私钥。
-    // 仅用于看界面效果
+    // endregion
+
+    // region 调试开关与地址池
+
+    /**
+     * 调试展示开关（发版前必须置为 false）。
+     *
+     * <p>开启后：主界面列表不再按私钥数量出数，而是把下面的地址池全部列出（按分组平分），
+     * 锦标赛统计同步按这些地址出数；只改内存不写库，私钥管理页与批量任务仍用真实私钥。
+     * 仅用于看界面效果。</p>
+     */
     public static final boolean DEBUG_FIXED_ADDR_ENABLE = false;
     /**
      * 调试展示地址池：每条地址都作为主界面的一行，按分组顺序平分到各分组
@@ -93,70 +128,126 @@ public class ArenaConfig {
         return false;
     }
 
+    // endregion
 
-    // Squad 合约地址: null 表示未部署/未配置,部署后由用户设置
+    // region Squad 委托（EIP-7702）
+
+    /** Squad 合约地址：null 表示未部署/未配置，部署后由用户设置 */
     public static volatile String SQUAD_ADDR = null;
-    // 主号私钥(用于 Squad 模式的 SetCodeTx 委托 + 批量交易签名)
-    // 运行时由 UI 层设置,任务结束后清零
+
+    /**
+     * 主号私钥（用于 Squad 模式的 SetCodeTx 委托 + 批量交易签名）。
+     * 运行时由 UI 层设置，任务结束后清零。
+     */
     public static volatile String MASTER_PK = null;
 
-    // 入场费 100*10^18
+    // endregion
+
+    // region 合约常量（与 FunLonginusArena 对齐）
+
+    /** 入场费 100 * 10^18（合约 ENTRY_FEE）：每场先扣门票，本场结束再按名次返还 */
     public static final BigInteger ENTRY_FEE = BigInteger.valueOf(100).multiply(BigInteger.TEN.pow(18));
+    /** 甲子俸单页领取上限 64（合约 MAX_JIAZI_BATCH）：服务端限制每次调用最多释放 64 条记录 */
     public static final BigInteger MAX_JIAZI_BATCH = BigInteger.valueOf(64);
+    /** 日切偏移 8 小时：合约按 UTC+8 算「今天」，本地算今日场次时必须加上这个偏移 */
     public static final long DAY_OFFSET = 8 * 3600L;
 
-    // Gas limit 常量（参考 Go/Python/wlClient_1 项目）
-    public static final BigInteger GAS_LIMIT_ENTER_ARENA = BigInteger.valueOf(1500000);
-    public static final BigInteger GAS_LIMIT_CLAIM_JIAZI = BigInteger.valueOf(300000);
-    public static final BigInteger GAS_LIMIT_CLAIM_LINEAGE = BigInteger.valueOf(300000);
-    public static final BigInteger GAS_LIMIT_CLAIM_REWARDS = BigInteger.valueOf(200000);
-    public static final BigInteger GAS_LIMIT_ERC20_TRANSFER = BigInteger.valueOf(100000);
+    // endregion
 
-    // 交易回执最大等待秒
+    // region Gas limit
+
+    /** 入场：同一笔调用里还要顺带结算与累计师徒分成，实测 gas 远高于普通 transfer，留足余量 */
+    public static final BigInteger GAS_LIMIT_ENTER_ARENA = BigInteger.valueOf(1500000);
+    /** 领取甲子俸：内部要遍历释放记录并逐笔转账，按 300k 预估 */
+    public static final BigInteger GAS_LIMIT_CLAIM_JIAZI = BigInteger.valueOf(300000);
+    /** 领取师徒分成：与甲子俸同为「遍历 + 转账」流程，沿用同一档 gas 便于排查 */
+    public static final BigInteger GAS_LIMIT_CLAIM_LINEAGE = BigInteger.valueOf(300000);
+    /** 领取擂台奖金：单笔转账型操作，200k 足够 */
+    public static final BigInteger GAS_LIMIT_CLAIM_REWARDS = BigInteger.valueOf(200000);
+    /** 普通 ERC20 transfer（批量转账收款方入账等场景） */
+    public static final BigInteger GAS_LIMIT_ERC20_TRANSFER = BigInteger.valueOf(100000);
+    /** 补 Gas 走 GAS_TOKEN 的 transfer：实测 gasUsed ≈ 34,768，留一倍余量防 OOG */
+    public static final BigInteger GAS_LIMIT_GAS_TOKEN_TRANSFER = BigInteger.valueOf(80000);
+
+    // endregion
+
+    // region 超时与重试
+
+    /** 交易回执最大等待秒：超过仍未出块则按 pending 处理，交给恢复流程判断 */
     public static final int TX_TIMEOUT_SEC = 180;
-    // 回执轮询间隔毫秒
+    /** 回执轮询间隔毫秒：过密会打满节点，过疏又拉长单笔耗时 */
     public static final long TX_WAIT_POLL_MS = 1200L;
-    // 单次 RPC 调用超时秒
+    /** 单次 RPC 调用（eth_call/eth_getTransactionReceipt）超时秒 */
     public static final int RPC_CALL_TIMEOUT_SEC = 10;
-    // Dial/连接超时秒
+    /** 建立连接超时秒：节点宕机时能尽快切到下一个 */
     public static final int RPC_DIAL_TIMEOUT_SEC = 8;
-    // 业务调用最大重试次数 = 节点数 * 2
+    /** 业务调用最大重试次数 = 节点数 * 2：保证每个节点至少被轮到一次半 */
     public static final int RPC_MAX_RETRY = RPC_URLS.length * 2;
 
-    // 整批 gas 上限护栏:预估 gas 超过区块 gasLimit * 该比例 → 拒发
+    // endregion
+
+    // region 查询分片与护栏
+
+    /** 整批 gas 上限护栏：预估 gas 超过区块 gasLimit * 该比例 → 拒发 */
     public static final int BLOCK_GAS_LIMIT_MARGIN_PCT = 85;
 
-    // 批量查询单批切片大小
+    /** 批量查询单批切片大小：一次 eth_call 里打包多少个账号的查询 */
     public static final int BATCH_CALL_SIZE = 80;
 
-    // 主界面统计的分片大小：每片回来就回填一次界面（地址多时不必等全部查完才出数）。
-    // 取 10 的两个理由：
-    // 1) 手机首屏大概就能看到 5~10 行，一片正好盖住"看得见的范围"，首片回来屏幕就满上；
-    // 2) OkHttp 默认 5 连接/host，10 = 2 个波次，不浪费也不抢队。
-    // 首片回来就会放开操作按钮，调大等于把首屏等待拉长
+    /**
+     * 主界面统计的分片大小：每片回来就回填一次界面（地址多时不必等全部查完才出数）。
+     *
+     * <p>取 10 的两个理由：</p>
+     * <ol>
+     *   <li>手机首屏大概就能看到 5~10 行，一片正好盖住「看得见的范围」，首片回来屏幕就满上；</li>
+     *   <li>OkHttp 默认 5 连接/host，10 = 2 个波次，不浪费也不抢队。</li>
+     * </ol>
+     * <p>首片回来就会放开操作按钮，调大等于把首屏等待拉长。</p>
+     */
     public static final int STATS_CHUNK_SIZE = 10;
 
-    // 空闲自动上锁秒;到期后 AppGlobal 会 sKeyStoreManager = null,并强制要求重新解锁
+    // endregion
+
+    // region 会话与 pending
+
+    /** 空闲自动上锁秒；到期后 AppGlobal 会 sKeyStoreManager = null，并强制要求重新解锁 */
     public static final long IDLE_LOCK_SEC = 30 * 60L;
 
-    // Pending 状态超过该时长仍未回执,且账户当前 nonce > 记录 nonce → 判为 nonce-consumed
+    /** Pending 状态超过该时长仍未回执，且账户当前 nonce > 记录 nonce → 判为 nonce-consumed */
     public static final long PENDING_STALE_SEC = 5 * 60L;
 
-    // 自动清除私钥
+    // endregion
+
+    // region 用户配置（内存镜像，与 SP 同步）
+
+    /** 私钥自动清除总开关：到期待清除时启动即清空全部私钥，默认关闭 */
     public static boolean autoClearEnable = false;
+    /** 私钥清除间隔数值，与 unitIndex 组成「N 分钟/小时/天」 */
     public static int autoClearIntervalValue = 1; // 默认1
+    /** 间隔单位：0=分钟，1=小时，2=天 */
     public static int autoClearIntervalUnitIndex = 1; // 0=分钟,1=小时,2=天
 
-    // 入场模式
+    /** 入场模式：0=能打就打，1=等齐再打（对应 MainActivity.MODE_*） */
     public static int playModeIndex = 0; // 0=能打就打,1=等齐再打
 
-    // 自动清除日志（独立开关：只删除早于间隔的旧记录，保留最近数据）
-    // 默认启用 + 默认保留 1 天：日志只留最近一天，数据库不会无限膨胀
+    /**
+     * 日志自动清除（独立开关：只删除早于间隔的旧记录，保留最近数据）。
+     * 默认启用 + 默认保留 1 天：日志只留最近一天，数据库不会无限膨胀。
+     */
     public static boolean logClearEnable = true;
+    /** 日志保留间隔数值，与 unitIndex 组成「N 分钟/小时/天」 */
     public static int logClearIntervalValue = 1;
+    /** 日志保留单位：0=分钟，1=小时，2=天 */
     public static int logClearIntervalUnitIndex = 2; // 0=分钟,1=小时,2=天
 
-    // 保存配置
+    // endregion
+
+    // region 配置读写
+
+    /**
+     * 把内存里的用户配置落盘（七个 key，一次性写入）。
+     * 只存用户可选项，不碰链上常量与调试开关。
+     */
     public static void saveConfig(Context context) {
         SharedPreferences sp = AppPrefs.get(context);
         SharedPreferences.Editor editor = sp.edit();
@@ -172,7 +263,12 @@ public class ArenaConfig {
         editor.apply();
     }
 
-    // 加载配置
+    /**
+     * 读配置并回填静态字段。
+     *
+     * <p>日志保留时长做了存量脏配置兜底：数值非正、单位越界都回落到默认的 1 天，
+     * 否则 {@code getIntervalInMinutes()} 会算出 0 或负数，清理永远等不到触发。</p>
+     */
     public static void loadConfig(Context context) {
         SharedPreferences sp = AppPrefs.get(context);
 
@@ -188,4 +284,6 @@ public class ArenaConfig {
         logClearIntervalValue = lv > 0 ? lv : 1;
         logClearIntervalUnitIndex = (lu >= 0 && lu <= 2) ? lu : 2;
     }
+
+    // endregion
 }

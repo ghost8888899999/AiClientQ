@@ -34,45 +34,104 @@ import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 
+/**
+ * Arena 合约的最小化链上访问层：全部方法都是手写 ABI 编码/解码 + 手写交易流程，
+ * 不依赖 web3j 的合约封装（ {@code FunctionReturnDecoder} 在 API 24 上会因
+ * {@code BigInteger(byte[],int,int)} 缺失而 {@code NoSuchMethodError} 崩溃）。
+ *
+ * <p>三条主线：</p>
+ * <ul>
+ *   <li>只读查询：{@code eth_call} 拿 hex 回来自己按字（32 字节）切，失败一律降级不抛异常；</li>
+ *   <li>交易写入：签名 → {@code PreBroadcastHook} 落盘 → 广播 → 等回执，回执失败抛
+ *   {@link RevertedTxException} 供业务区分 revert 与超时；</li>
+ *   <li>批量查询：{@code sendAsync} 真并发（受 OkHttp 默认 5 连接/host 限流），
+ *   整批失败随时降级成逐个串行，宁可慢不可丢。</li>
+ * </ul>
+ *
+ * <p>本链特别注意：Gas 币是一枚 ERC20（{@link ArenaConfig#GAS_TOKEN_ADDR}），
+ * {@code eth_getBalance} 与它的 {@code balanceOf} 完全相等，但原生 value 转账会被节点以
+ * “余额不足”拒掉，所以补 Gas 只能走 {@code transfer}，{@link #signRawTx} 固定 value=0 刚好适用。</p>
+ */
 public class ArenaContractApi {
-    // 值统一收敛到 ArenaConfig，类内保留字段名以最小改动
+    // region 常量与缓存
+
+    /** Arena 合约地址（值统一收敛到 ArenaConfig，类内保留字段名以最小改动） */
     public static final String ARENA_ADDR = ArenaConfig.ARENA_ADDR;
+    /** 链 ID：写进签名 v 值，设错节点会拒收 */
     public static final long CHAIN_ID = ArenaConfig.CHAIN_ID;
+    /** 等回执的轮询间隔（毫秒） */
     public static final long TX_WAIT_POLL_MS = ArenaConfig.TX_WAIT_POLL_MS;
+    /** 等回执的最大轮询次数：超时秒数 / 轮询间隔，换算一次避免每轮重算 */
     public static final int TX_WAIT_MAX_CNT =
             (int) (ArenaConfig.TX_TIMEOUT_SEC * 1000L / ArenaConfig.TX_WAIT_POLL_MS);
 
+    /**
+     * 合约里 {@code TOKEN()} 查询结果的进程缓存。
+     *
+     * <p>币地址在部署后就固定了，没必要每次转账都发一次 {@code eth_call}；
+     * {@code volatile} 保证多线程读到的不是半初始化值，不追求严格单次读取。</p>
+     */
     private static volatile String cachedTokenAddress;
 
     /** PlayerSummary 输出 ABI 原型(共用,避免重复构造) */
     private static final List<TypeReference<?>> PLAYER_SUMMARY_OUTPUTS = buildPlayerSummaryOutputs();
 
+    // endregion
+
+    // region 数据模型
+
     /**
-     * Represents a summary of a player's game statistics and financial information.
+     * {@code playerSummary(address)} 的返回解构（共 16 个字，下标即 ABI 顺序）。
+     *
+     * <p>金额单位都是 wei（18 位小数）；构造即全部给 0/false，
+     * 解码时某个字越界就保留默认值而不是抛异常，避免一个字段异常拖垮整行展示。</p>
      */
     public static class PlayerSummary {
+        /** [0] 钱包内 ERC20 余额（本链即 Gas 币余额） */
         public BigInteger walletBalance = BigInteger.ZERO;
+        /** [1] 钱包给 Arena 的授权额度 */
         public BigInteger allowance = BigInteger.ZERO;
+        /** [2] 累计奖金池（可抵入场费） */
         public BigInteger prize = BigInteger.ZERO;
+        /** [3] 当前比赛中的押金 */
         public BigInteger inMatchDeposit = BigInteger.ZERO;
+        /** [4] 累计入场次数 */
         public BigInteger arenaTotal = BigInteger.ZERO;
+        /** [5] 累计对局数 */
         public BigInteger battles = BigInteger.ZERO;
+        /** [6] 累计冠军次数 */
         public BigInteger championships = BigInteger.ZERO;
+        /** [7] 累计发放的甲子总数 */
         public BigInteger jiaziTotalGranted = BigInteger.ZERO;
+        /** [8] 已释放（可领）的甲子 */
         public BigInteger jiaziReleased = BigInteger.ZERO;
+        /** [9] 当前可领取的甲子（{@code claimJiazi} 的入参依据） */
         public BigInteger jiaziClaimable = BigInteger.ZERO;
+        /** [10] 甲子是否因上限被截断（发放超限时的标记） */
         public boolean jiaziTruncated;
+        /** [11] 今日已入场次数 */
         public BigInteger entriesToday = BigInteger.ZERO;
+        /** [12] 今日剩余入场次数：为 0 说明已打满，不必再发交易 */
         public BigInteger entriesRemainingToday = BigInteger.ZERO;
+        /** [13] 奖金能自动抵掉多少场入场费 */
         public BigInteger roundsFromPrize = BigInteger.ZERO;
+        /** [14] 下一场入场费是否由奖金支付 */
         public boolean nextEntryFromPrize;
+        /** [15] 是否已在当前轮入座：入座则不能重复入场 */
         public boolean seatedInCurrentRound;
     }
 
-    // ==================================================================
-    // 只读查询
-    // ==================================================================
+    // endregion
 
+    // region 只读查询
+
+    /**
+     * 查询单个地址的完整玩家概览（主界面卡片与批量任务的主要数据源）。
+     *
+     * <p>只打 logcat 不落库：批量刷新时每个账号都会走到这里，写 DB 会迅速撑大日志库。</p>
+     *
+     * @throws Exception RPC 返回错误或返回数据长度不足 1024 个 hex（16 个字）
+     */
     public static PlayerSummary callPlayerSummary(Web3j web3j, String playerAddr) throws Exception {
         String data = encodePlayerSummaryData(playerAddr);
         EthCall ethCall = web3j.ethCall(
@@ -89,9 +148,13 @@ public class ArenaContractApi {
     }
 
     /**
-     * 批量查询 playerSummary
-     * 用 web3j 的 sendAsync() + CompletableFuture 做真并发(OkHttp 默认 5 连接/host * 池)
-     * 失败降级到逐个 send();单批最多 ArenaConfig.BATCH_CALL_SIZE,超过自动切片
+     * 批量查询 playerSummary。
+     *
+     * <p>用 {@code sendAsync()} + {@code CompletableFuture} 做真并发，按
+     * {@code ArenaConfig.BATCH_CALL_SIZE} 切片；某一整批失败（超时/异常）就降级成逐个查，
+     * 单个地址失败只丢那一条，不影响其他地址。</p>
+     *
+     * @return 地址 → 概览，按输入顺序；查不到的地址不会出现在结果里
      */
     public static Map<String, PlayerSummary> callPlayerSummaryBatch(
             Web3j web3j, Collection<String> playerAddrs) {
@@ -113,6 +176,12 @@ public class ArenaContractApi {
         return out;
     }
 
+    /**
+     * 把一批地址用 {@code sendAsync} 一次发出去再统一等（降级前的主路径）。
+     *
+     * <p>超时给两倍 {@code RPC_CALL_TIMEOUT_SEC}：并发下单个请求的排队时间比串行长，
+     * 按单请求超时算会把正常批次误判为失败，白白触发降级。</p>
+     */
     private static Map<String, PlayerSummary> doOneBatchViaSendAsync(Web3j web3j, List<String> slice) throws Exception {
         List<CompletableFuture<EthCall>> futures = new ArrayList<>(slice.size());
         for (String addr : slice) {
@@ -148,6 +217,11 @@ public class ArenaContractApi {
         }
     }
 
+    /**
+     * 查询地址已发放的甲子总数（{@code jiaziCount}）。
+     *
+     * @throws Exception RPC 返回错误；返回值异常时按 0 处理
+     */
     public static BigInteger callJiaziCount(Web3j web3j, String owner) throws Exception {
         List<Type> inputs = new ArrayList<Type>();
         inputs.add(new Address(owner));
@@ -165,6 +239,12 @@ public class ArenaContractApi {
         return decodeUint256At(hexValue, 0);
     }
 
+    /**
+     * 查询今日对局数（{@code activityOf} 的返回元组取第 3 个字）。
+     *
+     * <p>约定：调用方拿到的 {@code null} 表示“没查到”，不是 0；
+     * 展示时要区分成 {@code --}，否则会把网络失败误报成“今日未打”。</p>
+     */
     public static Integer callActivityOfMatchesToday(Web3j web3j, String owner) {
         try {
             List<Type> inputs = new ArrayList<Type>();
@@ -256,9 +336,15 @@ public class ArenaContractApi {
         return out;
     }
 
-    // playerHistoryLatest(address,uint256) 的 4 字节选择器（与部署合约字节码一致）
+    /** playerHistoryLatest(address,uint256) 的 4 字节选择器（与部署合约字节码一致） */
     private static final String SEL_PLAYER_HISTORY_LATEST = "0x2e1f91b9";
-
+    
+    /**
+     * 手拼调用数据：selector + 地址（左补 0 到 32 字节）+ count。
+     *
+     * <p>count 固定传 100：合约按最近 N 条返回，取 100 足够覆盖一天的对局；
+     * 传大了白白浪费带宽（每条记录 512 个 hex）。</p>
+     */
     private static String encodePlayerHistoryLatestData(String owner) {
         String addrNo0x = Numeric.cleanHexPrefix(owner);
         String countHex = Numeric.toHexStringNoPrefixZeroPadded(BigInteger.valueOf(100), 64);
@@ -307,6 +393,12 @@ public class ArenaContractApi {
         }
     }
 
+    /**
+     * 读合约的 {@code TOKEN()} 得到币地址，结果进 {@link #cachedTokenAddress}。
+     *
+     * <p>手动取末尾 40 个 hex 当地址，不走 {@code FunctionReturnDecoder}（API 24 兼容问题）。
+     * 只认成功结果：失败直接抛，不能缓存空值，否则一次 RPC 抖动会把币地址永久定死。</p>
+     */
     private static String readTokenAddress(Web3j web3j) throws Exception {
         String cached = cachedTokenAddress;
         if (cached != null) return cached;
@@ -330,28 +422,42 @@ public class ArenaContractApi {
         return addr;
     }
 
+    /** 对外暴露币合约地址（首次调用会发一次 RPC，之后走缓存） */
     public static String getTokenAddress(Web3j web3j) throws Exception {
         return readTokenAddress(web3j);
     }
 
-    // ==================================================================
-    // 三段式交易广播流程（预检查 → 发送 → 确认）
-    // ==================================================================
+    // endregion
 
-    /** 广播前 hook:让业务方先把 txHash+rawTx 落 SP */
+    // region 交易链路：签名 → 广播 → 等回执
+
+    /** 广播前 hook:让业务方先把 txHash+rawTx 落 SP，以便崩溃后能原样重发 */
     public interface PreBroadcastHook {
+        /**
+         * 签名完成、尚未广播时回调（在调用线程同步执行，必须自己保证足够快）。
+         *
+         * @param txHash   本地算出的交易哈希，异常时可拿它去链上反查
+         * @param rawTxHex 完整的签名交易体，恢复时直接重发这一串即可
+         */
         void onSigned(String txHash, String rawTxHex);
     }
 
-    /** 让业务侧区分 reverted / timeout,便于写 outcome */
+    /** 交易已上链但执行失败（revert）；与超时区分开，业务据此判定能否重试 */
     public static class RevertedTxException extends Exception {
+        /** 已上链的失败交易哈希，供业务回查与写 outcome */
         public final String txHash;
+
+        /** @param txHash 已上链的失败交易哈希，供业务回查与写 outcome */
         public RevertedTxException(String msg, String txHash) { super(msg); this.txHash = txHash; }
     }
 
+    /** 签名结果：rawTx 用于广播，txHash 用于本地先落盘再发（不依赖 RPC 回包） */
     public static class SignedTx {
+        /** 签名后的完整交易体（hex），直接可送 {@code eth_sendRawTransaction} */
         public final String rawTxHex;
+        /** {@code keccak256(signedRLP)}，本地算出，与节点回包一致 */
         public final String txHash;
+        /** 纯数据载体：两个字段都是最终广播值 */
         public SignedTx(String rawTxHex, String txHash) {
             this.rawTxHex = rawTxHex;
             this.txHash = txHash;
@@ -359,8 +465,12 @@ public class ArenaContractApi {
     }
 
     /**
-     * 只做签名,不广播
-     * txHash = keccak256(signedRLP),本地算,不依赖 RPC
+     * 只做签名,不广播。
+     *
+     * <p>txHash = keccak256(signedRLP)，本地算，不依赖 RPC；
+     * value 固定 0（本链所有写入都不带原生币，带上去会被节点拒绝）。</p>
+     *
+     * @param gasLimit 由业务传（合约不允许估低），本方法不自行估算
      */
     public static SignedTx signRawTx(ECKeyPair ecKeyPair, BigInteger nonce, BigInteger gasPrice,
                                      BigInteger gasLimit, String toAddr, String data) {
@@ -375,8 +485,10 @@ public class ArenaContractApi {
     }
 
     /**
-     * 广播一次;若节点返回 already known/imported,视为已在链上,吞掉异常继续 waitReceipt
-     * @return RPC 返回的 txHash(可能与本地算的一致);alreadyInFlight 时返回 null
+     * 广播一次；若节点返回 already known/imported，视为已在链上，吞掉异常继续等回执。
+     *
+     * @return RPC 返回的 txHash（可能与本地算的一致）；alreadyInFlight 时返回 null，
+     * 调用方需回退到本地 txHash 继续等
      */
     public static String broadcastRaw(Web3j web3j, String hexSigned) throws Exception {
         EthSendTransaction sendResp = web3j.ethSendRawTransaction(hexSigned).send();
@@ -391,7 +503,12 @@ public class ArenaContractApi {
         return sendResp.getTransactionHash();
     }
 
-    /** 等回执(带 revert / timeout 分类,方便写 outcome) */
+    /**
+     * 轮询等回执：成功返回回执，status=0 抛 {@link RevertedTxException}，轮完仍未出块则抛超时。
+     *
+     * <p>三种结果必须分开：revert 不能重试（重发只会再 revert），超时可以重查，
+     * 成功则进入后续业务状态更新。</p>
+     */
     public static TransactionReceipt waitReceiptLocal(Web3j web3j, String txHash) throws Exception {
         for (int i = 0; i < TX_WAIT_MAX_CNT; i++) {
             EthGetTransactionReceipt receiptResp = web3j.ethGetTransactionReceipt(txHash).send();
@@ -408,6 +525,12 @@ public class ArenaContractApi {
         throw new Exception("wait receipt timeout, hash=" + txHash);
     }
 
+    /**
+     * 签名 → 落盘 hook → 广播 → 等回执，全链路一气完成。
+     *
+     * <p>hook 调在广播之前是关键顺序：先落盘才能保证“链上可能已存在、本地却没记录”的窗口为 0；
+     * 广播返回 null（已在飞行中）时回退用本地算的 txHash 继续等，不重发。</p>
+     */
     private static TransactionReceipt sendRawTxAndWaitReceipt(
             Web3j web3j, ECKeyPair ecKeyPair, BigInteger nonce, BigInteger gasPrice, BigInteger gasLimit,
             String toAddr, String data, PreBroadcastHook preBroadcastHook) throws Exception {
@@ -420,17 +543,23 @@ public class ArenaContractApi {
         return waitReceiptLocal(web3j, txHash);
     }
 
-    /** 旧签名保留兼容,内部委托到新版 */
+    /** 不关心落盘时的便捷重载（内部委托到带 hook 的版本） */
     private static TransactionReceipt sendRawTxAndWaitReceipt(
             Web3j web3j, ECKeyPair ecKeyPair, BigInteger nonce, BigInteger gasPrice, BigInteger gasLimit,
             String toAddr, String data) throws Exception {
         return sendRawTxAndWaitReceipt(web3j, ecKeyPair, nonce, gasPrice, gasLimit, toAddr, data, null);
     }
 
-    // ==================================================================
-    // SetCode (EIP-7702) 交易:接受预签名的 rawTxHex
-    // ==================================================================
+    // endregion
 
+    // region SetCode（EIP-7702）交易
+
+    /**
+     * 接受已预签名的 SetCode 交易（type=0x04）直接广播并等回执。
+     *
+     * <p>没有“签名”环节：调用方已经用 {@code SetCodeTx.sign} 签好，这里只做
+     * 落盘 hook → 广播 → 等回执，与普通交易保持同一套失败分类。</p>
+     */
     public static TransactionReceipt sendSetCodeRawAndWaitReceipt(
             Web3j web3j, String rawTxHex, String localTxHash,
             PreBroadcastHook preBroadcastHook) throws Exception {
@@ -442,10 +571,16 @@ public class ArenaContractApi {
         return waitReceiptLocal(web3j, txHash);
     }
 
-    // ==================================================================
-    // 业务写入函数(带 / 不带 PreBroadcastHook 两版)
-    // ==================================================================
+    // endregion
 
+    // region 业务写入函数
+
+    /**
+     * 授权 Arena 合约花掉自己的 ERC20（{@code transferFrom} 的前提）。
+     *
+     * <p>gasLimit 固定 10 万：approve 的消耗与额度无关，实测远低于此值，
+     * 固定值比估算更稳（估算在某些 RPC 上会直接 revert）。</p>
+     */
     public static TransactionReceipt doApproveArena(Web3j web3j, ECKeyPair ecKeyPair, BigInteger amount,
                                                     BigInteger nonce, BigInteger gasPrice,
                                                     PreBroadcastHook hook) throws Exception {
@@ -457,16 +592,23 @@ public class ArenaContractApi {
         return sendRawTxAndWaitReceipt(web3j, ecKeyPair, nonce, gasPrice, gasLimit, tokenContract, txData, hook);
     }
 
+    /** 授权 Arena 的便捷重载（不需要崩溃恢复） */
     public static TransactionReceipt doApproveArena(Web3j web3j, ECKeyPair ecKeyPair, BigInteger amount,
                                                     BigInteger nonce, BigInteger gasPrice) throws Exception {
         return doApproveArena(web3j, ecKeyPair, amount, nonce, gasPrice, null);
     }
 
+    /** 入场（使用 {@link ArenaConfig#GAS_LIMIT_ENTER_ARENA} 默认 gas 上限） */
     public static TransactionReceipt doEnterArena(Web3j web3j, ECKeyPair ecKeyPair, BigInteger nonce,
                                                   BigInteger gasPrice, PreBroadcastHook hook) throws Exception {
         return doEnterArena(web3j, ecKeyPair, nonce, gasPrice, ArenaConfig.GAS_LIMIT_ENTER_ARENA, hook);
     }
 
+    /**
+     * 入场（{@code enterArena()}，无参）。
+     *
+     * <p>入场费可由奖金或钱包余额支付，具体走哪条由合约内部判断，客户端只管发交易。</p>
+     */
     public static TransactionReceipt doEnterArena(Web3j web3j, ECKeyPair ecKeyPair, BigInteger nonce,
                                                   BigInteger gasPrice, BigInteger gasLimit,
                                                   PreBroadcastHook hook) throws Exception {
@@ -475,11 +617,18 @@ public class ArenaContractApi {
         return sendRawTxAndWaitReceipt(web3j, ecKeyPair, nonce, gasPrice, gasLimit, ARENA_ADDR, data, hook);
     }
 
+    /** 入场的便捷重载（不需要崩溃恢复） */
     public static TransactionReceipt doEnterArena(Web3j web3j, ECKeyPair ecKeyPair, BigInteger nonce,
                                                   BigInteger gasPrice) throws Exception {
         return doEnterArena(web3j, ecKeyPair, nonce, gasPrice, null);
     }
 
+    /**
+     * 领取甲子（{@code claimJiazi(start,count)}）。
+     *
+     * <p>无返回值：结果只靠是否抛异常判断；start/count 通常来自
+     * {@link PlayerSummary#jiaziClaimable} 的区间划分。</p>
+     */
     public static void doClaimJiazi(Web3j web3j, ECKeyPair ecKeyPair, BigInteger start, BigInteger count,
                                     BigInteger nonce, BigInteger gasPrice, PreBroadcastHook hook) throws Exception {
         List<Type> inputs = Arrays.<Type>asList(new Uint256(start), new Uint256(count));
@@ -488,11 +637,13 @@ public class ArenaContractApi {
         sendRawTxAndWaitReceipt(web3j, ecKeyPair, nonce, gasPrice, ArenaConfig.GAS_LIMIT_CLAIM_JIAZI, ARENA_ADDR, data, hook);
     }
 
+    /** 领取甲子的便捷重载（不需要崩溃恢复） */
     public static void doClaimJiazi(Web3j web3j, ECKeyPair ecKeyPair, BigInteger start, BigInteger count,
                                     BigInteger nonce, BigInteger gasPrice) throws Exception {
         doClaimJiazi(web3j, ecKeyPair, start, count, nonce, gasPrice, null);
     }
 
+    /** 领取血脉（{@code claimLineage()}，无参，gas 上限取配置常量） */
     public static void doClaimLineage(Web3j web3j, ECKeyPair ecKeyPair, BigInteger nonce, BigInteger gasPrice,
                                       PreBroadcastHook hook) throws Exception {
         Function func = new Function("claimLineage", new ArrayList<Type>(), new ArrayList<TypeReference<?>>());
@@ -501,10 +652,12 @@ public class ArenaContractApi {
                 ArenaConfig.GAS_LIMIT_CLAIM_LINEAGE, ARENA_ADDR, data, hook);
     }
 
+    /** 领取血脉的便捷重载（不需要崩溃恢复） */
     public static void doClaimLineage(Web3j web3j, ECKeyPair ecKeyPair, BigInteger nonce, BigInteger gasPrice) throws Exception {
         doClaimLineage(web3j, ecKeyPair, nonce, gasPrice, null);
     }
 
+    /** 领取奖励（{@code claimRewards()}，无参） */
     public static void doClaimRewards(Web3j web3j, ECKeyPair ecKeyPair, BigInteger nonce, BigInteger gasPrice,
                                       PreBroadcastHook hook) throws Exception {
         Function func = new Function("claimRewards", new ArrayList<Type>(), new ArrayList<TypeReference<?>>());
@@ -513,26 +666,49 @@ public class ArenaContractApi {
                 ArenaConfig.GAS_LIMIT_CLAIM_REWARDS, ARENA_ADDR, data, hook);
     }
 
+    /** 领取奖励的便捷重载（不需要崩溃恢复） */
     public static void doClaimRewards(Web3j web3j, ECKeyPair ecKeyPair, BigInteger nonce, BigInteger gasPrice) throws Exception {
         doClaimRewards(web3j, ecKeyPair, nonce, gasPrice, null);
     }
 
-    // ==================================================================
-    // ERC20 转账（主号充值用）
-    // ==================================================================
+    // endregion
 
+    // region ERC20 转账与余额（主号充值用）
+
+    /** 把合约默认 ERC20（{@code TOKEN()}）转给指定地址，gas 上限取配置常量 */
     public static TransactionReceipt doErc20Transfer(Web3j web3j, ECKeyPair ecKeyPair,
                                                       String toAddr, BigInteger amount,
                                                       BigInteger nonce, BigInteger gasPrice) throws Exception {
-        String tokenContract = readTokenAddress(web3j);
+        return doTokenTransfer(web3j, readTokenAddress(web3j), ArenaConfig.GAS_LIMIT_ERC20_TRANSFER,
+                ecKeyPair, toAddr, amount, nonce, gasPrice);
+    }
+
+    /**
+     * 任意 ERC20 的 {@code transfer(address,uint256)}。
+     *
+     * <p>代币转账不传 value，金额全部走 calldata；也不挂落盘 hook（批量充值在任务层自己记录）。</p>
+     */
+    private static TransactionReceipt doTokenTransfer(Web3j web3j, String tokenContract, BigInteger gasLimit,
+                                                       ECKeyPair ecKeyPair, String toAddr, BigInteger amount,
+                                                       BigInteger nonce, BigInteger gasPrice) throws Exception {
         List<Type> inputs = Arrays.<Type>asList(new Address(toAddr), new Uint256(amount));
         Function func = new Function("transfer", inputs, new ArrayList<TypeReference<?>>());
         String txData = FunctionEncoder.encode(func);
-        return sendRawTxAndWaitReceipt(web3j, ecKeyPair, nonce, gasPrice, ArenaConfig.GAS_LIMIT_ERC20_TRANSFER, tokenContract, txData);
+        return sendRawTxAndWaitReceipt(web3j, ecKeyPair, nonce, gasPrice, gasLimit, tokenContract, txData);
     }
 
+    /** 查合约默认 ERC20（{@code TOKEN()}）的余额 */
     public static BigInteger callErc20Balance(Web3j web3j, String owner) throws Exception {
-        String tokenContract = readTokenAddress(web3j);
+        return callTokenBalance(web3j, readTokenAddress(web3j), owner);
+    }
+
+    /**
+     * 任意 ERC20 的 {@code balanceOf(address)}。
+     *
+     * <p>取返回值末尾 64 个 hex 转 BigInteger：RPC 报了错就抛异常（余额查不到不能当 0），
+     * 但返回体短了则回 0，避免个别节点返回畸形数据把整页拖垮。</p>
+     */
+    private static BigInteger callTokenBalance(Web3j web3j, String tokenContract, String owner) throws Exception {
         List<Type> inputs = new ArrayList<>();
         inputs.add(new Address(owner));
         List<TypeReference<?>> outputs = new ArrayList<>();
@@ -552,9 +728,53 @@ public class ArenaContractApi {
         return new BigInteger(valueHex, 16);
     }
 
-    // ==================================================================
-    // 干跑:estimateGas + 余额检查,不上链
-    // ==================================================================
+    // endregion
+
+    // region 手续费（Gas）查询与转账
+    //
+    // 本链的 Gas 币是一枚 ERC20（ArenaConfig.GAS_TOKEN_ADDR），eth_getBalance 与它的
+    // balanceOf 完全相等；原生 value 转账会被节点按“余额不足”拒绝（余额再高也一样），
+    // 所以补 Gas 只能给它做 transfer。signRawTx 固定 value=0，正好适用。
+
+    /** 查 Gas 币（ERC20）余额，批量补手续费前的余额判断依据 */
+    public static BigInteger callGasTokenBalance(Web3j web3j, String owner) throws Exception {
+        return callTokenBalance(web3j, ArenaConfig.GAS_TOKEN_ADDR, owner);
+    }
+
+    /** 用 ERC20 {@code transfer} 给目标地址补 Gas 币（不能走原生转账） */
+    public static TransactionReceipt doGasTokenTransfer(Web3j web3j, ECKeyPair ecKeyPair,
+                                                        String toAddr, BigInteger amount,
+                                                        BigInteger nonce, BigInteger gasPrice) throws Exception {
+        return doTokenTransfer(web3j, ArenaConfig.GAS_TOKEN_ADDR,
+                ArenaConfig.GAS_LIMIT_GAS_TOKEN_TRANSFER, ecKeyPair, toAddr, amount, nonce, gasPrice);
+    }
+
+    /** 原生余额读数：本链与 GAS_TOKEN.balanceOf 恒等，仅用于展示/换算，不可用来发原生转账 */
+    public static BigInteger callNativeBalance(Web3j web3j, String addr) throws Exception {
+        return web3j.ethGetBalance(addr, DefaultBlockParameterName.LATEST).send().getBalance();
+    }
+
+    // endregion
+
+    // region 入场干跑预检（不上链）
+
+    /** 18 位小数的代币数量转可读字符串（截断 6 位），提示文案用 */
+    private static String fmtDai(BigInteger wei) {
+        if (wei == null) return "0";
+        return new java.math.BigDecimal(wei)
+                .divide(new java.math.BigDecimal(BigInteger.TEN.pow(18)), 6, java.math.RoundingMode.DOWN)
+                .stripTrailingZeros().toPlainString();
+    }
+
+    /**
+     * 入场前干跑检查，只读链上状态、不发交易。
+     *
+     * <p>检查顺序刻意从便宜到贵：先看本地就能判定的入座/打满，再比奖金与钱包余额能否凑出入场费，
+     * 最后才去查 gasPrice 与 Gas 币余额（这两步要发 RPC）。</p>
+     *
+     * @param keyPair 当前未使用：本方法不做 {@code eth_estimateGas}，gas 直接取配置常量
+     * @return {@code null} 表示可以入场；否则为不可入场的原因（可直接当提示文案）
+     */
     public static String previewEnter(Web3j web3j, String addr, ECKeyPair keyPair) {
         try {
             PlayerSummary s = callPlayerSummary(web3j, addr);
@@ -576,9 +796,11 @@ public class ArenaContractApi {
             BigInteger gas = ArenaConfig.GAS_LIMIT_ENTER_ARENA;
             
             BigInteger need = gas.multiply(gasPrice);
-            BigInteger nativeBal = web3j.ethGetBalance(addr, DefaultBlockParameterName.LATEST).send().getBalance();
-            if (nativeBal.compareTo(need) < 0) {
-                return "原生币不足,需 " + need + " 现有 " + nativeBal;
+            // 手续费币是 DAI：eth_getBalance 与它的 balanceOf 相等，但直接写出来是 wei 原值，不能给人看
+            BigInteger gasBal = callGasTokenBalance(web3j, addr);
+            if (gasBal.compareTo(need) < 0) {
+                return "DAI 不足：需约 " + fmtDai(need) + " DAI，现有 " + fmtDai(gasBal)
+                        + " DAI，请先到「批量充值手续费」补一点";
             }
             return null;
         } catch (Exception e) {
@@ -586,10 +808,17 @@ public class ArenaContractApi {
         }
     }
 
-    // ==================================================================
-    // 读取合约数据（玩家信息、锦标赛状态等）
-    // ==================================================================
+    // endregion
 
+    // region playerSummary 编解码
+
+    /**
+     * 构造 playerSummary 的输出原型：前 10 个字全是 uint256，后面跟 1 个 bool + 3 个 uint256
+     * + 2 个 bool。
+     *
+     * <p>必须与合约返回顺序完全一致：错一位会让后面的字段全部错位（金额变成布尔、布尔当金额），
+     * 而且不会报错，只会展示成荒谬的值。</p>
+     */
     private static List<TypeReference<?>> buildPlayerSummaryOutputs() {
         List<TypeReference<?>> outputs = new ArrayList<TypeReference<?>>();
         for (int i = 0; i < 10; i++) outputs.add(TypeReference.create(Uint256.class));
@@ -602,6 +831,7 @@ public class ArenaContractApi {
         return outputs;
     }
 
+    /** 拼 {@code playerSummary(address)} 的调用数据 */
     private static String encodePlayerSummaryData(String playerAddr) {
         List<Type> inputs = new ArrayList<Type>();
         inputs.add(new Address(playerAddr));
@@ -609,6 +839,14 @@ public class ArenaContractApi {
         return FunctionEncoder.encode(func);
     }
 
+    /**
+     * 解析 playerSummary 返回的 16 个字（1024 个 hex）。
+     *
+     * <p>长度不足直接抛：sections 缺失时继续解会得到一堆 0，看起来就像“新号还没资产”，
+     * 排查时极难发现是 RPC 返回了异常数据。</p>
+     *
+     * @throws RuntimeException 返回数据长度不足 1024 个 hex
+     */
     private static PlayerSummary decodePlayerSummary(String hexValue) {
         PlayerSummary s = new PlayerSummary();
         String hex = Numeric.cleanHexPrefix(hexValue);
@@ -641,6 +879,12 @@ public class ArenaContractApi {
         return s;
     }
 
+    /**
+     * 取第 {@code fieldIndex} 个 32 字节字当 uint256；越界或格式异常一律回 0。
+     *
+     * <p>非抛异常的取舍：展示层宁可显示 0（配合日志里的 hex 可回溯），
+     * 也不要因为一个字段把整行数据弄丢。</p>
+     */
     private static BigInteger safeHexUint(String hex, int fieldIndex) {
         try {
             int offset = fieldIndex * 64;
@@ -651,6 +895,7 @@ public class ArenaContractApi {
         }
     }
 
+    /** 取第 {@code fieldIndex} 个字当 bool：非全 0 即 true，越界或异常回 false */
     private static boolean safeHexBool(String hex, int fieldIndex) {
         try {
             int offset = fieldIndex * 64;
@@ -672,4 +917,5 @@ public class ArenaContractApi {
         return (List<TypeReference<Type>>) (List<?>) outputs;
     }
 
+    // endregion
 }

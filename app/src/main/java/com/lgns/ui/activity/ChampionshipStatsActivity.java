@@ -25,6 +25,12 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
+/**
+ * 冠军榜统计页：汇总各账号的名次/夺冠数据，按分组折叠展示。
+ *
+ * <p>职责边界：页面负责取数与聚合，列表渲染交给 {@code ChampionStatsAdapter}；
+ * 统计口径集中在 {@code buildItems}，改口径时只需要动这一处。</p>
+ */
 public class ChampionshipStatsActivity extends AppCompatActivity {
 
     private TextView tvError;
@@ -36,10 +42,16 @@ public class ChampionshipStatsActivity extends AppCompatActivity {
 
     private ChampionStatsAdapter adapter;
 
+    /** 待统计的账号地址（Intent 传入），与 labels/groups/initChamps 按下标一一对应 */
     private List<String> addrs;
+    /** 账号显示名（编号），缺失时用 1-based 下标兜底 */
     private List<String> labels;
+    /** 账号所属分组名，用于分组折叠展示；为 null 或已失效的归入「未分组」 */
     private List<String> groups;
+    /** 主界面已加载的冠军次数：链上数据回来前先用它占位，避免首屏显示 0 冠军 */
     private List<Integer> initChamps;
+
+    // region 生命周期
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -81,6 +93,22 @@ public class ChampionshipStatsActivity extends AppCompatActivity {
         new Thread(this::loadData).start();
     }
 
+    // endregion
+
+    // region 数据加载
+
+    /**
+     * 加载流程分两段：先把分组与占位行立即上屏（场次/胜率显示占位），
+     * 再用 {@code callPlayerSummaryBatch} 拉链上战绩回填。
+     *
+     * <p>口径要点：</p>
+     * <ul>
+     *   <li>未查到的地址标 {@code unknown} 并排除在合计之外，不当成 0 场计入；</li>
+     *   <li>一个都没返回时汇总位全部显示占位并提示「全部未查到」；</li>
+     *   <li>部分缺失时汇总照算，但页顶提示缺失条数；</li>
+     *   <li>链上访问失败则把占位行改标未查到，不让它们永远停在骨架态。</li>
+     * </ul>
+     */
     private void loadData() {
         // 第一步：数据库分组 + 零值默认立即上屏，冠军次数继承主界面已加载值（对标 applyLocalDefaults）
         List<String> groupNames = AppLogDbHelper.getInstance(this).queryAllGroups();
@@ -165,6 +193,17 @@ public class ChampionshipStatsActivity extends AppCompatActivity {
         }
     }
 
+    // endregion
+
+    // region 列表构建
+
+    /**
+     * 按传入的账号/标签/分组拼出列表行。
+     *
+     * <p>{@code result == null} 分两种情况：{@code failed=false} 是加载中（骨架态，冠军次数继承主界面值，
+     * -1 表示主界面也没有）；{@code failed=true} 是首轮失败（直接标未查到）。
+     * 有结果时链上没返回这个地址也标未查到，不显示成 0 场 0 冠军。</p>
+     */
     private List<ChampionStatsAdapter.ChampionStatsItem> buildItems(
             List<String> groupNames, Map<String, ArenaContractApi.PlayerSummary> result, boolean failed) {
         List<ChampionStatsAdapter.ChampionStatsItem> items = new ArrayList<>();
@@ -200,7 +239,10 @@ public class ChampionshipStatsActivity extends AppCompatActivity {
         return items;
     }
 
-    // 按数据库分组构建展示列表（对标主界面 groupStatsItems）
+    /**
+     * 按数据库分组构建展示列表：分组顺序跟分组表走，空组不占位；
+     * groupNo 为空或指向已删分组的账号统一归入「未分组」放在末尾。
+     */
     private List<ChampionStatsAdapter.DisplayItem> groupItems(
             List<String> groupNames, List<ChampionStatsAdapter.ChampionStatsItem> statItems) {
         List<ChampionStatsAdapter.DisplayItem> displayItems = new ArrayList<>();
@@ -235,4 +277,7 @@ public class ChampionshipStatsActivity extends AppCompatActivity {
         }
         return displayItems;
     }
+
+    // endregion
+
 }

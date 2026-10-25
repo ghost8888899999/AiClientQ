@@ -50,32 +50,70 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 
+/**
+ * 主界面：私钥、分组与统计的总入口，同时是各类批量任务的调度中心。
+ *
+ * <p>三项职责：</p>
+ * <ul>
+ *   <li>触发批量充值、批量入场、批量领取与完整流程，并按任务运行状态回落按钮可用性；</li>
+ *   <li>聚合同步链上统计（收益、场次等），同步期间用进度条与同步栏反馈进度；</li>
+ *   <li>作为 {@link TaskLogCallback} 接收各任务日志，按账号归档后追加到页面。</li>
+ * </ul>
+ *
+ * <p>线程约定：任务在后台线程执行，回调可能来自任意线程，所有 UI 写入统一走主线程；
+ * 页面销毁后回调仍可能到达，写入前必须先判断 Activity 是否还存活，不能假定调用时机。</p>
+ *
+ * <p>统计口径以链上同步结果为准，本地只保留上一次快照用于首屏兜底，两者在界面上用同步状态区分。</p>
+ */
 public class MainActivity extends AppCompatActivity implements TaskLogCallback, BatchFundTask.ButtonStateController {
+
+    // region 视图与数据
+
+    /** 入场模式：能打就打（每个账号各自入座，不强求同轮） */
     public static final int MODE_FLEXIBLE = 0;
+    /** 入场模式：等齐再打（整批预演通过后一起提交） */
     public static final int MODE_TOGETHER = 1;
+    /** 当前生效的入场模式，启动时从 SharedPreferences 读出，切模式后写回 */
     private int currentPlayMode;
+    /** 当前会话的加解密密码（明文 char[]）：只内存持有，页面销毁时必须清零 */
     public char[] tempUserCryptoKey;
-    // 当前实例弱引用：私钥管理页修改加解密密码后同步会话密码用，不阻止 GC
+    /**
+     * 当前实例的弱引用：私钥管理页改完加解密密码后靠它同步会话密码。
+     *
+     * <p>用 {@link java.lang.ref.WeakReference} 而不是强引用，避免静态字段把页面
+     * 钉在内存里；取出来用前必须判 null，空引用就是“页面已销毁”的信号。</p>
+     */
     public static java.lang.ref.WeakReference<MainActivity> sInstance;
+    /** 真实账号清单（启用/禁用、含主号），批量任务以它为准 */
     public List<KeyListItem> keyListItemList = new ArrayList<>();
     // 调试专用：地址池展开出的展示行（仅主界面/锦标赛统计用；keyId 为负、无密文，不参与解密和转账）
     private volatile List<KeyListItem> debugKeyItems;
 
+    /** 自动清除定时任务的唯一名字：重建调度时用同一个名字覆盖，避免多份并行 */
     private static final String WORK_AUTO_CLEAR = "work_auto_clear_task";
+    /** 自动清除间隔的下限（分钟）：比这更短只会让清理线程频繁起停，没有实际意义 */
     private static final long MIN_ALLOW_MINUTE = 15;
+    /** 应用设置存储（入场模式等轻量开关） */
     private SharedPreferences spAppSetting;
 
+    // 控件引用：按钮区
     private ImageButton btnSettingGear;
     private TextView btnSecurityWarn;
+    /** 标题栏副标题：加载/同步/就绪/失败/运行中，与按钮门控同源 */
+    private TextView tvStatusSub;
     private LinearLayout btnBatchFund, btnBatchEnter, btnBatchClaim, btnFullWorkflow;
+    // 控件引用：日志区
     private TextView tvLog;
     private ScrollView scrollView;
     private LinearLayout layoutLogHeader;
     private TextView tvLogToggle;
 
+    /** 弹窗助手：批量任务确认、密码输入、安全提示 */
     private MainDialogHelper dialogHelper;
+    /** 齿轮菜单：各管理页与配置页的入口 */
     private MainMenuHelper menuHelper;
 
+    // 控件引用：账号统计列表与汇总行
     private RecyclerView rvAccountList;
     private AccountStatsAdapter accountStatsAdapter;
 
@@ -96,9 +134,22 @@ public class MainActivity extends AppCompatActivity implements TaskLogCallback, 
     // 统计请求序号：onResume/任务结束/本地变更都可能并发触发，只让最新一次结果上屏
     private final java.util.concurrent.atomic.AtomicInteger statsSeq =
             new java.util.concurrent.atomic.AtomicInteger();
+    /** 本次 onResume 跳过统计刷新：从子页面返回且数据由子页面回填时用，避免重复拉链 */
     private boolean skipRefreshOnResume = false;
+    /** 本次 onResume 只重读本地清单、不拉链上统计：私钥增删改后只需重建行结构 */
     private boolean refreshLocalOnlyOnResume = false;
 
+    // endregion
+
+    // region 生命周期
+
+    /**
+     * 启动流程：先搭列表与汇总 UI → 置灰按钮 → 自动清理/空闲锁 → 后台初始化密钥管理器
+     * → 回到 UI 线程加载本地清单（不触发 RPC）。
+     *
+     * <p>初始化失败也要把按钮放开（{@code statsPhase} 直接置 READY）：
+     * 此时没有可查账号，用户点按钮会得到「无启用密钥」的明确提示，比永远置灰好定位问题。</p>
+     */
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -157,9 +208,15 @@ public class MainActivity extends AppCompatActivity implements TaskLogCallback, 
         }).start();
     }
 
+    // endregion
+
+    // region 视图与事件绑定
+
+    /** 集中取控件引用：只做 findViewById，不涉及状态与监听 */
     private void bindViews() {
         btnSettingGear = findViewById(R.id.btn_setting_gear);
         btnSecurityWarn = findViewById(R.id.btn_security_warn);
+        tvStatusSub = findViewById(R.id.tv_status_sub);
         btnBatchFund = findViewById(R.id.btn_batch_fund);
         btnBatchEnter = findViewById(R.id.btn_batch_enter);
         btnBatchClaim = findViewById(R.id.btn_batch_claim);
@@ -170,6 +227,12 @@ public class MainActivity extends AppCompatActivity implements TaskLogCallback, 
         tvLogToggle = findViewById(R.id.tv_log_toggle);
     }
 
+    /**
+     * 绑定四个批量按钮与日志区折叠。
+     *
+     * <p>日志区默认展开（scrollView 可见），点标题行切换；
+     * 汇总栏在统计失败时兼作重试入口，其它状态下点按不产生副作用。</p>
+     */
     private void setupButtonEvents() {
         btnSecurityWarn.setOnClickListener(v -> dialogHelper.showSecurityWarningDialog());
 
@@ -193,6 +256,16 @@ public class MainActivity extends AppCompatActivity implements TaskLogCallback, 
         });
     }
 
+    // endregion
+
+    // region 批量任务入口
+
+    /**
+     * 批量充值入口。四个批量按钮共用同一套前置检查：
+     * 任务互斥（避免两批交易抢同一批 nonce）→ 数据就绪 → 取启用账号 → 密码弹窗 → 后台线程执行。
+     *
+     * <p>密码弹窗阶段不锁按钮：用户取消或输错密码都不应该把界面卡住，校验通过后才锁定。</p>
+     */
     private void handleBatchFundClick() {
         if (isTaskRunning) {
             android.widget.Toast.makeText(this, R.string.task_running, android.widget.Toast.LENGTH_SHORT).show();
@@ -202,6 +275,12 @@ public class MainActivity extends AppCompatActivity implements TaskLogCallback, 
         dialogHelper.showBatchFundDialog();
     }
 
+    /**
+     * 批量入场：前置检查后弹解密密码，密码通过才锁按钮并开后台线程。
+     *
+     * <p>密码数组用完必须 {@code Arrays.fill} 清零；无论任务成功失败，
+     * finally 都要把按钮放开，否则一次异常就会把界面永久锁死。</p>
+     */
     private void handleBatchEnterClick() {
         if (isTaskRunning) {
             android.widget.Toast.makeText(this, R.string.task_running, android.widget.Toast.LENGTH_SHORT).show();
@@ -231,6 +310,10 @@ public class MainActivity extends AppCompatActivity implements TaskLogCallback, 
         });
     }
 
+    /**
+     * 批量领取：与入场同一套外壳（互斥 → 就绪 → 启用账号 → 密码 → 后台执行），
+     * 具体领什么、按什么顺序领由 {@link BatchClaimTask} 决定。
+     */
     private void handleBatchClaimClick() {
         if (isTaskRunning) {
             android.widget.Toast.makeText(this, R.string.task_running, android.widget.Toast.LENGTH_SHORT).show();
@@ -260,6 +343,12 @@ public class MainActivity extends AppCompatActivity implements TaskLogCallback, 
         });
     }
 
+    /**
+     * 完整工作流：充手续费 → 入场 → 领奖一次跑完（rounds 传 2 表示两轮）。
+     *
+     * <p>内含等待确认的固定延时，耗时比单独任务长，所以同样在后台线程执行、
+     * 全程锁住四个批量按钮。</p>
+     */
     private void handleFullWorkflowClick() {
         if (isTaskRunning) {
             android.widget.Toast.makeText(this, R.string.task_running, android.widget.Toast.LENGTH_SHORT).show();
@@ -289,6 +378,7 @@ public class MainActivity extends AppCompatActivity implements TaskLogCallback, 
         });
     }
 
+    /** 任务开始/结束时统一改按钮可用性；真正的判定条件在 {@link #applyButtonEnabledState()} */
     private void setTaskButtonsEnabled(boolean enabled) {
         isTaskRunning = !enabled;
         applyButtonEnabledState();
@@ -311,7 +401,38 @@ public class MainActivity extends AppCompatActivity implements TaskLogCallback, 
             btnBatchEnter.setAlpha(alpha);
             btnBatchClaim.setAlpha(alpha);
             btnFullWorkflow.setAlpha(alpha);
+            refreshStatusSubtitle();
         });
+    }
+
+    /**
+     * 刷新标题栏副标题。
+     *
+     * <p>五种状态与按钮门控完全同源（{@code accountDataReady} / {@code statsPhase} /
+     * {@code isTaskRunning}），所以只在 {@link #applyButtonEnabledState()} 里调用：
+     * 任何一个状态变化都会走到那里，标题栏文案因此不会和「按钮能不能点」打架。</p>
+     *
+     * <p>判定顺序有讲究——任务运行中优先于统计态：任务跑起来时按钮被锁，
+     * 此时提示「运行中」比提示「已就绪」更贴近用户看到的现象。</p>
+     */
+    private void refreshStatusSubtitle() {
+        if (tvStatusSub == null) return;
+        String text;
+        if (!accountDataReady) {
+            text = getString(R.string.main_status_loading);
+        } else if (isTaskRunning) {
+            text = getString(R.string.main_status_running);
+        } else if (keyListItemList.isEmpty()) {
+            text = getString(R.string.main_status_empty);
+        } else if (statsPhase == STATS_FAILED) {
+            text = getString(R.string.main_status_failed);
+        } else if (statsPhase == STATS_IDLE) {
+            text = getString(R.string.main_status_syncing);
+        } else {
+            text = getString(R.string.main_status_ready,
+                    getEnabledKeyItems().size(), keyListItemList.size());
+        }
+        tvStatusSub.setText(text);
     }
 
     // 清单/统计未就绪时点击（按钮已置灰，此处兼顾无障碍/代码路径）：明确提示，不拿半成品数据跑任务
@@ -334,10 +455,24 @@ public class MainActivity extends AppCompatActivity implements TaskLogCallback, 
         return true;
     }
 
+    // endregion
+
+    // region 齿轮菜单与自动清理
+
+    /** 齿轮菜单：点开右上角折叠菜单（设置、统计、各种管理页的入口都在这） */
     private void setupGearMenu() {
         btnSettingGear.setOnClickListener(v -> menuHelper.showCollapseMenu(v));
     }
 
+    /**
+     * 启动时的自动清理检查：私钥清除与日志清除各管各的开关与时间戳。
+     *
+     * <p>机制是「懒执行」：没有常驻定时器，靠启动时比对上次执行时间戳来判断是否到期，
+     * 所以 App 没打开期间不会清，下次打开时补齐一次。</p>
+     *
+     * <p>日志清除只删早于保留时长的旧记录（不是清空），且删到 0 条时不写日志，
+     * 避免每次启动都往日志区刷一行无用记录。</p>
+     */
     private void checkAutoClearBoot() {
         ArenaConfig.loadConfig(this);
         SharedPreferences spTs = AppPrefs.get(this);
@@ -394,6 +529,7 @@ public class MainActivity extends AppCompatActivity implements TaskLogCallback, 
         }
     }
 
+    /** 单位索引转毫秒（0 分钟 / 1 小时 / 2 天）；索引异常时按小时处理 */
     private long getClearIntervalMs(int value, int unitIndex) {
         switch (unitIndex) {
             case 0:
@@ -407,6 +543,12 @@ public class MainActivity extends AppCompatActivity implements TaskLogCallback, 
         }
     }
 
+    /**
+     * 会话空闲超时回调：弹解密弹窗重新解锁。
+     *
+     * <p>回调可能来自后台线程，所以整体包在 {@code runOnUiThread} 里；
+     * 解锁成功后重新初始化密钥管理器并刷新列表，让后续任务能正常解密。</p>
+     */
     private void setupIdleLockCallback() {
         AppGlobal.setOnIdleLock(() -> runOnUiThread(() -> {
             appendUiLog(null, "会话已过期，请重新输入密码解锁");
@@ -426,6 +568,11 @@ public class MainActivity extends AppCompatActivity implements TaskLogCallback, 
         }));
     }
 
+    // endregion
+
+    // region 对外数据接口
+
+    /** 取本地清单中已启用的账号（批量任务的输入） */
     public List<KeyListItem> getEnabledKeyItems() {
         List<KeyListItem> enabled = new ArrayList<>();
         for (KeyListItem item : keyListItemList) {
@@ -434,6 +581,7 @@ public class MainActivity extends AppCompatActivity implements TaskLogCallback, 
         return enabled;
     }
 
+    /** 取勾选中的账号；调试模式固定地址池优先，保证统计与界面地址一致 */
     public List<KeyListItem> getSelectedKeyItem() {
         // 调试模式：锦标赛统计按地址池展示行出数，与主界面看到的地址一致
         List<KeyListItem> debug = debugKeyItems;
@@ -447,6 +595,7 @@ public class MainActivity extends AppCompatActivity implements TaskLogCallback, 
         return res;
     }
 
+    /** 读分组名列表（逗号串存储，空项忽略）；与分组表数据库是两份数据，供旧逻辑兼容 */
     public List<String> loadGroupList() {
         String raw = spAppSetting.getString("group_list", "");
         List<String> list = new ArrayList<>();
@@ -459,6 +608,7 @@ public class MainActivity extends AppCompatActivity implements TaskLogCallback, 
         return list;
     }
 
+    /** 写分组名列表：拼成逗号串存入本地 SP */
     public void saveGroupList(List<String> list) {
         StringBuilder sb = new StringBuilder();
         for (int i = 0; i < list.size(); i++) {
@@ -468,15 +618,35 @@ public class MainActivity extends AppCompatActivity implements TaskLogCallback, 
         spAppSetting.edit().putString("group_list", sb.toString()).apply();
     }
 
+    /** 刷新私钥清单（含地址补全等耗时工作），具体逻辑在 MainDataLoader */
     public void refreshCipherKeyList() {
         MainDataLoader.refreshCipherKeyList(this, this, keyListItemList);
     }
 
-    // 密钥数据变更（补全地址/迁移等）后：本地结构重建 + 数值继承 + 链上回填
+    /**
+     * 密钥数据变更（补全地址/迁移等）后重建本地结构：重读库 → 继承已有数值 → 链上异步回填。
+     *
+     * <p>与 {@link #refreshCipherKeyList()} 的区别：那条只刷新私钥列表本身，
+     * 这条还要把统计卡片按新地址集合重算（增删账号后会直接影响汇总）。</p>
+     */
     public void refreshLocalAndStats() {
         loadKeyListLocalOnly(this::applyLocalDefaults);
     }
 
+    // endregion
+
+    // region 日志与运行状态
+
+    /**
+     * 任务日志回调：先上屏，再在子线程落库。
+     *
+     * <p>只有用户主动触发的操作（批量任务、密钥增删等）才走这里；
+     * 启动初始化、定时清理这类后台过程日志走 {@link #appendUiLog}，不写库，
+     * 否则数据库会被过程日志迅速撞满。</p>
+     *
+     * @param keyNo 密钥编号，空串/空白视为无归属
+     * @param type  日志类型，空串/空白视为无类型
+     */
     @Override
     public void onLog(final String keyNo, final String type, final String msg) {
         String safeKeyNo = (keyNo == null || keyNo.trim().isEmpty()) ? null : keyNo.trim();
@@ -487,7 +657,11 @@ public class MainActivity extends AppCompatActivity implements TaskLogCallback, 
         new Thread(() -> AppLogDbHelper.getInstance(this).insertLog(safeKeyNo, safeType, msg, timeMs)).start();
     }
 
-    // 非用户点击触发的过程日志（启动初始化、定时清理、自动刷新等）：只上屏，不写数据库，避免 db 越积越大
+    /**
+     * 只上屏不落库的日志：用于启动初始化、定时清理、自动刷新这类非用户点击触发的过程信息。
+     *
+     * @param keyNo 密钥编号，空串/空白视为无归属
+     */
     public void appendUiLog(String keyNo, String msg) {
         String safeKeyNo = (keyNo == null || keyNo.trim().isEmpty()) ? null : keyNo.trim();
         appendLogToUi(safeKeyNo, msg, System.currentTimeMillis());
@@ -505,33 +679,52 @@ public class MainActivity extends AppCompatActivity implements TaskLogCallback, 
         });
     }
 
+    /**
+     * 写一条带类型、会落库的运行日志（等价于 {@link #onLog}）。
+     *
+     * <p>保留这个别名是因为任务层统一用 {@code appendLog} 这个叫法，两边不要各写一套。</p>
+     */
     public void appendLog(String keyNo, String type, String msg) {
         onLog(keyNo, type, msg);
     }
 
+    /** 密码输入回调：pwd 为明文 char[]，回调方用完后必须自行清零 */
     public interface PasswordCallback {
+        /** @param pwd 用户输入的明文密码，调用方负责 Arrays.fill 清零 */
         void onInputPwd(char[] pwd);
     }
 
-    // 本地数据就绪回调：items 为后台线程构建好的占位展示列表
+    /** 本地清单构好后的回调：items 为后台线程提前拼好的展示行（链上数值此时全是占位） */
     public interface StatsReadyCallback {
+        /** @param items 可直接丢给适配器渲染的列表，已含分组头 */
         void onReady(List<AccountStatsAdapter.DisplayItem> items);
     }
 
+    /** 弹窗助手：批量任务、密码输入、安全提示都由它统一弹出 */
     public MainDialogHelper getDialogHelper() {
         return dialogHelper;
     }
 
+    /** 是否有批量任务正在跑：任务层靠它拦住重复启动 */
     @Override
     public boolean isRunning() {
         return isTaskRunning;
     }
 
+    /**
+     * 标记任务开始/结束：只切按钮可用性（{@code setTaskButtonsEnabled}），
+     * 真正的运行标记由任务层自己维护，避免两边状态不同步。
+     */
     @Override
     public void setRunning(boolean running) {
         setTaskButtonsEnabled(!running);
     }
 
+    // endregion
+
+    // region 页面回调与结果回填
+
+    /** 退出时收起菜单并清空会话密码，同时注销单例引用 */
     @Override
     protected void onDestroy() {
         super.onDestroy();
@@ -543,11 +736,15 @@ public class MainActivity extends AppCompatActivity implements TaskLogCallback, 
         if (sInstance != null && sInstance.get() == this) sInstance = null;
     }
 
+    /**
+     * 回到前台：每次都跑一次自动清理检查，再按「本次从哪个页返回」决定刷新的粒度——
+     * 系统设置页返回跳过刷新，私钥类页面返回只重读本地（不拉链），其余情况不刷新。
+     */
     @Override
     protected void onResume() {
         super.onResume();
         checkAutoClearBoot();
-        
+
         if (skipRefreshOnResume) {
             skipRefreshOnResume = false;
             Log.d("MainActivity", "onResume: skip refresh from sys config");
@@ -561,20 +758,29 @@ public class MainActivity extends AppCompatActivity implements TaskLogCallback, 
         }
     }
 
+    /** 标记：下一次 onResume 跳过统计刷新（子页已经回填好数据时用） */
     public void setSkipRefreshOnResume() {
         skipRefreshOnResume = true;
     }
 
+    /** 标记：下一次 onResume 只重读本地清单、不拉链上统计（私钥/分组变更后） */
     public void setRefreshLocalOnlyOnResume() {
         refreshLocalOnlyOnResume = true;
     }
 
+    /** 批量任务结束回调：无论成败都按链上真实状态重拉一次统计 */
     @Override
     public void onBatchResult(java.util.Map<String, ArenaContractApi.PlayerSummary> summaries) {
         // 批量任务结束后直接用链上最新数据刷新账号列表
         loadStatsOverview();
     }
 
+    /**
+     * 单账号失败留档：按编号反查分组名，写一条失败记录供失败日志页展示。
+     *
+     * <p>纯记录行为，不弹提示也不改列表状态（失败提醒由任务自身写运行日志完成），
+     * 写库失败直接忽略，不能因为归档出问题影响主流程。</p>
+     */
     @Override
     public void onKeyFailure(String keyNo, String failType, String reason) {
         new Thread(() -> {
@@ -595,6 +801,10 @@ public class MainActivity extends AppCompatActivity implements TaskLogCallback, 
             } catch (Exception ignored) {}
         }).start();
     }
+
+    // endregion
+
+    // region 统计与同步
 
     // 列表里的有效地址数（调试模式=地址池行数）：今日入场分母 = 地址数 × 12
     private static int countAddresses(List<KeyListItem> items) {
@@ -679,20 +889,30 @@ public class MainActivity extends AppCompatActivity implements TaskLogCallback, 
         }
     }
 
-    // 进度按“两波查询”计：第一波主体数据、第二波今日冠军，各占一半；
-    // 用确定进度而不是一直转的不确定条，地址多时用户能看到数字在涨
+    /**
+     * 同步进度条按比例推进：进度按「两波查询」计，第一波主体数据、第二波今日冠军，
+     * 各占一半。用确定进度而不是一直转的不确定条，地址多时用户能看到数字在涨。
+     */
     private void updateSyncProgress(int doneUnits, int totalUnits) {
         if (pbStatsSync == null || totalUnits <= 0) return;
         pbStatsSync.setProgress((int) Math.min(100L, doneUnits * 100L / totalUnits));
     }
 
-    // 供锦标赛统计页继承已加载的冠军次数（对标 applyLocalDefaults 的快照继承机制）
+    /** 把屏上已有的账号统计快照给其他页（锦标赛统计用来继承已加载的冠军次数，避免重复请求链上） */
     public Map<String, AccountStatsAdapter.AccountStatsItem> getAccountStatsSnapshot() {
         return accountStatsAdapter.snapshotAccountItems();
     }
 
-    // 初始化时只加载本地私钥列表，不触发 RPC；
-    // 同一后台线程内顺带完成分组查询与占位列表构建，仅一次主线程提交，保证毫秒级上屏
+    /**
+     * 只加载本地私钥清单，不触发任何 RPC：读库 → 去重 → 按自定义排序 → 拼 KeyListItem
+     * → 同一线程内直接构建占位统计列表，最后一次 runOnUiThread 上屏。
+     *
+     * <p>这样做的目的：冷启动先出结构与零值，毫秒级可交互；链上数值由 {@code loadStatsOverview}
+     * 异步回填。清单只在主线程整体替换，避免 UI 线程读到后台清空一半的集合。</p>
+     *
+     * <p>清单换新后会把 {@code statsSeq} 自增作废在途的旧统计，并把 {@code statsPhase} 重置回 IDLE，
+     * 按钮重新进入「等统计回填」状态。调试模式下展示源换成固定地址池，但真实清单不动。</p>
+     */
     private void loadKeyListLocalOnly(StatsReadyCallback onLoaded) {
         new Thread(() -> {
             List<AccountStatsAdapter.DisplayItem> placeholderItems = new ArrayList<>();
@@ -700,7 +920,7 @@ public class MainActivity extends AppCompatActivity implements TaskLogCallback, 
             try {
                 KeyStoreManager mgr = AppGlobal.getKeyStoreManager();
                 List<KeyStoreManager.KeyEntry> originEntryList = mgr.loadKeyEntryList();
-                
+
                 List<KeyStoreManager.KeyEntry> unique = new ArrayList<>();
                 for (KeyStoreManager.KeyEntry e : originEntryList) {
                     boolean dup = false;
@@ -709,7 +929,7 @@ public class MainActivity extends AppCompatActivity implements TaskLogCallback, 
                     }
                     if (!dup) unique.add(e);
                 }
-                
+
                 List<Long> customSortIds = mgr.getCustomSortIdList();
                 List<KeyStoreManager.KeyEntry> sorted = new ArrayList<>();
                 for (Long sortId : customSortIds) {
@@ -786,7 +1006,12 @@ public class MainActivity extends AppCompatActivity implements TaskLogCallback, 
         }).start();
     }
 
-    // 按数据库分组构建展示列表（仅限后台线程调用）
+    /**
+     * 按分组把统计行摊平成「分组头 + 账号行」。
+     *
+     * <p>分组顺序跟分组表走，空组不占位；groupNo 为空或指向已删分组的行统一归入「未分组」。
+     * 会查数据库取分组名，只能在后台线程调用。</p>
+     */
     private List<AccountStatsAdapter.DisplayItem> groupStatsItems(List<AccountStatsAdapter.AccountStatsItem> statItems) {
         List<String> groupNames = AppLogDbHelper.getInstance(this).queryAllGroups();
         Map<String, List<AccountStatsAdapter.AccountStatsItem>> groupMap = new java.util.LinkedHashMap<>();
@@ -819,6 +1044,17 @@ public class MainActivity extends AppCompatActivity implements TaskLogCallback, 
         return displayItems;
     }
 
+    /**
+     * 链上统计回填（两波分片查询）。
+     *
+     * <p>第一波：余额/今日入场/冠军/收益，按 {@code STATS_CHUNK_SIZE} 分批，
+     * 每片回来立即回填并刷新汇总，首片到达就放开按钮，地址多时不用等到底；
+     * 第二波：今日冠军（每地址一次 eth_call，最重），只刷该列、不影响按钮可用性。</p>
+     *
+     * <p>并发保护：每次进入自增 {@code statsSeq}，回调里比对序号，过期请求直接丢，
+     * 避免旧请求把新数据盖回去。全部地址都查不到时降级为 {@code STATS_FAILED}，
+     * 汇总栏变成重试入口。</p>
+     */
     private void loadStatsOverview() {
         final int seq = statsSeq.incrementAndGet();
         final List<KeyListItem> enabledList = getDisplayKeyItems();
@@ -986,7 +1222,12 @@ public class MainActivity extends AppCompatActivity implements TaskLogCallback, 
         }).start();
     }
 
-    // 把一片 playerSummary 写回对应行（主线程调用）
+    /**
+     * 把一片 playerSummary 写回对应行（主线程调用）。
+     *
+     * <p>同一地址可能对应多行（重复导入），按地址建桶后逐行都写；
+     * 本片没返回的地址标 {@code unknown} 并保留行，不清掉已有展示位置。</p>
+     */
     private void applySummaryChunk(
             Map<String, List<AccountStatsAdapter.AccountStatsItem>> byAddr,
             List<String> slice,
@@ -1014,7 +1255,12 @@ public class MainActivity extends AppCompatActivity implements TaskLogCallback, 
         }
     }
 
-    // 按当前已回填的行重算汇总栏；同步进度由顶部细进度条表达，这里只出数字
+    /**
+     * 按当前已回填的行重算汇总栏（同步进度由顶部细进度条表达，这里只出数字）。
+     *
+     * <p>口径：pending/unknown 行整体排除；今日冠军为 -1 的行只不计该列。
+     * 今日入场分母固定为「账号数 × 12」（合约每地址每日上限）。</p>
+     */
     private void refreshSummary(List<AccountStatsAdapter.AccountStatsItem> rows, int total) {
         int sumEnter = 0, sumTodayWin = 0, sumTotalWin = 0, knownToday = 0;
         BigInteger sumEarnings = BigInteger.ZERO;
@@ -1030,6 +1276,7 @@ public class MainActivity extends AppCompatActivity implements TaskLogCallback, 
             if (it.totalEarnings != null) sumEarnings = sumEarnings.add(it.totalEarnings);
         }
         tvSummaryEnterLabel.setText(getString(R.string.summary_enter_label_fmt, total));
+        // 分母 = 账号数 × 每日上限 12 场（合约 MAX_ENTRIES_PER_DAY）
         tvSummaryEnter.setText(sumEnter + "/" + (total * 12));
         // 一个今日冠军都没拿到时给占位：写 0 会被误读成“今天都没赢”
         tvSummaryTodayWin.setText((total > 0 && knownToday == 0)
@@ -1038,7 +1285,10 @@ public class MainActivity extends AppCompatActivity implements TaskLogCallback, 
         tvSummaryPrize.setText(formatToken(sumEarnings));
     }
 
-    // 净收益：胜场×100.8 + 冠军×200 - 场次×100（不足 0 记 0）
+    /**
+     * 净收益口径（与合约一致）：每场返还 100 本金 + 0.8 安慰奖，夺冠另得 200 甲子俸（60 天释放），
+     * 成本是每场 100 门票。甲子俸按全额计入、不做时间折现；算出来为负按 0 显示。
+     */
     private static BigInteger calcNetEarnings(ArenaContractApi.PlayerSummary s) {
         BigInteger battles = s.battles != null ? s.battles : BigInteger.ZERO;
         BigInteger championships = s.championships != null ? s.championships : BigInteger.ZERO;
@@ -1051,6 +1301,7 @@ public class MainActivity extends AppCompatActivity implements TaskLogCallback, 
         return net.signum() < 0 ? BigInteger.ZERO : net;
     }
 
+    /** 金额展示：wei 转 18 位小数并保留 2 位（四舍五入） */
     private String formatToken(BigInteger wei) {
         if (wei == null) return "0.00";
         BigDecimal bd = new BigDecimal(wei)
@@ -1058,6 +1309,10 @@ public class MainActivity extends AppCompatActivity implements TaskLogCallback, 
         return bd.toPlainString();
     }
 
+    /**
+     * 批量充值确认页的回传：只有用户在确认页点了确定（{@code RESULT_OK}）才走一次密码验证，
+     * 验密通过后锁按钮、后台执行充值，finally 释放密码数组与按钮。
+     */
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
@@ -1085,15 +1340,17 @@ public class MainActivity extends AppCompatActivity implements TaskLogCallback, 
     // 调试专用探针（领取链路调试完毕，整体注释停用；往后需要时整段取消注释）
     // 固定地址复现领取流程的只读查询链，每步打日志定位崩溃点；全程只读，不涉及私钥与签名
 
-    // 主界面展示/统计口径：调试开关打开时用地址池展开行（与私钥数量无关），否则用真实启用私钥
+    /** 主界面展示/统计口径：调试开关打开时用地址池展开行（与私钥数量无关），否则用真实启用私钥 */
     private List<KeyListItem> getDisplayKeyItems() {
         List<KeyListItem> debug = debugKeyItems;
         if (ArenaConfig.DEBUG_FIXED_ADDR_ENABLE && debug != null && !debug.isEmpty()) return debug;
         return getEnabledKeyItems();
     }
 
-    // 全量账号列表（含禁用/主号），供充值预览等观察场景使用
+    /** 全量账号列表（含禁用/主号），供充值预览等只观察的场景使用 */
     public List<KeyListItem> getAllKeyItems() {
         return keyListItemList;
     }
+    // endregion
+
 }

@@ -15,23 +15,42 @@ import androidx.appcompat.app.AppCompatActivity;
 import androidx.appcompat.widget.SwitchCompat;
 
 import com.lgns.R;
+import com.lgns.helper.StatusTipDialog;
 import com.lgns.model.ArenaConfig;
 import com.lgns.manager.AppLogDbHelper;
 import com.lgns.manager.AppGlobal;
 import com.lgns.util.Web3AndroidUtil;
 
+/**
+ * 自动清理配置页：设置账号间隔、日志间隔、清理方式与播放模式等，保存后交给后台任务执行。
+ *
+ * <p>职责边界：页面只负责读写配置与开关联动，真正的清理动作由后台 Worker 定时触发；
+ * 页面不持有清理逻辑，避免配置与执行口径分裂。</p>
+ *
+ * <p>配置读取失败时会把错误写进日志库并提示用户，防止出现「看似保存成功、实际没生效」。</p>
+ */
 public class AutoClearConfigActivity extends AppCompatActivity {
 
+    /** 私钥自动清除开关（关闭时下面的间隔输入置灰且不参保存校验） */
     private SwitchCompat swAutoEnable;
+    /** 私钥自动清除间隔数值，与 spTimeUnit 组成「N 小时/天」 */
     private EditText etAutoClearVal;
+    /** 间隔单位下拉：索引与 ArenaConfig.autoClearIntervalUnitIndex 一一对应 */
     private Spinner spTimeUnit;
+    /** 入场模式下拉：索引存入 ArenaConfig.playModeIndex，主界面按它决定打不打 */
     private Spinner spPlayMode;
+    /** 日志自动清除开关（关闭时停掉后台清理调度） */
     private SwitchCompat swLogClearEnable;
+    /** 日志保留时长数值，与 spLogTimeUnit 组成「N 小时/天」 */
     private EditText etLogClearVal;
+    /** 日志保留单位下拉，索引存入 ArenaConfig.logClearIntervalUnitIndex */
     private Spinner spLogTimeUnit;
+    /** 日志间隔整块布局（含标题与输入行），开关关闭时整体半透明 */
     private LinearLayout layoutLogInterval;
+    /** 当前生效状态卡片：同时展示私钥与日志两个开关的状态 */
     private TextView tvAutoClearStatus;
-    private TextView btnSave;
+
+    // region 生命周期
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -39,13 +58,43 @@ public class AutoClearConfigActivity extends AppCompatActivity {
         setContentView(R.layout.activity_auto_clear);
 
         findViewById(R.id.btn_back).setOnClickListener(v -> onBackPressed());
+        // 保存按钮已改成标题栏图标，点击逻辑不变
         findViewById(R.id.btn_save_auto_clear).setOnClickListener(v -> saveConfigs());
+        // 原页面顶部的黄色提示条改为按需弹窗，入口在标题栏
+        findViewById(R.id.btn_tip_warning).setOnClickListener(v -> showClearRuleDialog());
         findViewById(R.id.btn_init_db).setOnClickListener(v -> showInitDbDialog());
 
         initViews();
         loadConfigs();
     }
 
+    // endregion
+
+    // region 规则说明弹窗
+
+    /**
+     * 清理规则说明：原来常驻页面顶部的黄色提示条，改为点标题栏「⚠」按需查看。
+     *
+     * <p>文案直接复用既有的 auto_clear_tip_text 与 auto_clear_desc_note_v2，
+     * 不再另写一份说明，避免弹窗与文档两处口径不一致。</p>
+     */
+    private void showClearRuleDialog() {
+        String msg = getString(R.string.auto_clear_tip_text) + "\n\n"
+                + getString(R.string.auto_clear_desc_note_v2);
+        StatusTipDialog.show(this, StatusTipDialog.TONE_WARN, R.drawable.ic_warning_svg,
+                getString(R.string.auto_clear_tip_dialog_title), msg);
+    }
+
+    // endregion
+
+    // region 数据库初始化
+
+    /**
+     * 初始化数据库：清空日志与私钥记录并重建表结构，但保留分组表。
+     *
+     * <p>属于不可撤销操作，按钮在弹窗内自绘并锁定到执行结束；
+     * 失败时恢复按钮文案与可点状态，同时把异常提示出来，避免用户以为已清空。</p>
+     */
     private void showInitDbDialog() {
         View view = LayoutInflater.from(this).inflate(R.layout.dialog_init_db, null);
         final AlertDialog dialog = new AlertDialog.Builder(this, R.style.AppDialog)
@@ -87,6 +136,11 @@ public class AutoClearConfigActivity extends AppCompatActivity {
         btnCancel.setOnClickListener(v -> dialog.dismiss());
     }
 
+    // endregion
+
+    // region 视图初始化
+
+    /** 取控件引用并绑定两个开关的联动：开关一改，对应间隔区立即跟着置灰/激活 */
     private void initViews() {
         swAutoEnable = findViewById(R.id.sw_auto_enable);
         etAutoClearVal = findViewById(R.id.et_auto_clear_val);
@@ -97,7 +151,6 @@ public class AutoClearConfigActivity extends AppCompatActivity {
         spLogTimeUnit = findViewById(R.id.sp_log_time_unit);
         layoutLogInterval = findViewById(R.id.layout_log_interval);
         tvAutoClearStatus = findViewById(R.id.tv_auto_clear_status);
-        btnSave = findViewById(R.id.btn_save_auto_clear);
 
         // 两个开关各自管自己的间隔输入，关闭时置灰并禁用，避免改了却不生效
         swAutoEnable.setOnCheckedChangeListener((b, checked) -> {
@@ -110,12 +163,23 @@ public class AutoClearConfigActivity extends AppCompatActivity {
         });
     }
 
+    // endregion
+
+    // region 配置读写
+
+    /**
+     * 读配置并回填控件。
+     *
+     * <p>三个下拉索引都做越界保护：覆盖安装后选项数量变少（如入场模式旧版 3 项、新版 2 项）时，
+     * 越界值会重置为默认并写一条 CONFIG_WARN 日志，而不是把页面显示错或直接崩。
+     * 整体读取失败则全部回落默认值，同样写日志留痕。</p>
+     */
     private void loadConfigs() {
         try {
             ArenaConfig.loadConfig(this);
             swAutoEnable.setChecked(ArenaConfig.autoClearEnable);
             etAutoClearVal.setText(String.valueOf(ArenaConfig.autoClearIntervalValue));
-            
+
             // 边界检查：防止索引超出数组范围（覆盖安装兼容）
             int timeUnitIndex = ArenaConfig.autoClearIntervalUnitIndex;
             if (timeUnitIndex < 0 || timeUnitIndex >= spTimeUnit.getCount()) {
@@ -125,7 +189,7 @@ public class AutoClearConfigActivity extends AppCompatActivity {
                 timeUnitIndex = 1; // 默认：小时
             }
             spTimeUnit.setSelection(timeUnitIndex);
-            
+
             // 入场模式：旧版本有3个选项(0/1/2)，新版本只有2个(0/1)
             int playModeIndex = ArenaConfig.playModeIndex;
             if (playModeIndex < 0 || playModeIndex >= spPlayMode.getCount()) {
@@ -135,9 +199,9 @@ public class AutoClearConfigActivity extends AppCompatActivity {
                 playModeIndex = 0; // 默认：能打就打
             }
             spPlayMode.setSelection(playModeIndex);
-            
+
             etLogClearVal.setText(String.valueOf(ArenaConfig.logClearIntervalValue));
-            
+
             int logTimeUnitIndex = ArenaConfig.logClearIntervalUnitIndex;
             if (logTimeUnitIndex < 0 || logTimeUnitIndex >= spLogTimeUnit.getCount()) {
                 String warnMsg = "配置项 logClearIntervalUnitIndex 越界: " + logTimeUnitIndex + "，已重置为默认值 2(天)";
@@ -155,7 +219,7 @@ public class AutoClearConfigActivity extends AppCompatActivity {
             String errMsg = "加载配置异常: " + e.getClass().getSimpleName() + " - " + e.getMessage();
             Log.e("AutoClearConfig", errMsg, e);
             writeErrorToDb("CONFIG_ERROR", errMsg);
-            
+
             // 使用默认值
             swAutoEnable.setChecked(false);
             etAutoClearVal.setText("1");
@@ -184,6 +248,12 @@ public class AutoClearConfigActivity extends AppCompatActivity {
         }
     }
 
+    /**
+     * 保存配置：先校验两个间隔都是正整数，再写回 ArenaConfig 并落盘。
+     *
+     * <p>保存后要做两件收尾：写一条 CONFIG 日志方便事后对账；
+     * 按日志清除开关重启/停止后台调度，否则改了间隔要等下次重启才生效。</p>
+     */
     private void saveConfigs() {
         try {
             int intervalValue = Integer.parseInt(etAutoClearVal.getText().toString());
@@ -235,6 +305,11 @@ public class AutoClearConfigActivity extends AppCompatActivity {
         }
     }
 
+    // endregion
+
+    // region 文案与开关联动
+
+    /** 单位索引转文案，越界时回退到「小时」，用于日志拼接 */
     private String getTimeUnitText(int unitIndex) {
         String[] timeUnits = getResources().getStringArray(R.array.time_unit_array);
         if (unitIndex >= 0 && unitIndex < timeUnits.length) {
@@ -243,6 +318,7 @@ public class AutoClearConfigActivity extends AppCompatActivity {
         return getString(R.string.unit_hour);
     }
 
+    /** 入场模式索引转文案，越界时回退到默认模式，用于日志拼接 */
     private String getPlayModeText(int modeIndex) {
         String[] playModes = getResources().getStringArray(R.array.play_mode_array);
         if (modeIndex >= 0 && modeIndex < playModes.length) {
@@ -251,6 +327,7 @@ public class AutoClearConfigActivity extends AppCompatActivity {
         return getString(R.string.play_mode_flexible);
     }
 
+    /** 私钥间隔区的启用态：整块透明度 + 输入框/下拉可编辑性同步切换 */
     private void applyKeyIntervalEnabled(boolean enabled) {
         View layout = findViewById(R.id.layout_time_setting);
         if (layout != null) layout.setAlpha(enabled ? 1f : 0.4f);
@@ -258,6 +335,7 @@ public class AutoClearConfigActivity extends AppCompatActivity {
         spTimeUnit.setEnabled(enabled);
     }
 
+    /** 日志间隔区的启用态：与私钥区同一套置灰规则，两区视觉一致 */
     private void applyLogIntervalEnabled(boolean enabled) {
         if (layoutLogInterval != null) layoutLogInterval.setAlpha(enabled ? 1f : 0.4f);
         etLogClearVal.setEnabled(enabled);
@@ -271,4 +349,7 @@ public class AutoClearConfigActivity extends AppCompatActivity {
         String logState = getString(swLogClearEnable.isChecked() ? R.string.state_enabled : R.string.state_disabled);
         tvAutoClearStatus.setText(getString(R.string.auto_clear_status_pair_fmt, keyState, logState));
     }
+
+    // endregion
+
 }

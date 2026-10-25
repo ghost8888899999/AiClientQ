@@ -1,15 +1,158 @@
-<vector xmlns:android="http://schemas.android.com/apk/res/android" android:height="128dp" android:viewportHeight="24" android:viewportWidth="24" android:width="128dp">
-      
-    <path android:fillColor="#2196F3" android:pathData="M6,1L18,1A5,5 0,0 1,23 6L23,18A5,5 0,0 1,18 23L6,23A5,5 0,0 1,1 18L1,6A5,5 0,0 1,6 1z"/>
-      
-    <path android:fillColor="#00000000" android:pathData="M6.6,2.6L17.4,2.6A4,4 0,0 1,21.4 6.6L21.4,17.4A4,4 0,0 1,17.4 21.4L6.6,21.4A4,4 0,0 1,2.6 17.4L2.6,6.6A4,4 0,0 1,6.6 2.6z" android:strokeColor="#000000" android:strokeWidth="0.6"/>
-      
-    <path android:fillColor="#00000000" android:pathData="M12,6.2C8.2,6.2 5.2,9.4 5.2,13.2C5.2,17 8.2,20.2 12,20.2C15.8,20.2 18.8,17 18.8,13.2C18.8,9.4 15.8,6.2 12,6.2Z" android:strokeColor="#FFFFFF" android:strokeLineCap="round" android:strokeLineJoin="round" android:strokeWidth="1.1"/>
-      
-    <path android:fillColor="#FFFFFF" android:pathData="M12,8.4L14.6,9.9L14.6,12.9L12,14.4L9.4,12.9L9.4,9.9Z"/>
-      
-    <path android:fillColor="#FFD740" android:pathData="M16.9,7.4L17.7,6.6C18.1,6.2 18.7,6.3 19,6.7C19.3,7.1 19.2,7.7 18.8,8.1L18,8.9L16.5,10.4L15.7,9.6C15.3,9.2 15.3,8.6 15.7,8.2L16.9,7.4Z"/>
-      
-    <path android:fillColor="#FFFFFF" android:pathData="M7.4,19v1.4h0.6v-1.2h0.8v-0.2h-1.4zM9.3,19v1.4h0.5l0.3,-0.7 0.3,0.7h0.5v-1.4h-0.4v0.8l-0.3,-0.5h-0.4l-0.2,0.5v-0.8zM11.6,19v1.4h0.4v-0.9l0.5,0.9h0.4v-1.4h-0.4v0.8l-0.5,-0.8zM14.1,19c-0.3,0 -0.5,0.2 -0.5,0.5s0.2,0.4 0.4,0.5l0.3,0.1c0.1,0 0.1,0.1 0.1,0.1s0,0.2 -0.2,0.2c-0.1,0 -0.2,0 -0.3,-0.1l-0.1,0.3c0.1,0.1 0.3,0.2 0.5,0.2c0.3,0 0.5,-0.2 0.5,-0.5s-0.2,-0.4 -0.4,-0.5l-0.3,-0.1c-0.1,0 -0.1,-0.1 -0.1,-0.1s0,-0.1 0.1,-0.1c0.1,0 0.2,0 0.2,0.1l0.1,-0.3c-0.1,-0.1 -0.3,-0.2 -0.4,-0.2z"/>
-    
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    App 图标：精灵舞剑。
+
+    不画完整人形：24 网格里一个人形只有约 11 单位高，缩到 48dp 桌面尺寸后只剩一团剪影。
+    改用三个可独立辨认的符号来转喻整个动作——
+    · 一双半透明的青蓝精灵翼：翼根压在剑身上，剑似从翼中生出，交代「精灵」；
+    · 一把斜置的金色长剑：剑尖朝右上，打破水平/垂直的呆板，交代「舞剑」；
+    · 一道从剑尖绕下的青色光弧：表示挥剑的残影轨迹，也就是那个「舞」字；
+    · 外围圆环是魔法阵，也是所有元素的收束边界，让画面不至于散掉。
+
+    尺寸约定：24 单位网格，外环半径 8 落在 4~20，剑尖 6.4 到剑首 17.75，
+    四周留约 1 单位安全边；翼尖与圆周故意出环，形成破阵而出的张力。
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="128dp"
+    android:height="128dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+
+    <!-- 底：深空蓝三段渐变，圆角 5.5 对齐 Material 图标圆角规范 -->
+    <path
+        android:pathData="M6.5,1 L17.5,1 A5.5,5.5 0 0 1 23,6.5 L23,17.5 A5.5,5.5 0 0 1 17.5,23 L6.5,23 A5.5,5.5 0 0 1 1,17.5 L1,6.5 A5.5,5.5 0 0 1 6.5,1 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:endX="20"
+                android:endY="23"
+                android:startX="4"
+                android:startY="1"
+                android:type="linear">
+                <item
+                    android:color="#FF22355C"
+                    android:offset="0" />
+                <item
+                    android:color="#FF111E36"
+                    android:offset="0.55" />
+                <item
+                    android:color="#FF060A12"
+                    android:offset="1" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- 玻璃内高光：内缩 0.75 的极细描边 -->
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M6.9,1.75 L17.1,1.75 A5.15,5.15 0 0 1 22.25,6.9 L22.25,17.1 A5.15,5.15 0 0 1 17.1,22.25 L6.9,22.25 A5.15,5.15 0 0 1 1.75,17.1 L1.75,6.9 A5.15,5.15 0 0 1 6.9,1.75 Z"
+        android:strokeColor="#1FFFFFFF"
+        android:strokeWidth="0.7" />
+
+    <!-- 魔法阵外环：收束全部元素，太亮会盖住剑，所以只给 30% 透明度的青 -->
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M4,12 a8,8 0 1,0 16,0 a8,8 0 1,0 -16,0 Z"
+        android:strokeColor="#4D35D6F0"
+        android:strokeWidth="0.7" />
+
+    <!-- 挥剑光弧：从剑尖向右下绕回，模拟剑锋掠过空气的残影 -->
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M15.1,6.4 Q18.7,10.2 14.0,13.4"
+        android:strokeColor="#7335D6F0"
+        android:strokeLineCap="round"
+        android:strokeWidth="0.75" />
+
+    <!-- 精灵上翼：翼根贴着剑身，翼尖向左上探出阵外 -->
+    <path android:pathData="M9.8,11.4 Q7.6,9.0 6.2,5.4 Q8.2,6.2 9.6,8.0 Q10.6,9.8 9.8,11.4 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:endX="6.2"
+                android:endY="5.4"
+                android:startX="9.8"
+                android:startY="11.4"
+                android:type="linear">
+                <item
+                    android:color="#B37FE3FF"
+                    android:offset="0" />
+                <item
+                    android:color="#1A35D6F0"
+                    android:offset="1" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- 精灵下翼：与上翼对向展开，一动一静形成旋身感 -->
+    <path android:pathData="M14.2,12.6 Q16.4,15.2 17.4,18.8 Q15.4,18.0 13.8,16.0 Q12.8,14.0 14.2,12.6 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:endX="17.4"
+                android:endY="18.8"
+                android:startX="14.2"
+                android:startY="12.6"
+                android:type="linear">
+                <item
+                    android:color="#B37FE3FF"
+                    android:offset="0" />
+                <item
+                    android:color="#1A35D6F0"
+                    android:offset="1" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- 剑身：斜指右上的窄刃，三段金色渐变让刃面有反光 -->
+    <path android:pathData="M9.43,15.48 L14.82,7.92 L15.10,6.40 L13.76,7.16 L8.37,14.72 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:endX="15.1"
+                android:endY="6.4"
+                android:startX="8.9"
+                android:startY="15.1"
+                android:type="linear">
+                <item
+                    android:color="#FFE89A12"
+                    android:offset="0" />
+                <item
+                    android:color="#FFFFC13B"
+                    android:offset="0.45" />
+                <item
+                    android:color="#FFFFF0BF"
+                    android:offset="1" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- 剑格：垂直于刃身的护手，决定剑的整体气质，不能省 -->
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M7.60,14.17 L10.20,16.03"
+        android:strokeColor="#FFFFC94A"
+        android:strokeLineCap="round"
+        android:strokeWidth="1" />
+
+    <!-- 剑柄：沿剑轴反方向伸出的握把 -->
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M8.90,15.10 L7.62,16.89"
+        android:strokeColor="#FFFFC94A"
+        android:strokeLineCap="round"
+        android:strokeWidth="1" />
+
+    <!-- 剑首：柄尾配重球 -->
+    <path
+        android:fillColor="#FFFFC94A"
+        android:pathData="M6.70,17.30 a0.6,0.6 0 1,0 1.2,0 a0.6,0.6 0 1,0 -1.2,0 Z" />
+
+    <!-- 三颗星芒：剑势带起的魔法星尘，大小错落避免呆板 -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M16.5,8.85 Q16.79,9.71 17.65,10.0 Q16.79,10.29 16.5,11.15 Q16.21,10.29 15.35,10.0 Q16.21,9.71 16.5,8.85 Z" />
+    <path
+        android:fillColor="#FFCFEFFF"
+        android:pathData="M12.6,3.8 Q12.82,4.38 13.4,4.6 Q12.82,4.82 12.6,5.4 Q12.38,4.82 11.8,4.6 Q12.38,4.38 12.6,3.8 Z" />
+    <path
+        android:fillColor="#FFCFEFFF"
+        android:pathData="M6.2,11.75 Q6.38,12.22 6.85,12.4 Q6.38,12.58 6.2,13.05 Q6.02,12.58 5.55,12.4 Q6.02,12.22 6.2,11.75 Z" />
 </vector>

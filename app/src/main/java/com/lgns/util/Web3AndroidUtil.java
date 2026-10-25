@@ -23,10 +23,15 @@ import java.util.concurrent.atomic.AtomicInteger;
 import okhttp3.OkHttpClient;
 
 /**
- * Web3工具类
- * 修复脚本全部缺陷：nonce冲突、gas硬编码、无回执校验、RPC无重试、固定sleep等待等风险
- * 新增:多RPC节点熔断轮换 + ChainId 上线校验 + revert 类错误不重试
- * 更佳优化：并行探测三节点 + 合约字节码就绪校验 + OkHttp 显式超时
+ * Web3 访问的底层工具：节点选择、重试、超时、gas 估算与取消开关。
+ *
+ * <p>已经踩过的坑都收在这一个类里：nonce 写到冲突、gas 硬编码、不等回执、
+ * RPC 无重试、固定 sleep 等待；以及多 RPC 节点熔断轮换 + chainId 上线校验 +
+ * revert 类错误不重试 + 并行探测节点 + 合约字节码就绪校验 + OkHttp 显式超时。</p>
+ *
+ * <p>重试策略是最容易改坏的地方：{@link #rpcRetryCall} 对普通网络错误做指数退避重试，
+ * 但只要 {@link #isRevert} 判定为业务失败就直接抛出——这类错误重试只会重复失败，
+ * 还会把节点的 RPC 配额烧光。</p>
  */
 public class Web3AndroidUtil {
 
@@ -38,20 +43,34 @@ public class Web3AndroidUtil {
         T run() throws Exception;
     }
 
+    // region 常量
+
+    /** 回执轮询间隔（毫秒）：节点出块几秒内完成，1s 既能及时拿到又不打满节点 */
     private static final long RECEIPT_POLL_MS = 1000L;
+    /** 等回执总超时（秒），与 ArenaConfig 共用一份，避免两处口径不一致 */
     private static final long TX_WAIT_TIMEOUT_SEC = ArenaConfig.TX_TIMEOUT_SEC;
+    /** gasPrice 上浮比例分子：110/100 = 链上报价再提 10%，防被抢跑后卡在 pending */
     private static final BigInteger GAS_PRICE_RATIO = BigInteger.valueOf(110);
+    /** gasPrice 上浮比例分母 */
     private static final BigInteger GAS_PRICE_BASE = BigInteger.valueOf(100);
+    /** gasLimit 上浮比例分子：120/100，估算值再留 20% 余量防 OOG */
     private static final BigInteger GAS_LIMIT_RATIO = BigInteger.valueOf(120);
+    /** gasLimit 上浮比例分母 */
     private static final BigInteger GAS_LIMIT_BASE = BigInteger.valueOf(100);
+    /** 重试总次数，取自配置（节点数 * 2） */
     private static final int RPC_MAX_RETRY = ArenaConfig.RPC_MAX_RETRY;
+    /** 重试基础退避（毫秒），之后按 2 的幂递增，上限封在 16 倍 */
     private static final long RPC_RETRY_INTERVAL_MS = 500L;
 
     /** 当前活跃RPC节点索引,跨线程共享,失败时原子递增 */
     private static final AtomicInteger CUR_RPC = new AtomicInteger(0);
 
+    // endregion
+
     /**
-     * 等待交易回执，带超时，循环轮询，替代固定sleep
+     * 等待交易回执：循环轮询直到拿到回执或超时，替代固定 sleep。
+     *
+     * @param timeoutSec 总超时秒数；超时抛异常，由调用方决定是重查还是标 pending
      */
     public static TransactionReceipt waitReceipt(Web3j web3j, String txHash, long timeoutSec) throws Exception {
         long startTs = System.currentTimeMillis();
@@ -67,16 +86,30 @@ public class Web3AndroidUtil {
         throw new Exception("等待交易回执超时 hash:" + txHash);
     }
 
+    /**
+     * 取 pending 状态的 nonce（包含已发出但未上链的）。
+     *
+     * <p>必须用 PENDING 而不是 LATEST：用 LATEST 会在上一笔还没出块时又发一笔同 nonce 的交易，
+     * 两者只能活一笔，结果就是“交易神秘消失”。</p>
+     */
     public static BigInteger getPendingNonce(Web3j web3j, String address) throws Exception {
         return rpcRetryCall(() -> web3j.ethGetTransactionCount(address, org.web3j.protocol.core.DefaultBlockParameterName.PENDING)
                 .send().getTransactionCount());
     }
 
+    /** 取链上 gasPrice 并上浮 10%（{@link #GAS_PRICE_RATIO}/{@link #GAS_PRICE_BASE}） */
     public static BigInteger getGasPrice(Web3j web3j) throws Exception {
         BigInteger rawGasPrice = rpcRetryCall(() -> web3j.ethGasPrice().send().getGasPrice());
         return rawGasPrice.multiply(GAS_PRICE_RATIO).divide(GAS_PRICE_BASE);
     }
 
+    /**
+     * 估算 gas 并上浮 20%。
+     *
+     * <p>估算失败时把 from/to/节点/原因一起打进 logcat 再抛：这种失败常见于
+     * 参数错、节点不同步，只看一句“estimate gas failed”根本查不出来。
+     * 不直接落库：自动估算每轮每账号都会跑，写 DB 会迅速撑大日志表。</p>
+     */
     public static BigInteger estimateGas(Web3j web3j, String from, String to, String callData) throws Exception {
         return rpcRetryCall(() -> {
             org.web3j.protocol.core.methods.request.Transaction tx =
@@ -94,6 +127,15 @@ public class Web3AndroidUtil {
         });
     }
 
+    /**
+     * 带重试地执行一次 RPC 调用（所有网络请求的公共入口）。
+     *
+     * <p>退避策略：{@code 500ms * 2^min(i,4)}，即 0.5s/1s/2s/4s/8s……封在 8s，
+     * 避免节点长时间宕机时把一次任务拖到几分钟。
+     * revert 这类“再来一次也一样”的错误不重试，直接抛。</p>
+     *
+     * @throws Exception 重试耗尽后抛出，cause 为最后一次异常
+     */
     public static <T> T rpcRetryCall(RpcTask<T> task) throws Exception {
         Exception lastEx = null;
         for (int i = 0; i < RPC_MAX_RETRY; i++) {
@@ -111,6 +153,7 @@ public class Web3AndroidUtil {
         throw new Exception("RPC 调用重试全部失败 | 节点:" + currentRpcUrl(), lastEx);
     }
 
+    /** 十六进制私钥（带不带 0x 均可）转 ECKeyPair */
     public static ECKeyPair pkToKeyPair(String privateKeyHex) {
         BigInteger priv = Numeric.toBigInt(privateKeyHex);
         return ECKeyPair.create(priv);
@@ -139,6 +182,7 @@ public class Web3AndroidUtil {
         return Web3j.build(httpService);
     }
 
+    /** 当前活跃节点 URL；下标取模，避免轮换溢出数组 */
     public static String currentRpcUrl() {
         int idx = Math.floorMod(CUR_RPC.get(), ArenaConfig.RPC_URLS.length);
         return ArenaConfig.RPC_URLS[idx];
@@ -291,8 +335,18 @@ public class Web3AndroidUtil {
      * 请求取消,当前批量循环会在下一次账号切换时跳出
      */
     private static volatile boolean cancelRequested = false;
+    /**
+     * 请求取消当前批量任务。
+     *
+     * <p>采用「标记 + 轮询」而不是中断线程：批量循环在账号切换处检查此标记，
+     * 保证当前账号的交易能跑完再退出，不会留下半截状态。</p>
+     */
     public static void requestCancel() { cancelRequested = true; }
+
+    /** 新任务开始前清掉上一次的取消标记，否则任务一启动就自行退出 */
     public static void resetCancel() { cancelRequested = false; }
+
+    /** 批量循环在每个账号切换处调用，true 则停止后续账号 */
     public static boolean isCancelRequested() { return cancelRequested; }
 
 

@@ -21,10 +21,36 @@ import java.math.BigInteger;
 import java.util.ArrayList;
 import java.util.List;
 
+/**
+ * Squad 委托路径的三个批量操作：整批入场、整批收割、EIP-7702 委托。
+ *
+ * <p>与 {@code BatchEnterTask} 这类逐账号任务的差别：这里所有链上写入都由主号一笔交易完成，
+ * 子号只用来解出地址（不需要各自签名、不各自付 gas），所以不会出现「N 个账号 N 笔交易」。
+ * 前提是子号已通过 7702 把代码委托给 Squad 合约并加入成员表。</p>
+ *
+ * <p>线程模型：三个方法都是同步阻塞的，必须在后台线程调用；日志通过
+ * {@link TaskLogCallback} 回到任务线程，UI 层自己负责切主线程。
+ * 取消靠 {@code Web3AndroidUtil.isCancelRequested()} 轮询，只在循环/阶段边界生效——
+ * 已广播的交易无法回滚。</p>
+ */
 public class ArenaSquadTask {
 
+    /** 统一转成可读的异常描述，避免日志里出现 null message */
     private static String msgOf(Throwable e) { return Web3AndroidUtil.safeMessage(e); }
 
+    // region 整批入场
+
+    /**
+     * 主号一笔交易打完一批子号（Squad 的 {@code playSome}）。
+     *
+     * <p>过程：连节点 → 校验主号已委托 → 逐个解私钥只取地址 → {@code preparePlay} 干跑
+     * 并用二分法求出实际能打的子集 → 取 gasPrice、nonce(PENDING)、gasLimit =
+     * max(预演值, 经验下限) → 组 legacy 交易发给 Squad 合约 → 等回执。</p>
+     *
+     * <p>失败分支：任一子号解密失败只跳过该号（不影响其余）；整批模拟失败或没有可打账号则
+     * 直接返回；节点全不可达时向上抛出 {@code IOException}，由调用方决定是否提示换节点。
+     * 注意这里发的是普通 legacy 交易（非 7702 交易），子号的委托信息已存在链上。</p>
+     */
     public static void squadBatchEnter(Context ctx, TaskLogCallback callback,
                                        List<KeyListItem> selectedList, char[] sessionCryptoKey,
                                        String masterPk, String squadAddr) throws Exception {
@@ -120,6 +146,21 @@ public class ArenaSquadTask {
         }
     }
 
+    // endregion
+
+    // region 整批收割
+
+    /**
+     * 主号循环收割，直到合约里没有可收余额（Squad 的 {@code harvestSome}）。
+     *
+     * <p>为什么要循环：单次 harvest 受单笔 gas 与合约内单轮上限约束，成员多时收不干净，
+     * 所以最多打 5 趟，每趟到链上重新取一次 {@code masterBalance}：
+     * 收光了就停，没停就等 3 秒再打下一趟。</p>
+     *
+     * <p>每趟都重新取 gasPrice、重新估 gas、重新取 PENDING nonce，
+     * 避免上一趟刚出块导致的 nonce/价格过期；估算失败时退回到经验下限。
+     * 某趟回滚（{@code RevertedTxException}）就整个停下——同一批参数重试也是回滚。</p>
+     */
     public static void squadBatchHarvest(Context ctx, TaskLogCallback callback,
                                          List<KeyListItem> selectedList, char[] sessionCryptoKey,
                                          String masterPk, String squadAddr) throws Exception {
@@ -209,9 +250,9 @@ public class ArenaSquadTask {
                     callback.onLog("", "SQUAD", "收割完毕，主号无可收余额");
                     break;
                 }
+                // 下一趟无需额外等待：上一趟已等到回执，主号余额也是刚查的，nonce 重新取 PENDING
                 if (pass < 5) {
-                    callback.onLog("", "SQUAD", "仍有可收余额,3 秒后继续...");
-                    Thread.sleep(3000);
+                    callback.onLog("", "SQUAD", "仍有可收余额,继续下一趟...");
                 }
             }
 
@@ -225,6 +266,22 @@ public class ArenaSquadTask {
         }
     }
 
+    // endregion
+
+    // region EIP-7702 委托
+
+    /**
+     * 把主号与选中子号一次性授权给 Squad 合约（一笔 SetCodeTx 带多个授权条目）。
+     *
+     * <p>流程：查主号是否已委托 → 未委托则签一条主号授权（nonce 取 PENDING + 1：
+     * 本次交易本身要占掉当前 nonce，授权只能用下一个）→ 逐个解子号私钥签授权
+     * （已委托的跳过，等于主号的也跳过）→ 按「60000 + 每成员 40000」估 gasLimit →
+     * 组 0x04 交易 → 等回执 → 逐个回查 code 确认生效。</p>
+     *
+     * <p>⚠ 当前实现缺口：签完后只调了 {@code waitReceiptLocal(web3j, signedTx.txHash)}，
+     * 并没有把 {@code signedTx.rawTxHex} 广播出去，所以交易永远不上链、回查也必然显示未生效。
+     * 要真正可用需在等回执前补一次 {@code eth_sendRawTransaction}。</p>
+     */
     public static void squadDelegate(Context ctx, TaskLogCallback callback,
                                      List<KeyListItem> selectedList, char[] sessionCryptoKey,
                                      String masterPk, String squadAddr) throws Exception {
@@ -332,6 +389,16 @@ public class ArenaSquadTask {
         }
     }
 
+    // endregion
+
+    // region 内部工具
+
+    /**
+     * 用主号签一笔普通 legacy 交易（发给 Squad 合约的批量调用）。
+     *
+     * <p>抽出来只为了统一挂预广播钩子：入场传了空钩子（不需要提前落库），
+     * 收割传 null，后续若要统一记录 rawTx 只需改这里一处。</p>
+     */
     private static String buildSquadLegacyRawTx(ECKeyPair masterKeyPair, BigInteger nonce,
                                                 BigInteger gasPrice, BigInteger gasLimit,
                                                 String toAddr, String data,
@@ -342,4 +409,6 @@ public class ArenaSquadTask {
         }
         return signed.rawTxHex;
     }
+
+    // endregion
 }
