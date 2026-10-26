@@ -18,4 +18,8 @@
     <!-- 危险/警告类操作 -->
     <color name="danger">#FFE53935</color>
     <color name="danger_bg">#FFFDECEA</color>
+
+    <!-- 标题栏副标题：常规态半透明白；会话已锁定时换琥珀色，因为那是唯一需要用户就地动手的状态 -->
+    <color name="status_normal">#CCFFFFFF</color>
+    <color name="status_locked">#FFFFD54F</color>
 </resources>

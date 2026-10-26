@@ -41,7 +41,9 @@ public class MainDataLoader {
                                              List<KeyListItem> keyListItemList) {
         new Thread(() -> {
             try {
-                KeyStoreManager mgr = AppGlobal.getKeyStoreManager();
+                // 主界面清单只读元数据（编号/地址/分组/启用），不需要解密会话：
+                // 用会话实例会在空闲超时后抛异常，导致刷新整段失败
+                KeyStoreManager mgr = AppGlobal.getMetaManager();
                 List<KeyStoreManager.KeyEntry> originEntryList = mgr.loadKeyEntryList();
                 // 历史迁移/并发写入可能留下同 id 多条，先收敛再排序，否则界面上会出现重复行
                 List<KeyStoreManager.KeyEntry> unique = removeDuplicates(originEntryList);

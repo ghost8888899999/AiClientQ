@@ -11,7 +11,6 @@ import android.widget.ProgressBar;
 import android.widget.ScrollView;
 import android.widget.TextView;
 import androidx.annotation.NonNull;
-import androidx.appcompat.app.AppCompatActivity;
 
 import com.lgns.manager.AppGlobal;
 import com.lgns.manager.AppLogDbHelper;
@@ -65,7 +64,7 @@ import java.util.Map;
  *
  * <p>统计口径以链上同步结果为准，本地只保留上一次快照用于首屏兜底，两者在界面上用同步状态区分。</p>
  */
-public class MainActivity extends AppCompatActivity implements TaskLogCallback, BatchFundTask.ButtonStateController {
+public class MainActivity extends BaseActivity implements TaskLogCallback, BatchFundTask.ButtonStateController {
 
     // region 视图与数据
 
@@ -138,6 +137,8 @@ public class MainActivity extends AppCompatActivity implements TaskLogCallback, 
     private boolean skipRefreshOnResume = false;
     /** 本次 onResume 只重读本地清单、不拉链上统计：私钥增删改后只需重建行结构 */
     private boolean refreshLocalOnlyOnResume = false;
+    /** 页面在后台时被判空闲上锁：先压住弹窗，等 onResume 再弹（后台不创建 Dialog） */
+    private volatile boolean pendingIdleUnlock = false;
 
     // endregion
 
@@ -153,6 +154,9 @@ public class MainActivity extends AppCompatActivity implements TaskLogCallback, 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        // 先记下 App Context：checkAutoClearBoot() 里的元数据操作跑在独立线程上，
+        // 可能早于下面 initKeyManager 那个线程，缺了它只会拿到「应用未初始化」
+        AppGlobal.setAppContext(getApplicationContext());
         sInstance = new java.lang.ref.WeakReference<>(this);
         setContentView(R.layout.activity_main);
 
@@ -253,6 +257,14 @@ public class MainActivity extends AppCompatActivity implements TaskLogCallback, 
         // 统计加载失败时，汇总栏兼作重试入口（其他状态下点按无副作用）
         tvSummaryEnter.setOnClickListener(v -> {
             if (statsPhase == STATS_FAILED) loadStatsOverview();
+        });
+
+        // 副标题兼作解锁入口：会话过期后不必杀进程重开，点一下就地弹密码框。
+        // 只在「有账号 + 没跑任务 + 确实已锁定」时响应，其余状态点按无副作用。
+        tvStatusSub.setOnClickListener(v -> {
+            if (!accountDataReady || isTaskRunning || keyListItemList.isEmpty()) return;
+            if (!AppGlobal.isSessionLocked()) return;
+            showIdleUnlockDialog();
         });
     }
 
@@ -408,15 +420,21 @@ public class MainActivity extends AppCompatActivity implements TaskLogCallback, 
     /**
      * 刷新标题栏副标题。
      *
-     * <p>五种状态与按钮门控完全同源（{@code accountDataReady} / {@code statsPhase} /
-     * {@code isTaskRunning}），所以只在 {@link #applyButtonEnabledState()} 里调用：
-     * 任何一个状态变化都会走到那里，标题栏文案因此不会和「按钮能不能点」打架。</p>
+     * <p>六种状态与按钮门控同源（{@code accountDataReady} / {@code statsPhase} /
+     * {@code isTaskRunning} / 会话是否锁定），所以主要在 {@link #applyButtonEnabledState()}
+     * 里调用：任何一个状态变化都会走到那里，标题栏文案因此不会和「按钮能不能点」打架。</p>
      *
      * <p>判定顺序有讲究——任务运行中优先于统计态：任务跑起来时按钮被锁，
-     * 此时提示「运行中」比提示「已就绪」更贴近用户看到的现象。</p>
+     * 此时提示「运行中」比提示「已就绪」更贴近用户看到的现象。会话锁定排在「无账号」之后：
+     * 列表为空时本来就没有可解密的东西，提示解锁只会误导。</p>
+     *
+     * <p>「已锁定」这一支同时换琥珀色：这是唯一需要用户就地动手的状态，
+     * 光靠一段小字很容易被当成普通提示略过。</p>
      */
     private void refreshStatusSubtitle() {
         if (tvStatusSub == null) return;
+        // 有账号、没跑任务、会话为空 → 需要用户输密码；三者缺一都不该提示解锁
+        boolean locked = !isTaskRunning && !keyListItemList.isEmpty() && AppGlobal.isSessionLocked();
         String text;
         if (!accountDataReady) {
             text = getString(R.string.main_status_loading);
@@ -424,6 +442,8 @@ public class MainActivity extends AppCompatActivity implements TaskLogCallback, 
             text = getString(R.string.main_status_running);
         } else if (keyListItemList.isEmpty()) {
             text = getString(R.string.main_status_empty);
+        } else if (locked) {
+            text = getString(R.string.main_status_locked);
         } else if (statsPhase == STATS_FAILED) {
             text = getString(R.string.main_status_failed);
         } else if (statsPhase == STATS_IDLE) {
@@ -433,6 +453,7 @@ public class MainActivity extends AppCompatActivity implements TaskLogCallback, 
                     getEnabledKeyItems().size(), keyListItemList.size());
         }
         tvStatusSub.setText(text);
+        tvStatusSub.setTextColor(getColor(locked ? R.color.status_locked : R.color.status_normal));
     }
 
     // 清单/统计未就绪时点击（按钮已置灰，此处兼顾无障碍/代码路径）：明确提示，不拿半成品数据跑任务
@@ -486,7 +507,9 @@ public class MainActivity extends AppCompatActivity implements TaskLogCallback, 
             if (now - lastClearTs >= clearIntervalMs) {
                 new Thread(() -> {
                     try {
-                        KeyStoreManager mgr = AppGlobal.getKeyStoreManager();
+                        // 清空私钥是纯数据库操作，不需要密码；走会话门的话，
+                        // 冷启动时 initKeyManager 还在另一个线程里跑，这里必然抛异常，自动清除等于失效
+                        KeyStoreManager mgr = AppGlobal.getMetaManager();
                         mgr.clearAllKeys();
                         spTs.edit().putLong("last_clear_timestamp", now).apply();
                         runOnUiThread(() -> appendUiLog(null, "警告：检测到自动清除计时到期，打开 APP 自动清空全部私钥！"));
@@ -544,28 +567,62 @@ public class MainActivity extends AppCompatActivity implements TaskLogCallback, 
     }
 
     /**
-     * 会话空闲超时回调：弹解密弹窗重新解锁。
+     * 会话空闲超时回调：提示并弹解密弹窗重新解锁。
      *
-     * <p>回调可能来自后台线程，所以整体包在 {@code runOnUiThread} 里；
-     * 解锁成功后重新初始化密钥管理器并刷新列表，让后续任务能正常解密。</p>
+     * <p>三处刻意的写法：</p>
+     * <ul>
+     *   <li>{@code onIdleLock} 是 {@link AppGlobal} 上的静态字段，直接捕获 this 会让页面被静态引用钉在内存里；
+     *   这里只持有弱引用，页面已回收就静默丢弃；</li>
+     *   <li>回调触发时页面很可能在后台（App 挂着但人不在），此时不立刻 show：
+     *   在不可见的窗口上创建 Dialog 既白做也容易撞 {@code BadTokenException}，
+     *   所以先记 pending，等 onResume 再弹；</li>
+     *   <li>弹之前再判一次 isFinishing/isDestroyed，兜住「回调到达时页面正好在销毁」。</li>
+     * </ul>
      */
     private void setupIdleLockCallback() {
-        AppGlobal.setOnIdleLock(() -> runOnUiThread(() -> {
-            appendUiLog(null, "会话已过期，请重新输入密码解锁");
-            dialogHelper.showDecryptPasswordDialog(pwdCharArray -> new Thread(() -> {
-                try {
-                    AppGlobal.initKeyManager(getApplicationContext());
-                    runOnUiThread(() -> {
-                        appendUiLog(null, "密码验证成功，会话已恢复");
-                        refreshCipherKeyList();
-                    });
-                } catch (Exception e) {
-                    runOnUiThread(() -> appendLog("", "", "错误：密码验证失败：" + e.getMessage()));
-                } finally {
-                    Arrays.fill(pwdCharArray, (char) 0);
-                }
-            }).start());
-        }));
+        final java.lang.ref.WeakReference<MainActivity> ref = new java.lang.ref.WeakReference<>(this);
+        AppGlobal.setOnIdleLock(() -> {
+            MainActivity act = ref.get();
+            if (act != null) act.onIdleLocked();
+        });
+    }
+
+    /** 空闲上锁回调的落地：不保证在主线程，也不保证页面在前台 */
+    private void onIdleLocked() {
+        runOnUiThread(() -> {
+            if (isFinishing() || isDestroyed()) return;
+            appendUiLog(null, "会话已过期 · 点顶部状态或任一操作按钮输入密码即可，不用重启");
+            // 副标题立刻切成琥珀色「已锁定」：这是用户能看见的就地解锁入口
+            refreshStatusSubtitle();
+            if (!isForeground()) {
+                // 人不在屏幕前：只记标记，回前台再弹，避免在后台创建 Dialog
+                pendingIdleUnlock = true;
+                return;
+            }
+            showIdleUnlockDialog();
+        });
+    }
+
+    /** 弹解密框恢复会话：密码通过后重建密钥管理器、刷新清单并重算按钮门控 */
+    private void showIdleUnlockDialog() {
+        pendingIdleUnlock = false;
+        if (isFinishing() || isDestroyed()) return;
+        dialogHelper.showDecryptPasswordDialog(pwdCharArray -> new Thread(() -> {
+            try {
+                AppGlobal.initKeyManager(getApplicationContext());
+                runOnUiThread(() -> {
+                    if (isFinishing() || isDestroyed()) return;
+                    appendUiLog(null, "密码验证成功，会话已恢复");
+                    refreshCipherKeyList();
+                    // 副标题与按钮门控同源，会话变化后重算一次
+                    applyButtonEnabledState();
+                });
+            } catch (Exception e) {
+                runOnUiThread(() -> appendLog("", "", "错误：密码验证失败：" + e.getMessage()));
+            } finally {
+                Arrays.fill(pwdCharArray, (char) 0);
+            }
+        }).start());
     }
 
     // endregion
@@ -724,7 +781,7 @@ public class MainActivity extends AppCompatActivity implements TaskLogCallback, 
 
     // region 页面回调与结果回填
 
-    /** 退出时收起菜单并清空会话密码，同时注销单例引用 */
+    /** 退出时收起菜单并清空会话密码，同时注销单例引用与静态回调 */
     @Override
     protected void onDestroy() {
         super.onDestroy();
@@ -733,6 +790,9 @@ public class MainActivity extends AppCompatActivity implements TaskLogCallback, 
             Arrays.fill(tempUserCryptoKey, (char) 0);
             tempUserCryptoKey = null;
         }
+        // 静态回调不能留着指向本页面：页面销毁后空闲线程仍会调，轻则泄漏、重则撞 BadTokenException
+        AppGlobal.setOnIdleLock(null);
+        pendingIdleUnlock = false;
         if (sInstance != null && sInstance.get() == this) sInstance = null;
     }
 
@@ -756,6 +816,11 @@ public class MainActivity extends AppCompatActivity implements TaskLogCallback, 
             // 其他情况（如从日志查看返回），不刷新
             Log.d("MainActivity", "onResume: no refresh");
         }
+
+        // 离开期间被判空闲上锁的：回到前台再补弹，后台那会儿不该创建 Dialog
+        if (pendingIdleUnlock) showIdleUnlockDialog();
+        // 子页面可能已就地解锁（改密、批量充值页验密）：副标题要从「已锁定」切回来
+        else refreshStatusSubtitle();
     }
 
     /** 标记：下一次 onResume 跳过统计刷新（子页已经回填好数据时用） */
@@ -917,8 +982,10 @@ public class MainActivity extends AppCompatActivity implements TaskLogCallback, 
         new Thread(() -> {
             List<AccountStatsAdapter.DisplayItem> placeholderItems = new ArrayList<>();
             List<KeyListItem> newItems = new ArrayList<>();
+            boolean ok = true;
             try {
-                KeyStoreManager mgr = AppGlobal.getKeyStoreManager();
+                // 元数据实例：读清单不解密，所以会话过期也照常出数据（走会话门会整页变空）
+                KeyStoreManager mgr = AppGlobal.getMetaManager();
                 List<KeyStoreManager.KeyEntry> originEntryList = mgr.loadKeyEntryList();
 
                 List<KeyStoreManager.KeyEntry> unique = new ArrayList<>();
@@ -987,11 +1054,22 @@ public class MainActivity extends AppCompatActivity implements TaskLogCallback, 
                 }
                 placeholderItems = groupStatsItems(statItems);
             } catch (Exception e) {
+                ok = false;
                 Log.e("MainActivity", "loadKeyListLocalOnly error", e);
             }
             final List<AccountStatsAdapter.DisplayItem> fItems = placeholderItems;
             final List<KeyListItem> fNewItems = newItems;
+            final boolean fOk = ok;
             runOnUiThread(() -> {
+                if (!fOk) {
+                    // 读库失败时不动界面：旧实现照样 clear 再装空列表，
+                    // 用户看到的就是「库里明明有私钥，界面一个不剩」+ 点按钮报「没有启用密钥」
+                    appendUiLog(null, "错误：读取本地密钥清单失败，界面保留上次数据");
+                    // 失败也算「本地已就绪」：否则按钮会永久置灰，用户连重试入口都没有
+                    accountDataReady = true;
+                    applyButtonEnabledState();
+                    return;
+                }
                 // 清单在主线程整体替换：后台线程 clear/add 会让 UI 线程读到半成品（并发修改集合）
                 keyListItemList.clear();
                 keyListItemList.addAll(fNewItems);

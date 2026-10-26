@@ -21,7 +21,6 @@ import android.widget.Toast;
 import android.widget.CheckBox;
 
 import androidx.annotation.NonNull;
-import androidx.appcompat.app.AppCompatActivity;
 import androidx.recyclerview.widget.ItemTouchHelper;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
@@ -54,7 +53,7 @@ import java.util.Map;
  * <p>列表按分组折叠：{@code allDisplayList} 是完整数据，{@code displayList} 是当前可见部分，
  * 折叠只影响后者，排序落盘以完整数据为准。</p>
  */
-public class PrivateKeyManageActivity extends AppCompatActivity {
+public class PrivateKeyManageActivity extends BaseActivity {
 
     // region 视图与数据
 
@@ -227,11 +226,15 @@ public class PrivateKeyManageActivity extends AppCompatActivity {
     /**
      * 后台线程重建私钥列表：读库 → 去重 → 按自定义排序 → 按分组切块 → 切回 UI 线程一次性换引用。
      *
+     * <p>★ 数据源用 {@code AppGlobal.getMetaManager()} 而不是 {@code getKeyStoreManager()}：
+     * 本页从列表到开关、编辑、删除、拖动排序全是元数据读写，没有一处解密，
+     * 走会话门只会让空闲超时后进来一片空白。</p>
+     *
      * <p>顺序与分组：先按 {@code getCustomSortIdList()} 排（拖动后的顺序落在这里），
      * 库里新增但排序表里没有的 id 追加到末尾；再按 group_no 分到各分组，
      * 分组名不在分组表里的归入「未分组」，空分组不占位。</p>
      *
-     * <p>线程约束：展开态在 UI 线程先快照，后台只写局部变量，
+     * <p>线程约束：展开态在 UI 线程先快照，后台线程直接读会与 toggleGroup 并发修改
      * 最后在 {@code runOnUiThread} 里一次性替换引用，避免列表读到「清空了一半」的集合。</p>
      */
     private void loadKeys() {
@@ -239,7 +242,7 @@ public class PrivateKeyManageActivity extends AppCompatActivity {
         final Map<String, Boolean> prevExpandedMap = new LinkedHashMap<>(groupExpandedMap);
         new Thread(() -> {
             try {
-                KeyStoreManager mgr = AppGlobal.getKeyStoreManager();
+                KeyStoreManager mgr = AppGlobal.getMetaManager();
                 final long fMasterId = mgr.getMasterAccountId();
                 List<KeyStoreManager.KeyEntry> entries = mgr.loadKeyEntryList();
 
@@ -338,7 +341,8 @@ public class PrivateKeyManageActivity extends AppCompatActivity {
                 });
             } catch (Exception e) {
                 Log.e("PrivateKeyManage", "loadKeys error", e);
-                // 加载失败（如会话已锁定）时给出明确提示，避免页面空白却无任何反馈
+                // 读库失败（数据库损坏、磁盘满等）时给出明确提示，避免页面空白却无任何反馈。
+                // 会话过期不会走到这里：本页数据源已改用 getMetaManager()
                 String reason = e.getMessage() != null ? e.getMessage() : "加载私钥列表失败";
                 runOnUiThread(() -> Toast.makeText(this, reason, Toast.LENGTH_LONG).show());
             }
@@ -398,7 +402,7 @@ public class PrivateKeyManageActivity extends AppCompatActivity {
         }
         new Thread(() -> {
             try {
-                KeyStoreManager mgr = AppGlobal.getKeyStoreManager();
+                KeyStoreManager mgr = AppGlobal.getMetaManager();
                 // 兜底：库里有、列表里没有的 id 追加末尾；不再重复追加（旧实现会把其他组 id 加两遍）
                 for (Long id : mgr.getCustomSortIdList()) {
                     if (!finalIds.contains(id)) finalIds.add(id);
@@ -465,7 +469,7 @@ public class PrivateKeyManageActivity extends AppCompatActivity {
             char[] pwd = pwdStr.toCharArray();
             new Thread(() -> {
                 try {
-                    KeyStoreManager mgr = AppGlobal.getKeyStoreManager();
+                    KeyStoreManager mgr = AppGlobal.getMetaManager();
                     mgr.addPrivateKey(fullKey, pwd, customCode, group);
                     java.util.Arrays.fill(pwd, (char) 0);
                     runOnUiThread(() -> {
@@ -532,7 +536,8 @@ public class PrivateKeyManageActivity extends AppCompatActivity {
             String newAddr = "0x" + org.web3j.crypto.Keys.getAddress(
                     org.web3j.crypto.ECKeyPair.create(org.web3j.utils.Numeric.toBigInt(clean)));
 
-            KeyStoreManager mgr = AppGlobal.getKeyStoreManager();
+            // 查重用元数据实例：比较的是已存地址，不需要密码
+            KeyStoreManager mgr = AppGlobal.getMetaManager();
             List<KeyStoreManager.KeyEntry> allKeys = mgr.loadKeyEntryList();
 
             for (KeyStoreManager.KeyEntry entry : allKeys) {
@@ -580,7 +585,7 @@ public class PrivateKeyManageActivity extends AppCompatActivity {
         }
 
         CheckBox cbMaster = view.findViewById(R.id.cb_master);
-        long currentMasterId = AppGlobal.getKeyStoreManager().getMasterAccountId();
+        long currentMasterId = AppGlobal.getMetaManager().getMasterAccountId();
         cbMaster.setChecked(currentMasterId == entry.id);
 
         final long fCurrentMasterId = currentMasterId;
@@ -606,7 +611,7 @@ public class PrivateKeyManageActivity extends AppCompatActivity {
                     dialog.dismiss();
                     new Thread(() -> {
                         try {
-                            KeyStoreManager mgr = AppGlobal.getKeyStoreManager();
+                            KeyStoreManager mgr = AppGlobal.getMetaManager();
                             // 只写编号/分组，不再顺带回写 enabled（enabled 已被开关链路单独维护）
                             mgr.updateKeyMeta((int) entry.id, entry.customCode, entry.groupNo);
                             if (isMaster && fCurrentMasterId != entry.id) {
@@ -630,7 +635,7 @@ public class PrivateKeyManageActivity extends AppCompatActivity {
 
     private boolean isCustomCodeUsed(String code, long excludeId) {
         try {
-            KeyStoreManager mgr = AppGlobal.getKeyStoreManager();
+            KeyStoreManager mgr = AppGlobal.getMetaManager();
             for (KeyStoreManager.KeyEntry e : mgr.loadKeyEntryList()) {
                 if (e.id != excludeId && code.equals(e.customCode)) return true;
             }
@@ -653,7 +658,7 @@ public class PrivateKeyManageActivity extends AppCompatActivity {
                 getString(R.string.key_delete_confirm_btn),
                 () -> new Thread(() -> {
                     try {
-                        KeyStoreManager mgr = AppGlobal.getKeyStoreManager();
+                        KeyStoreManager mgr = AppGlobal.getMetaManager();
                         boolean wasMaster = mgr.getMasterAccountId() == entry.id;
                         List<KeyStoreManager.KeyEntry> all = mgr.loadKeyEntryList();
                         for (int i = 0; i < all.size(); i++) {
@@ -742,7 +747,7 @@ public class PrivateKeyManageActivity extends AppCompatActivity {
         new Thread(() -> {
             int affected = 0;
             try {
-                affected = AppGlobal.getKeyStoreManager().setKeyEnabled(entry.id, checked);
+                affected = AppGlobal.getMetaManager().setKeyEnabled(entry.id, checked);
             } catch (Exception e) {
                 Log.e("PrivateKeyManage", "setKeyEnabled error", e);
             }
@@ -812,8 +817,11 @@ public class PrivateKeyManageActivity extends AppCompatActivity {
             btnConfirm.setEnabled(false);
             new Thread(() -> {
                 try {
-                    KeyStoreManager mgr = AppGlobal.getKeyStoreManager();
+                    // 改密用的是弹窗里的旧密码，旧密码能解开即已通过身份校验，与会话是否过期无关
+                    KeyStoreManager mgr = AppGlobal.getMetaManager();
                     int count = mgr.changeCryptoKey(oldPwd, newPwd);
+                    // 刚验证过一遍密码：顺手把会话补回来，避免后续任务仍提示「会话已过期」
+                    AppGlobal.ensureSession(this);
                     // 同步主界面缓存的会话密码，避免本会话后续操作仍用旧密码解密失败
                     MainActivity ma = MainActivity.sInstance == null ? null : MainActivity.sInstance.get();
                     if (ma != null && ma.tempUserCryptoKey != null) {

@@ -32,6 +32,11 @@ public class AppGlobal {
 
     /** 解密会话：非 null 即已解锁；空闲超时或切后台后被置空 */
     private static KeyStoreManager sKeyStoreManager;
+    /**
+     * 元数据实例：只管密钥表的读写（编号/地址/分组/启用/主号），不参与「是否已解锁」判定。
+     * 空闲超时不会把它置空，否则页面会因为“读不到元数据”而整页变空。
+     */
+    private static volatile KeyStoreManager sMetaManager;
     /** Application Context，避免持有 Activity 导致泄漏 */
     private static volatile Context sAppCtx;
     /** 全量日志回调：带落库（任务过程日志走它） */
@@ -62,14 +67,27 @@ public class AppGlobal {
     // endregion
 
     /**
+     * 记下 Application Context，供 {@link #getMetaManager()} 这类不依赖会话的入口使用。
+     *
+     * <p>必须在任何元数据操作之前调：{@code getMetaManager()} 在会话为空时要新建实例，
+     * 而新建需要 Context。以前 sAppCtx 只在 {@link #initKeyManager(Context)} 里赋值，
+     * 于是冷启动时「自动清除私钥」这类在界面创建阶段就开跑的元数据操作会撞上
+     * {@code initKeyManager} 还没执行到那一行，抛出「应用未初始化」并被上层 catch 吞掉，
+     * 看上去就是「开关开着但从来没清过」。</p>
+     */
+    public static void setAppContext(Context context) {
+        sAppCtx = context.getApplicationContext();
+    }
+
+    /**
      * 初始化全局状态：建 KeyStoreManager、记录活动时间、拉起空闲锁定线程。
      *
      * <p>由解锁流程在密码验证通过后调用。虽然构造了 KeyStoreManager，
      * 但此时还不能解密密文——真正的密码在它内部保存。</p>
      */
     public static void initKeyManager(Context context) throws Exception {
-        sAppCtx = context.getApplicationContext();
-        sKeyStoreManager = new KeyStoreManager(sAppCtx);
+        setAppContext(context);
+        sKeyStoreManager = new KeyStoreManager(getAppContext());
         LAST_ACTIVE_TS.set(System.currentTimeMillis());
         startIdleLockLoopIfNeeded();
     }
@@ -87,6 +105,52 @@ public class AppGlobal {
         }
         touch();
         return sKeyStoreManager;
+    }
+
+    /**
+     * 取「元数据实例」：只用来读写密钥表与元信息，与会话状态无关，会话过期照常返回、不抛异常。
+     *
+     * <p>为什么必须跟 {@link #getKeyStoreManager()} 分开：后者把「会话未过期」当作硬门控，
+     * 而 {@code loadKeyEntryList()} / {@code getMasterAccountId()} / {@code setKeyEnabled()}
+     * 这类方法只查改 SQLite，根本用不到密码（密码是调用方以 char[] 传进解密方法的）。
+     * 私钥管理页整页只用元数据，走会话门的结果就是空闲超时后进去一片空白，
+     * 而日志/分组/地址簿这些直连数据库的页面数据照旧——用户看到的就是「只有私钥管理空了」。</p>
+     *
+     * <p>两个实例共用同一个 {@link AppLogDbHelper} 单例，也都不持有密钥材料，
+     * 所以同时存在是安全的；会话实例只多承担「还能不能解密」这一层语义。</p>
+     */
+    public static KeyStoreManager getMetaManager() {
+        // 已解锁就直接复用会话实例：常态下整进程仍然只有一个 KeyStoreManager，
+        // 只有「已上锁」时才需要额外补一个只做元数据读写的实例
+        KeyStoreManager session = sKeyStoreManager;
+        if (session != null) return session;
+        KeyStoreManager m = sMetaManager;
+        if (m != null) return m;
+        synchronized (AppGlobal.class) {
+            if (sMetaManager == null) {
+                sMetaManager = new KeyStoreManager(getAppContext());
+            }
+            return sMetaManager;
+        }
+    }
+
+    /** 会话是否已过期（空闲超时/进程重建后为 true）；纯元数据读取不要拿它做门控 */
+    public static boolean isSessionLocked() {
+        return sKeyStoreManager == null;
+    }
+
+    /**
+     * 密码验证通过后恢复会话：会话还在就只刷活动时间，已过期才重建实例。
+     *
+     * <p>给 {@code CryptoKeyPrompt} 这类「就地解锁」的入口用：它先拿元数据实例试解，
+     * 解开了才调本方法把会话补回来，后续 {@link #getKeyStoreManager()} 的解密链路才重新可用。</p>
+     */
+    public static void ensureSession(Context context) throws Exception {
+        if (sKeyStoreManager == null) {
+            initKeyManager(context);
+        } else {
+            touch();
+        }
     }
 
     /** 取 Application Context；未初始化就抛异常，避免调用方拿到 null 后空指针难查 */

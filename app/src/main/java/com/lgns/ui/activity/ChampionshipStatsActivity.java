@@ -7,7 +7,6 @@ import android.widget.ImageButton;
 import android.widget.ProgressBar;
 import android.widget.TextView;
 
-import androidx.appcompat.app.AppCompatActivity;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 
@@ -31,7 +30,7 @@ import java.util.Map;
  * <p>职责边界：页面负责取数与聚合，列表渲染交给 {@code ChampionStatsAdapter}；
  * 统计口径集中在 {@code buildItems}，改口径时只需要动这一处。</p>
  */
-public class ChampionshipStatsActivity extends AppCompatActivity {
+public class ChampionshipStatsActivity extends BaseActivity {
 
     private TextView tvError;
     private TextView tvStatsCount;

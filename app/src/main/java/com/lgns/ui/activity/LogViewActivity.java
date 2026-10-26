@@ -16,7 +16,6 @@ import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
 
-import androidx.appcompat.app.AppCompatActivity;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 
@@ -40,7 +39,7 @@ import java.util.Locale;
  * <p>数据流：整表只在 {@link #loadLogs()} 读一次库，搜索与类型筛选都在内存里由
  * {@link LogAdapter} 完成，输入框敲字不会反复查库。</p>
  */
-public class LogViewActivity extends AppCompatActivity {
+public class LogViewActivity extends BaseActivity {
 
     /** 列表：日期分组与卡片行都由适配器生成 */
     private LogAdapter logAdapter;

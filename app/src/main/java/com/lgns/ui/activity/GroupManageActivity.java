@@ -18,7 +18,6 @@ import android.widget.TextView;
 import android.widget.Toast;
 
 import androidx.annotation.NonNull;
-import androidx.appcompat.app.AppCompatActivity;
 import androidx.recyclerview.widget.ItemTouchHelper;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
@@ -41,7 +40,7 @@ import java.util.List;
  *
  * <p>重命名需要同时改写私钥库，两处必须一致，否则账号会落到一个不存在的分组里。</p>
  */
-public class GroupManageActivity extends AppCompatActivity {
+public class GroupManageActivity extends BaseActivity {
     private RecyclerView rvGroups;
     private View tvEmpty;
     private TextView tvGroupTotal, tvSummaryGroups, tvSummaryKeys;
@@ -131,7 +130,8 @@ public class GroupManageActivity extends AppCompatActivity {
             groupList = AppLogDbHelper.getInstance(this).queryAllGroups();
             int keyCount = 0;
             try {
-                keyCount = AppGlobal.getKeyStoreManager().loadKeyEntryList().size();
+                // 数行数只是元数据：走会话门会让会话过期后这里静默变成 0
+                keyCount = AppGlobal.getMetaManager().loadKeyEntryList().size();
             } catch (Exception ignored) {
             }
             final int totalKeys = keyCount;
@@ -289,7 +289,7 @@ public class GroupManageActivity extends AppCompatActivity {
                         // 列表归到“未分组”但库里仍是旧名字，编辑保存时会被静默改组
                         if (ok) {
                             try {
-                                AppGlobal.getKeyStoreManager().renameKeyGroup(name, "");
+                                AppGlobal.getMetaManager().renameKeyGroup(name, "");
                             } catch (Exception ignored) {}
                         }
                         runOnUiThread(() -> {
@@ -306,11 +306,11 @@ public class GroupManageActivity extends AppCompatActivity {
 
     // region 辅助方法
 
-    /** 统计组内账号数：读失败（会话锁定等）按 0 处理，不影响页面展示 */
+    /** 统计组内账号数：读库失败按 0 处理，不影响页面展示 */
     private int countKeysInGroup(String groupName) {
         int count = 0;
         try {
-            KeyStoreManager mgr = AppGlobal.getKeyStoreManager();
+            KeyStoreManager mgr = AppGlobal.getMetaManager();
             for (KeyStoreManager.KeyEntry e : mgr.loadKeyEntryList()) {
                 if (groupName.equals(e.groupNo)) count++;
             }
@@ -323,7 +323,7 @@ public class GroupManageActivity extends AppCompatActivity {
         try {
             // 一条 UPDATE ... WHERE group_no=? 改完同组记录；
             // 旧实现读整表再 saveKeyEntryList，会把期间改动的开关状态回滚
-            AppGlobal.getKeyStoreManager().renameKeyGroup(oldName, newName);
+            AppGlobal.getMetaManager().renameKeyGroup(oldName, newName);
         } catch (Exception ignored) {}
     }
 

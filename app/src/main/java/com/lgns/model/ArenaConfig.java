@@ -210,8 +210,15 @@ public class ArenaConfig {
 
     // region 会话与 pending
 
-    /** 空闲自动上锁秒；到期后 AppGlobal 会 sKeyStoreManager = null，并强制要求重新解锁 */
-    public static final long IDLE_LOCK_SEC = 30 * 60L;
+    /**
+     * 空闲自动上锁秒（默认 4 小时）：到期后 {@code AppGlobal} 会把会话置空，要求重新输入密码。
+     *
+     * <p>口径是「最后一次触摸 / 切回前台 / 解密操作距今多久」，不是「App 是否还开着」——
+     * 进程活着，计时器就一直跑。原来取 30 分钟对「挂着看行情」太短：
+     * 用户明明在滑列表，也会被锁，因为计时器此前只认解密链路。
+     * 页面层的触摸续期已统一收口到 {@code BaseActivity}。</p>
+     */
+    public static final long IDLE_LOCK_SEC = 4 * 60 * 60L;
 
     /** Pending 状态超过该时长仍未回执，且账户当前 nonce > 记录 nonce → 判为 nonce-consumed */
     public static final long PENDING_STALE_SEC = 5 * 60L;

@@ -241,7 +241,8 @@ public class BatchFundTask {
             // 调试地址替换已上移到 MainDataLoader.applyDebugFixedAddr（按分组平分地址池）：
             // 这份 KeyListItem 与主界面共用，就地改写会把主界面那一行的地址串掉
 
-            KeyStoreManager mgr = AppGlobal.getKeyStoreManager();
+            // 预览只算缺口，不解密：会话过期也要能进充值页
+            KeyStoreManager mgr = AppGlobal.getMetaManager();
             long masterId = mgr.getMasterAccountId();
             if (masterId <= 0) { result.hasMaster = false; return result; }
 

@@ -152,7 +152,8 @@ public class MainDialogHelper {
     public void showMigrateAddressesDialog() {
         showDecryptPasswordDialog(pwdCharArray -> new Thread(() -> {
             try {
-                KeyStoreManager mgr = AppGlobal.getKeyStoreManager();
+                // 解密用弹窗里现输的密码，不依赖会话；会话过期时也能就地补全地址
+                KeyStoreManager mgr = AppGlobal.getMetaManager();
                 List<KeyStoreManager.KeyEntry> entries = mgr.loadKeyEntryList();
                 int migrated = 0;
                 int failed = 0;
@@ -269,7 +270,8 @@ public class MainDialogHelper {
             final String userInputGroupNo = groupNoInput;
             new Thread(() -> {
                 try {
-                    KeyStoreManager mgr = AppGlobal.getKeyStoreManager();
+                    // 加密用的是弹窗里自带的密码，与会话无关；走会话门会让会话过期后永远“添加失败”
+                    KeyStoreManager mgr = AppGlobal.getMetaManager();
                     mgr.addPrivateKey(fullPrivateKey, activity.tempUserCryptoKey, userInputGroupNo);
                     activity.runOnUiThread(() -> {
                         activity.appendLog(userInputGroupNo, "", "密钥添加完成");
@@ -388,8 +390,12 @@ public class MainDialogHelper {
             new Thread(() -> {
                 boolean testOk;
                 try {
-                    KeyStoreManager mgr = AppGlobal.getKeyStoreManager();
+                    // 试解必须用元数据实例：会话过期时 getKeyStoreManager() 会直接抛，
+                    // 结果被当成“密码错误”，用户输多少遍都解不开
+                    KeyStoreManager mgr = AppGlobal.getMetaManager();
                     mgr.testDecrypt(firstCipher, pwdCharArray);
+                    // 密码已通过 GCM 认证：顺手恢复会话，后面的批量任务才能解密
+                    AppGlobal.ensureSession(activity);
                     testOk = true;
                 } catch (Exception e) {
                     testOk = false;
@@ -485,7 +491,8 @@ public class MainDialogHelper {
                 .setMessage(R.string.dialog_clear_all_msg)
                 .setPositiveButton(R.string.btn_clear_confirm, (d, w) -> new Thread(() -> {
                     try {
-                        KeyStoreManager mgr = AppGlobal.getKeyStoreManager();
+                        // 清空私钥是纯数据库操作，不需要密码
+                        KeyStoreManager mgr = AppGlobal.getMetaManager();
                         mgr.clearAllKeys();
                         activity.runOnUiThread(() -> {
                             activity.appendLog("", "", activity.getString(R.string.log_keys_cleared));
@@ -525,7 +532,8 @@ public class MainDialogHelper {
                 .setMessage(activity.getString(R.string.dialog_delete_msg_fmt, deletePosList.size()))
                 .setPositiveButton(R.string.btn_delete_confirm, (d, w) -> new Thread(() -> {
                     try {
-                        KeyStoreManager mgr = AppGlobal.getKeyStoreManager();
+                        // 删除也是纯数据库操作，不需要密码
+                        KeyStoreManager mgr = AppGlobal.getMetaManager();
                         for (int i = deletePosList.size() - 1; i >= 0; i--) {
                             int pos = deletePosList.get(i);
                             mgr.removeByIndex(pos);
@@ -557,7 +565,8 @@ public class MainDialogHelper {
 
         long masterId;
         try {
-            masterId = AppGlobal.getKeyStoreManager().getMasterAccountId();
+            // 读主号只是元数据：走会话门会让会话过期后永远弹“未设置主号”
+            masterId = AppGlobal.getMetaManager().getMasterAccountId();
         } catch (Exception e) {
             masterId = -1;
         }

@@ -11,7 +11,6 @@ import android.widget.Spinner;
 import android.widget.TextView;
 import android.widget.Toast;
 import androidx.appcompat.app.AlertDialog;
-import androidx.appcompat.app.AppCompatActivity;
 import androidx.appcompat.widget.SwitchCompat;
 
 import com.lgns.R;
@@ -29,7 +28,7 @@ import com.lgns.util.Web3AndroidUtil;
  *
  * <p>配置读取失败时会把错误写进日志库并提示用户，防止出现「看似保存成功、实际没生效」。</p>
  */
-public class AutoClearConfigActivity extends AppCompatActivity {
+public class AutoClearConfigActivity extends BaseActivity {
 
     /** 私钥自动清除开关（关闭时下面的间隔输入置灰且不参保存校验） */
     private SwitchCompat swAutoEnable;

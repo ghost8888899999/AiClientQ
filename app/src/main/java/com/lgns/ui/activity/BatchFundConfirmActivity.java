@@ -8,7 +8,6 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.widget.TextView;
 import androidx.annotation.NonNull;
-import androidx.appcompat.app.AppCompatActivity;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 
@@ -35,7 +34,7 @@ import java.util.Locale;
  * <p>页面状态只有三种：加载中、出错（可重试）、有内容，统一通过 {@code showXxxState} 切换，
  * 避免出现列表与错误提示同时可见的自相矛盾界面。</p>
  */
-public class BatchFundConfirmActivity extends AppCompatActivity {
+public class BatchFundConfirmActivity extends BaseActivity {
 
     /** 加载中：列表未出，中央显示转圈 */
     private static final int STATE_LOADING = 0;
@@ -121,7 +120,8 @@ public class BatchFundConfirmActivity extends AppCompatActivity {
             long masterId = -1;
             try {
                 items = buildSourceItems();
-                masterId = AppGlobal.getKeyStoreManager().getMasterAccountId();
+                // 主号 id 只是元数据，不因会话过期而读不到
+                masterId = AppGlobal.getMetaManager().getMasterAccountId();
                 for (KeyListItem it : items) {
                     if (it.keyId == masterId) {
                         localMasterAddr = it.address == null ? "" : it.address;
@@ -226,7 +226,7 @@ public class BatchFundConfirmActivity extends AppCompatActivity {
 
     // 与主界面同源：库里按 sort_order 返回，编号规则与列表一致
     private List<KeyListItem> buildSourceItems() throws Exception {
-        KeyStoreManager mgr = AppGlobal.getKeyStoreManager();
+        KeyStoreManager mgr = AppGlobal.getMetaManager();
         List<KeyStoreManager.KeyEntry> entries = mgr.loadKeyEntryList();
         List<KeyListItem> items = new ArrayList<>(entries.size());
         for (int i = 0; i < entries.size(); i++) {
