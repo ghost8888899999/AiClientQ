@@ -21,7 +21,7 @@ import com.lgns.ui.activity.PayerManageActivity;
 import com.lgns.ui.activity.PrivateKeyManageActivity;
 
 /**
- * 主界面齿轮下拉菜单：一级项直接跳页，充值/转账两个分组可展开，
+ * 主界面溢出菜单（⋮）下拉面板：一级项直接跳页，充值/转账两个分组可展开，
  * 其余工具项（看日志/系统配置/结算统计/迁移地址）以弹窗形式打开。
  *
  * <p>为什么要两个分组互斥展开：菜单本身是 WRAP_CONTENT 的 PopupWindow，
@@ -30,6 +30,9 @@ import com.lgns.ui.activity.PrivateKeyManageActivity;
  *
  * <p>尺寸约定：窗口宽度固定为卡片宽 212dp 加两侧各 14dp 投影边距，
  * 这个数值必须与 {@code layout_pop_menu.xml} 里的卡片尺寸同步修改，否则阴影会被裁掉。</p>
+ *
+ * <p>任务运行中只放行<b>只读项</b>：「看日志」「锦标赛统计」可以点，其余可写入口一律置灰
+ * （见 {@link #applyTaskRunningLock}）。
  */
 public class MainMenuHelper {
     private final MainActivity activity;
@@ -41,6 +44,35 @@ public class MainMenuHelper {
     private static final int CARD_WIDTH_DP = 212;
     /** 卡片四周留给 MaterialCardView 投影的边距（dp），单边值 */
     private static final int SHADOW_PAD_DP = 14;
+
+    /**
+     * 任务运行中需要置灰的菜单项。
+     *
+     * <p>放行的只有 {@code menu_view_log}（纯读库）与 {@code menu_championship_stats}（只查链上），
+     * 其余全部是写入口，按风险分三类：</p>
+     * <ul>
+     *   <li><b>抢 nonce / 另开转账</b>：批量充值、批量充值手续费、批量转账；</li>
+     *   <li><b>改正在跑的那批数据</b>：系统配置（连打场数）、私钥管理（启用/主号/删除）、
+     *       迁移地址（改写 address）；</li>
+     *   <li><b>改后续流程的输入</b>：分组管理、支付方管理、地址管理。</li>
+     * </ul>
+     *
+     * <p>组标题（充值管理/转账管理）不锁：它只切换子项展开，子项已经全是灰的。</p>
+     */
+    private static final int[] LOCKED_WHILE_TASK_RUNNING = {
+            R.id.menu_group_manage,
+            R.id.menu_key_manage,
+            R.id.menu_batch_recharge,
+            R.id.menu_batch_gas_fund,
+            R.id.menu_payer_manage,
+            R.id.menu_address_manage,
+            R.id.menu_batch_transfer,
+            R.id.menu_migrate_addresses,
+            R.id.menu_sys_config,
+    };
+
+    /** 置灰后的透明度：与主界面按钮的 0.5 保持一致，不用 0.3 以免小字看不清 */
+    private static final float LOCKED_ALPHA = 0.45f;
 
     /**
      * @param activity     宿主页面，用于取 Context、起 Activity 与拿弹窗助手
@@ -59,17 +91,21 @@ public class MainMenuHelper {
     }
 
     /**
-     * 在齿轮按钮下方弹出折叠菜单。
+     * 在溢出菜单按钮（⋮）下方弹出折叠菜单。
      *
-     * <p>流程：如果菜单已在显示，本方法只负责关闭（齿轮当成开关用）；
-     * 否则 inflate 布局、逐项绑定点击、最后按「卡片右边缘对齐齿轮右边缘」定位弹窗。</p>
+     * <p>流程：如果菜单已在显示，本方法只负责关闭（按钮当成开关用）；
+     * 否则 inflate 布局、逐项绑定点击、最后按「卡片右边缘对齐按钮右边缘」定位弹窗。</p>
      *
      * <p>跳页类入口统一先调 {@code setRefreshLocalOnlyOnResume()}，
      * 表示回主界面时只重读本地数据、不重新拉链上状态，避免返回后发一串 RPC 请求。</p>
      *
-     * @param anchorView 齿轮按钮，既作位置锚点也用于计算水平偏移
+     * <p>弹窗盖着时直接不弹：菜单是独立窗口，不受首页 {@code dispatchTouchEvent} 那道门控约束，
+     * 双击穿透下来的一击能把菜单顶到弹窗上面去，接着就可能从菜单跳进别的页面。</p>
+     *
+     * @param anchorView 溢出菜单按钮，既作位置锚点也用于计算水平偏移
      */
     public void showCollapseMenu(View anchorView) {
+        if (activity.getDialogHelper().isModalDialogShowing()) return;
         if (mPopupWindow != null && mPopupWindow.isShowing()) {
             mPopupWindow.dismiss();
             return;
@@ -80,7 +116,8 @@ public class MainMenuHelper {
 
         // ---- 一级项：分组管理置顶、私钥管理 ----
         popView.findViewById(R.id.menu_group_manage).setOnClickListener(v -> {
-            activity.setRefreshLocalOnlyOnResume();
+            // 分组增删改序只改本地标签，地址集合与链上值都不变 → 只重新分组，不拉链上数据
+            activity.setRefreshGroupOnlyOnResume();
             activity.startActivity(new Intent(activity, GroupManageActivity.class));
             dismissPopup();
         });
@@ -130,13 +167,15 @@ public class MainMenuHelper {
 
         // ---- 转账管理子项 ----
         popView.findViewById(R.id.menu_address_manage).setOnClickListener(v -> {
-            activity.setRefreshLocalOnlyOnResume();
+            // 接收方是独立账本，不动主界面账号集合与其链上值 → 只重建本地展示，不拉链上数据
+            activity.setRefreshGroupOnlyOnResume();
             activity.startActivity(new Intent(activity, AddressManageActivity.class));
             dismissPopup();
         });
 
         popView.findViewById(R.id.menu_payer_manage).setOnClickListener(v -> {
-            activity.setRefreshLocalOnlyOnResume();
+            // 支付方是独立账本，不动主界面账号集合与其链上值 → 只重建本地展示，不拉链上数据
+            activity.setRefreshGroupOnlyOnResume();
             activity.startActivity(new Intent(activity, PayerManageActivity.class));
             dismissPopup();
         });
@@ -169,6 +208,8 @@ public class MainMenuHelper {
         });
 
         // 窗口比卡片四周多 14dp，留给 MaterialCardView 的投影，避免阴影被窗口边界裁掉
+        applyTaskRunningLock(popView);
+
         int cardWidth = dp(CARD_WIDTH_DP);
         int shadowPad = dp(SHADOW_PAD_DP);
         mPopupWindow = new PopupWindow(popView, cardWidth + shadowPad * 2,
@@ -178,9 +219,31 @@ public class MainMenuHelper {
         mPopupWindow.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
         mPopupWindow.setAnimationStyle(R.style.PopMenuAnim);
 
-        // 卡片右边缘对齐齿轮右边缘，卡片顶边距齿轮底部 6dp
+        // 卡片右边缘对齐按钮右边缘，卡片顶边距按钮底部 6dp
         int dx = anchorView.getWidth() - cardWidth - shadowPad;
         mPopupWindow.showAsDropDown(anchorView, dx, dp(6) - shadowPad);
+    }
+
+    /**
+     * 任务运行中把写操作项置灰，并在菜单顶部显示一行只读提示。
+     *
+     * <p>为什么不是把溢出菜单按钮整个锁掉：连打 12 圈要跑二三十分钟，用户中途最常干的事就是看日志；
+     * 一刀切锁死等于逼他停止任务才能查日志。所以锁的粒度放在「项」上：只读放行，可写置灰。</p>
+     *
+     * <p>用 {@code setEnabled(false)} 而不是只改透明度：禁用态下 View 会吞掉触摸事件、
+     * 不触发 {@code performClick}，也顺带把水波纹压掉，不会出现「看着是灰的但点了还是会跳」。</p>
+     */
+    private void applyTaskRunningLock(View popView) {
+        boolean running = activity.isRunning();
+        View hint = popView.findViewById(R.id.tv_menu_readonly_hint);
+        if (hint != null) hint.setVisibility(running ? View.VISIBLE : View.GONE);
+        if (!running) return;
+        for (int id : LOCKED_WHILE_TASK_RUNNING) {
+            View item = popView.findViewById(id);
+            if (item == null) continue;
+            item.setEnabled(false);
+            item.setAlpha(LOCKED_ALPHA);
+        }
     }
 
     /**

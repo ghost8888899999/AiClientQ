@@ -10,4 +10,37 @@
         <item>@string/play_mode_flexible</item>
         <item>@string/play_mode_together</item>
     </string-array>
+
+    <!--
+        每次批量入场连打几场（对应 ArenaConfig.enterRounds）。
+
+        出厂默认 1 场（ArenaConfig.DEFAULT_ENTER_ROUNDS）：点一次打一场，
+        沿用旧版「充值 + 入场」成对点的节奏，每点完就能看到这一局的输赢。
+        想少点几次就自己调到 10 或 12，配置只需设一次。
+        12 是合约硬上限（MAX_ENTRIES_PER_DAY），也是当日满勤。
+
+        标注规则：「不建议」= 12 ÷ 场数 除不尽。
+        除不尽意味着想打满 12 场就得多点一次，而最后那一次里有一部分圈会撞
+        「今日已打满 12 场」空跑一遍封盘等待。能整除的 1/2/3/4/6/12 一次点到位。
+
+        10 是唯一的例外语义：它是结构收益的封顶线（FULL_ACTIVITY_MATCHES = 10），
+        目标就是「每天打 10 场收工」时选它完全正确；标「不建议」只是提醒
+        「别拿它去凑 12 场」。11 场两个问题都占：既超出满勤（每轮多烧 66），又除不尽。
+
+        文本只用于显示：取值一律按「下拉索引 + 1」，见 AutoClearConfigActivity#saveConfigs。
+    -->
+    <string-array name="enter_rounds_array">
+        <item>1 场（默认）</item>
+        <item>2 场</item>
+        <item>3 场</item>
+        <item>4 场</item>
+        <item>5 场（不建议）</item>
+        <item>6 场</item>
+        <item>7 场（不建议）</item>
+        <item>8 场（不建议）</item>
+        <item>9 场（不建议）</item>
+        <item>10 场（满勤·不建议）</item>
+        <item>11 场（超出满勤·不建议）</item>
+        <item>12 场（每日上限）</item>
+    </string-array>
 </resources>

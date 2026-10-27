@@ -16,6 +16,7 @@ import com.lgns.batch.BatchFundTask;
 import com.lgns.helper.StatusTipDialog;
 import com.lgns.manager.AppGlobal;
 import com.lgns.manager.KeyStoreManager;
+import com.lgns.model.ArenaConfig;
 import com.lgns.model.KeyListItem;
 import com.lgns.util.Web3AndroidUtil;
 
@@ -44,6 +45,7 @@ public class BatchFundConfirmActivity extends BaseActivity {
     private static final int STATE_ERROR = 2;
 
     private TextView tvHeaderCount, tvStateTitle, tvStateMsg;
+    private TextView tvDegradedTip;
     private RecyclerView rvFundList;
     private TextView btnStateAction;
     private View btnCancel, btnConfirm, layoutState, pbState;
@@ -69,6 +71,7 @@ public class BatchFundConfirmActivity extends BaseActivity {
         setContentView(R.layout.activity_batch_fund_confirm);
 
         tvHeaderCount = findViewById(R.id.tv_header_count);
+        tvDegradedTip = findViewById(R.id.tv_degraded_tip);
         rvFundList = findViewById(R.id.rv_fund_list);
         btnCancel = findViewById(R.id.btn_cancel);
         btnConfirm = findViewById(R.id.btn_confirm);
@@ -188,6 +191,8 @@ public class BatchFundConfirmActivity extends BaseActivity {
         querying = true;
         btnConfirm.setAlpha(0.5f);
         btnConfirm.setClickable(false);
+        // 重新查询先收起降级提示，避免上一轮的备用通道标记残留在新结果上
+        tvDegradedTip.setVisibility(View.GONE);
 
         if (fundList.isEmpty()) {
             showLoadingState();
@@ -295,11 +300,14 @@ public class BatchFundConfirmActivity extends BaseActivity {
         }
 
         showContentState();
+        // 降级通道出数：必须让用户知道余额来自浏览器备用接口而非 RPC
+        tvDegradedTip.setVisibility(preview.degraded ? View.VISIBLE : View.GONE);
         if (!preview.needsFunding()) {
             // 无需充值不再弹框打断，页面给出结论并置灰确认
             btnConfirm.setAlpha(0.5f);
             btnConfirm.setClickable(false);
-            android.widget.Toast.makeText(this, R.string.fund_no_need_msg_v2,
+            android.widget.Toast.makeText(this,
+                    getString(R.string.fund_no_need_target_fmt, fundTargetText(), ArenaConfig.enterRounds),
                     android.widget.Toast.LENGTH_LONG).show();
         }
     }
@@ -340,6 +348,18 @@ public class BatchFundConfirmActivity extends BaseActivity {
         if (wei == null) return "0";
         return new BigDecimal(wei)
                 .divide(new BigDecimal(BigInteger.TEN.pow(18)), 2, java.math.RoundingMode.HALF_UP)
+                .toPlainString();
+    }
+
+    /**
+     * 当前充值目标金额（整数展示）：跟着连打圈数走，不是固定 100。
+     *
+     * <p>与 {@link BatchFundTask#queryFundPreview} 算差额用的是同一个来源
+     * （{@link ArenaConfig#fundTargetFor(int)}），两边不会跑偏。</p>
+     */
+    private String fundTargetText() {
+        return new BigDecimal(ArenaConfig.fundTargetFor(ArenaConfig.enterRounds))
+                .divide(new BigDecimal(BigInteger.TEN.pow(18)), 0, java.math.RoundingMode.HALF_UP)
                 .toPlainString();
     }
 
@@ -524,7 +544,10 @@ public class BatchFundConfirmActivity extends BaseActivity {
                 h.tvMasterBalance.setText(getString(R.string.fund_balance_fmt,
                         masterBalance == null ? getString(R.string.common_placeholder) : masterBalance));
             }
-            h.tvDetailCount.setText(getString(R.string.fund_detail_count_fmt, fundList.size()));
+            // 明细标题右侧的胶囊：告清「为什么不是 100」——目标金额由连打场数推算，
+            // 与 BatchFundTask 算差额用的同一个 ArenaConfig.fundTargetFor()，不会两边不一致
+            h.tvDetailCount.setText(getString(R.string.fund_detail_target_fmt,
+                    fundTargetText(), ArenaConfig.enterRounds));
             // 查询中胶囊显示进度，不被重新绑定覆盖回总数
             if (!querying) {
                 tvHeaderCount.setText(getString(R.string.fund_hero_count_fmt, fundList.size()));

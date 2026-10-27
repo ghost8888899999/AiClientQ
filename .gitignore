@@ -14,3 +14,6 @@
 .cxx
 local.properties
 app/errtxt/
+
+# 空占位：只为让历史会话里的旧路径能打开，不参与构建，随时可删
+/.tmp_escape_test.java

@@ -226,6 +226,6 @@
         android:layout_marginBottom="24dp"
         android:contentDescription="@string/common_cd_add_group"
         android:src="@drawable/ic_add_svg"
-        android:tint="@color/white" />
+        app:tint="@color/white" />
 
 </RelativeLayout>

@@ -24,6 +24,24 @@
             android:paddingTop="8dp"
             android:paddingBottom="8dp">
 
+            <!--
+                任务运行中的只读提示：默认 GONE，由 MainMenuHelper 按 isBatchTaskRunning() 切换。
+                此时下面的写操作项全部置灰，留一行字解释原因，避免用户以为什么都点不了
+            -->
+            <TextView
+                android:id="@+id/tv_menu_readonly_hint"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="16dp"
+                android:layout_marginTop="2dp"
+                android:layout_marginEnd="16dp"
+                android:layout_marginBottom="6dp"
+                android:lineSpacingExtra="2dp"
+                android:text="@string/menu_readonly_hint"
+                android:textColor="@color/text_secondary"
+                android:textSize="11sp"
+                android:visibility="gone" />
+
             <!-- 第一组：账号数据（分组管理置顶） -->
 
             <LinearLayout

@@ -59,6 +59,37 @@ public class MainDialogHelper {
      */
     private boolean fundQuerying = false;
 
+    /**
+     * 当前正在显示的密码弹窗。
+     *
+     * <p>作用是「同一时刻只允许一个」：主界面四个按钮/齿轮菜单都能弹它，
+     * 连点时若叠成两层，用户逐个确认会把两个任务先后启动，两批交易抢同一个 nonce。
+     * 新弹窗会先把旧的关掉，旧弹窗的确认回调因 {@code isShowing()} 为假而不会执行。</p>
+     */
+    private AlertDialog pwdDialog;
+
+    /**
+     * 充值确认页是否已经拉起。
+     *
+     * <p>双击防护：确认页是个独立 Activity，双击会 {@code startActivityForResult} 两次，
+     * 栈里叠出两个一模一样的页面 —— 先确认上面那个、跑完充值后返回，下面那个还在，
+     * 再点一次确认又是第二轮。现在第二击直接忽略，回包时由
+     * {@code MainActivity#onActivityResult} 调 {@link #markFundPreviewClosed()} 复位。</p>
+     */
+    private boolean fundPreviewLaunched = false;
+
+    /** 安全提醒弹窗：同一个道理，没跑完就不重建第二个 */
+    private AlertDialog securityWarnDialog;
+
+    /**
+     * 当前最上层的模态弹窗（密码框、安全提醒……）。
+     *
+     * <p>给主界面做“有东西盖着”的总门控：弹窗窗口首帧还没注册触摸区域的那一两百毫秒，
+     * 系统会把落在它上面的那一击派发回底下的 Activity（logcat 里能连出两条点击、并建出两个
+     * EditText）。这里不区分是哪个弹窗——只要“还有一个在显示”，主界面就不该再响应触摸。</p>
+     */
+    private AlertDialog modalDialog;
+
     /** 只持有宿主 Activity：弹窗需要它的 Context 与当前列表快照，不另建状态 */
     public MainDialogHelper(MainActivity activity) {
         this.activity = activity;
@@ -302,6 +333,9 @@ public class MainDialogHelper {
      *
      * <p>交互细节：</p>
      * <ul>
+     *   <li><b>点弹窗外面不关闭</b>：主界面按钮密集，用户急着连点时第二击很容易落在
+     *       刚弹出的弹窗之外。若外面可取消，弹窗会瞬间消失，看起来像「点了没反应」，
+     *       而用户实际还要点第三次。要退出只能按「取消」或返回键；</li>
      *   <li>弹窗一出现就唤起键盘（{@code SOFT_INPUT_STATE_ALWAYS_VISIBLE}）；</li>
      *   <li>错误提示内联在 {@code tvError}，重新输入即清掉，不弹二级弹框；</li>
      *   <li>键盘“完成”等同点击确认；</li>
@@ -310,15 +344,33 @@ public class MainDialogHelper {
      *
      * <p>回调里的字符数组所有权交给调用方，用完自行清零。</p>
      *
+     * <p><b>重入：</b>已经有一个在显示时直接放弃本次调用，不重建。实测双击时第二击会在
+     * 弹窗首帧 layout 完成前就落到主界面按钮上（那一段里新窗口还没注册触摸区域），
+     * 若允许重建，日志里会依次出现两个 EditText、旧窗口被拆时的
+     * {@code showInsets on window that no longer has views}，输入法也会被反复请求。</p>
+     *
      * @param callback 密码校验通过后的回调，在 UI 线程执行
      */
     public void showDecryptPasswordDialog(final MainActivity.PasswordCallback callback) {
+        if (isPasswordDialogShowing()) return;
+
         final AlertDialog.Builder builder = styledDialog();
         final View view = LayoutInflater.from(activity).inflate(R.layout.dialog_decrypt_password, null);
         final EditText etPwd = view.findViewById(R.id.et_decrypt_pwd);
         final TextView tvError = view.findViewById(R.id.tv_error);
         builder.setView(view);
         final AlertDialog dialog = builder.create();
+        // 必须在 show() 之前设：连点按钮时第二击落在弹窗外，可取消的弹窗会直接消失，
+        // 用户以为没点成功而反复连点。返回键仍然可关闭（那里没有误触风险）
+        dialog.setCanceledOnTouchOutside(false);
+        // 上面那个方法只会把“点外面关闭”关掉，并不会把窗口变回模态：
+        // 若主题预设了 windowCloseOnTouchOutside，FLAG_NOT_TOUCH_MODAL 会留在窗口上，
+        // 落在弹窗外的触摸会直接穿透到底下的主界面按钮。这里显式清掉，让窗口吃掉外部触摸
+        if (dialog.getWindow() != null) {
+            dialog.getWindow().clearFlags(WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL);
+        }
+        pwdDialog = dialog;
+        modalDialog = dialog;
 
         // 先声明软键盘策略：弹窗一出现就唤起键盘，无需用户再点一次输入框
         if (dialog.getWindow() != null) {
@@ -425,6 +477,34 @@ public class MainDialogHelper {
         });
     }
 
+    /**
+     * 密码弹窗当前是否显示中（只管密码框自己，用于它自身的重入判定）。
+     */
+    public boolean isPasswordDialogShowing() {
+        return pwdDialog != null && pwdDialog.isShowing();
+    }
+
+    /**
+     * 是否有模态弹窗盖在主界面上（密码框、安全提醒……）。
+     *
+     * <p>主界面靠它把这一类穿透下来的触摸整个丢掉：按钮、齿轮菜单、汇总栏一并覆盖，
+     * 比在每个点击入口各判一遍更彻底，也不会因为以后新增一个弹窗就漏岗。</p>
+     */
+    public boolean isModalDialogShowing() {
+        return modalDialog != null && modalDialog.isShowing();
+    }
+
+    /**
+     * 关掉还开着的弹窗（页面销毁时用）。
+     *
+     * <p>不把字段置空：判断一律走 {@code isShowing()}，留着引用不会让已销毁页面的弹窗
+     * 继续被当成“显示中”。</p>
+     */
+    public void dismissModalDialogs() {
+        if (isPasswordDialogShowing()) pwdDialog.dismiss();
+        if (securityWarnDialog != null && securityWarnDialog.isShowing()) securityWarnDialog.dismiss();
+    }
+
     /** 让密码输入框直接拿到焦点并唤起键盘（不改动光标/选区，便于错误重输时保留全选） */
     private void focusPwdInput(EditText et) {
         et.requestFocus();
@@ -457,10 +537,16 @@ public class MainDialogHelper {
      *
      * <p>按钮在布局内自绘（不走系统按钮栏），否则在 {@code AppDialog} 样式下会贴边。
      * 次级入口「密码强度说明」关闭后会重新弹出本提醒，保证用户回到原链路。</p>
+     *
+     * <p>已在显示时不重建：双击这个入口会落进同一个坑（弹窗首帧未完成时第二击穿透），
+     * 叠出两个一模一样的提醒框。从「密码强度说明」回来时旧框已 dismiss，能正常重弹。</p>
      */
     public void showSecurityWarningDialog() {
+        if (securityWarnDialog != null && securityWarnDialog.isShowing()) return;
         View view = LayoutInflater.from(activity).inflate(R.layout.dialog_security_warn, null);
         final AlertDialog dialog = styledDialog().setView(view).create();
+        securityWarnDialog = dialog;
+        modalDialog = dialog;
         dialog.show();
 
         view.findViewById(R.id.btn_sec_confirm).setOnClickListener(v -> dialog.dismiss());
@@ -559,9 +645,16 @@ public class MainDialogHelper {
      * Activity 已销毁直接返回，以及主号未设置时提示去设置。</p>
      *
      * <p>用 {@code startActivityForResult} 是为了充值结束后能回到主页刷新本地清单。</p>
+     *
+     * <p>重入由 {@link #fundPreviewLaunched} 挡住：双击只会开一个确认页，第二击静默忽略。</p>
+     *
+     * <p>密码框（或其他弹窗）正在显示时不拉确认页：那一击同样可能是从弹窗身上“穿透”下来的，
+     * 确认页会把弹窗顶掉，输到一半的密码就白输了。</p>
      */
     public void showBatchFundDialog() {
         if (activity.isFinishing() || activity.isDestroyed()) return;
+        if (fundPreviewLaunched) return;
+        if (isModalDialogShowing()) return;
 
         long masterId;
         try {
@@ -581,7 +674,19 @@ public class MainDialogHelper {
         }
 
         Intent intent = new Intent(activity, BatchFundConfirmActivity.class);
+        fundPreviewLaunched = true;
         activity.startActivityForResult(intent, REQUEST_BATCH_FUND);
+    }
+
+    /**
+     * 确认页已经回来（确认或取消都算）：复位单飞标记，允许再次拉起。
+     *
+     * <p>必须在 {@code onActivityResult} 里调，不能放 {@code onResume}：
+     * 确认页回包时 onActivityResult 先于 onResume，放在 onResume 会晚一步，
+     * 中间那一瞬又双击一次就又能开出第二个页面。</p>
+     */
+    public void markFundPreviewClosed() {
+        fundPreviewLaunched = false;
     }
 
     /** 批量充值确认页的请求码，用于 {@code onActivityResult} 里区分回包来源 */

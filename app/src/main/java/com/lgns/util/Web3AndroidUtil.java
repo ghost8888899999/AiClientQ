@@ -349,5 +349,50 @@ public class Web3AndroidUtil {
     /** 批量循环在每个账号切换处调用，true 则停止后续账号 */
     public static boolean isCancelRequested() { return cancelRequested; }
 
+    /**
+     * 「打完当前这一圈再停」请求标记。
+     *
+     * <p>与 {@link #cancelRequested} 是两套语义，不能合并：</p>
+     * <ul>
+     *   <li>{@code cancelRequested}——立刻停。当前账号处理完就跳出，可能停在只坐了一半的轮次里。</li>
+     *   <li>{@code stopAfterRound}——只在圈与圈之间生效。当前这一圈会跑完、凑满
+     *       {@code SEATS_PER_ROUND} 座并封盘，然后才退出。</li>
+     * </ul>
+     *
+     * <p>为什么界面只暴露后者：合约<b>没有</b>「轮次超时关闭」的机制，{@code enterArena}
+     * 里只在 {@code seat + 1 == SEATS} 时才把状态置为 {@code SEALED}；没凑满就一直停在
+     * {@code OPEN}，已入座者那 100 fLGNS 记在 {@code inMatchDeposit} 里，既不能退也不能结算。
+     * 停在半轮的代价远大于多跑完当前这 24 笔。</p>
+     */
+    private static volatile boolean stopAfterRound = false;
+
+    /**
+     * 请求「打完当前这一圈再停」。
+     *
+     * <p>不影响正在进行的账号循环，也不碰 {@link #cancelRequested}：
+     * 真正需要立刻中断时仍然走取消路径。</p>
+     */
+    public static void requestStopAfterRound() { stopAfterRound = true; }
+
+    /** 连打循环在圈边界与封盘轮询处检查，true 则不再开始新的一圈 */
+    public static boolean isStopAfterRoundRequested() { return stopAfterRound; }
+
+    /**
+     * 「用户按过停止」的总判定：立即取消与「打完这圈再停」任一为真即为真。
+     *
+     * <p>只给<b>没有圈边界</b>的阶段用。充值阶段排在入场之前，按下停止时还没有任何人入座，
+     * 停就是停，不会留下半轮锁仓，所以两条标记都当「立刻停」处理；
+     * 而入场阶段必须继续逐个检查 {@link #isStopAfterRoundRequested()}，
+     * 不能改用这个方法——入场停在圈内会让已入座的号那一笔押金卡到下一轮封盘。</p>
+     */
+    public static boolean isStopRequested() { return cancelRequested || stopAfterRound; }
+
+    /**
+     * 每次任务启动前清掉上一次的停止请求。
+     *
+     * <p>不能并进 {@link #resetCancel()}：那个方法在每圈开头都会被
+     * {@code batchEnterAllResume} 调用，并进去会把用户刚按下的请求直接抹掉。</p>
+     */
+    public static void resetStop() { stopAfterRound = false; }
 
 }

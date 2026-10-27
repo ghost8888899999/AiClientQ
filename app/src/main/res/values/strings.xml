@@ -241,7 +241,7 @@
 
     <!-- ══════════ 通用：跨页面复用（layout/activity/item 中重复出现的静态中文） ══════════ -->
     <string name="common_btn_security_warn">⚠安全提醒</string>
-    <string name="common_cd_more_settings">更多设置菜单</string>
+    <string name="common_cd_more_settings">更多功能菜单</string>
     <string name="common_cd_copy_log">复制日志</string>
     <string name="common_cd_clear_log">清空日志</string>
     <string name="common_cd_add_group">添加分组</string>
@@ -250,6 +250,9 @@
     <string name="common_btn_batch_enter">批量入场</string>
     <string name="common_btn_batch_claim">批量领取</string>
     <string name="common_btn_full_workflow">完整流程</string>
+    <!-- 运行中把「正在跑的那个按钮」换成停止键：点一下 = 打完当前这一圈再停，不会留下半轮锁仓 -->
+    <string name="common_btn_stop_after_round">停止</string>
+    <string name="common_btn_stopping">停止中</string>
     <string name="common_label_running_log">运行日志</string>
     <string name="common_label_today_enter">今日入场</string>
     <string name="common_label_today_champion">今日冠军</string>

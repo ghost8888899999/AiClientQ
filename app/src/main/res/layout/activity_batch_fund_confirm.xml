@@ -49,17 +49,37 @@
             android:textSize="11sp" />
     </LinearLayout>
 
-    <!-- 汇总卡 + 主号卡 + 明细列表（头部随列表滚动） -->
+    <!-- 汇总卡 + 主号卡 + 明细列表（头部随列表滚动）。下方锚 tv_degraded_tip：
+         提示条 gone 时RelativeLayout 仍按锚点排版，列表位置不跳 -->
     <androidx.recyclerview.widget.RecyclerView
         android:id="@+id/rv_fund_list"
         android:layout_width="match_parent"
         android:layout_height="0dp"
         android:layout_above="@id/layout_footer"
-        android:layout_below="@id/toolbar"
+        android:layout_below="@id/tv_degraded_tip"
         android:clipToPadding="false"
         android:paddingTop="2dp"
         android:paddingBottom="8dp"
         android:visibility="invisible" />
+
+    <!-- 降级提示条：RPC 全挂、数据来自 Blockscout 浏览器时才可见 -->
+    <TextView
+        android:id="@+id/tv_degraded_tip"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_above="@id/rv_fund_list"
+        android:layout_below="@id/toolbar"
+        android:layout_marginStart="16dp"
+        android:layout_marginTop="8dp"
+        android:layout_marginEnd="16dp"
+        android:background="#1FFF8F00"
+        android:paddingStart="10dp"
+        android:paddingTop="6dp"
+        android:paddingEnd="10dp"
+        android:paddingBottom="6dp"
+        android:textColor="#FF8F00"
+        android:textSize="11sp"
+        android:visibility="gone" />
 
     <!-- 查询中 / 查询失败 占位：与列表同区域，切换时页面不跳动 -->
     <LinearLayout

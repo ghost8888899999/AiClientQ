@@ -38,6 +38,15 @@ public class AutoClearConfigActivity extends BaseActivity {
     private Spinner spTimeUnit;
     /** 入场模式下拉：索引存入 ArenaConfig.playModeIndex，主界面按它决定打不打 */
     private Spinner spPlayMode;
+    /**
+     * 连打场数下拉：选中索引 +1 存入 ArenaConfig.enterRounds。
+     *
+     * <p>选项由 arrays.xml 的 enter_rounds_array 提供（1~12 场，12 是合约硬上限），主界面点一次
+     * 入场就按这个圈数连打，圈与圈之间等上一轮封盘。0 位置对应 1 场，所以存取都要 ±1。
+     * 出厂默认 1 场（点一次打一场，沿用旧版习惯）；标「不建议」的是 12 除不尽的值，
+     * 想打满 12 场会因此多点一次。</p>
+     */
+    private Spinner spEnterRounds;
     /** 日志自动清除开关（关闭时停掉后台清理调度） */
     private SwitchCompat swLogClearEnable;
     /** 日志保留时长数值，与 spLogTimeUnit 组成「N 小时/天」 */
@@ -145,6 +154,7 @@ public class AutoClearConfigActivity extends BaseActivity {
         etAutoClearVal = findViewById(R.id.et_auto_clear_val);
         spTimeUnit = findViewById(R.id.sp_time_unit);
         spPlayMode = findViewById(R.id.sp_play_mode);
+        spEnterRounds = findViewById(R.id.sp_enter_rounds);
         swLogClearEnable = findViewById(R.id.sw_log_clear_enable);
         etLogClearVal = findViewById(R.id.et_log_clear_val);
         spLogTimeUnit = findViewById(R.id.sp_log_time_unit);
@@ -199,6 +209,20 @@ public class AutoClearConfigActivity extends BaseActivity {
             }
             spPlayMode.setSelection(playModeIndex);
 
+            // 连打场数：存储值是「场数」(1~12)，下拉索引是「场数-1」，两端都要换算。
+            // 上限取「下拉项数」与「合约日上限」的较小者：万一 arrays.xml 少列了几项，
+            // 也不能把索引指到数组之外（setSelection 越界不会崩，但会静默选中 0 号）
+            int rounds = ArenaConfig.enterRounds;
+            int maxRounds = Math.min(spEnterRounds.getCount(), ArenaConfig.MAX_ENTRIES_PER_DAY);
+            if (rounds < 1 || rounds > maxRounds) {
+                String warnMsg = "配置项 enterRounds 越界: " + rounds + "，已重置为默认值 "
+                        + ArenaConfig.DEFAULT_ENTER_ROUNDS + "(场)";
+                Log.w("AutoClearConfig", warnMsg);
+                writeErrorToDb("CONFIG_WARN", warnMsg);
+                rounds = Math.min(ArenaConfig.DEFAULT_ENTER_ROUNDS, maxRounds);
+            }
+            spEnterRounds.setSelection(rounds - 1);
+
             etLogClearVal.setText(String.valueOf(ArenaConfig.logClearIntervalValue));
 
             int logTimeUnitIndex = ArenaConfig.logClearIntervalUnitIndex;
@@ -224,6 +248,8 @@ public class AutoClearConfigActivity extends BaseActivity {
             etAutoClearVal.setText("1");
             spTimeUnit.setSelection(1);
             spPlayMode.setSelection(0);
+            spEnterRounds.setSelection(Math.min(ArenaConfig.DEFAULT_ENTER_ROUNDS,
+                    spEnterRounds.getCount()) - 1);
             swLogClearEnable.setChecked(true);
             etLogClearVal.setText("1");
             spLogTimeUnit.setSelection(2);
@@ -271,6 +297,7 @@ public class AutoClearConfigActivity extends BaseActivity {
             ArenaConfig.autoClearIntervalValue = intervalValue;
             ArenaConfig.autoClearIntervalUnitIndex = spTimeUnit.getSelectedItemPosition();
             ArenaConfig.playModeIndex = spPlayMode.getSelectedItemPosition();
+            ArenaConfig.enterRounds = spEnterRounds.getSelectedItemPosition() + 1;
             ArenaConfig.logClearEnable = swLogClearEnable.isChecked();
             ArenaConfig.logClearIntervalValue = logIntervalValue;
             ArenaConfig.logClearIntervalUnitIndex = spLogTimeUnit.getSelectedItemPosition();
@@ -282,6 +309,7 @@ public class AutoClearConfigActivity extends BaseActivity {
                     "私钥自动清除=" + (ArenaConfig.autoClearEnable ? "开启" : "关闭") + ", " +
                     "私钥清除间隔=" + ArenaConfig.autoClearIntervalValue + " " + getTimeUnitText(ArenaConfig.autoClearIntervalUnitIndex) + ", " +
                     "入场模式=" + getPlayModeText(ArenaConfig.playModeIndex) + ", " +
+                    "连打场数=" + ArenaConfig.enterRounds + " 场, " +
                     "日志自动清除=" + (ArenaConfig.logClearEnable ? "开启" : "关闭") + ", " +
                     "日志保留=" + ArenaConfig.logClearIntervalValue + " " + getTimeUnitText(ArenaConfig.logClearIntervalUnitIndex);
             AppLogDbHelper dbHelper = AppLogDbHelper.getInstance(this);

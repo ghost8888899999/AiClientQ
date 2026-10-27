@@ -70,6 +70,13 @@ public class PrivateKeyManageActivity extends BaseActivity {
     // 本次拖拽所在分组：clearView 时 getAdapterPosition 可能为 NO_POSITION，靠它兜底落库
     private String draggingGroup;
 
+    /**
+     * 本次停留是否做过「影响链上数据」的变更：新增/删除 key、启用开关（尤其关→开会把
+     * 本次会话未查过的地址放回主界面）。只有这类变更才需要回主界面重拉链上统计；
+     * 单改自定义编号/分组归属/组内排序/主号都不影响地址集合与其链上值，可原样继承。
+     */
+    private volatile boolean chainDirty = false;
+
     /** 分组头行：显示分组名与人数，拖动排序时不能被跨过 */
     private static final int TYPE_HEADER = 0;
     /** 私钥行：一行一个账号，长按可同组内拖动调整顺序 */
@@ -216,7 +223,11 @@ public class PrivateKeyManageActivity extends BaseActivity {
         // 本页也可能从「批量充值 → 去设置」等非菜单入口进入，
         // 离开时统一通知主界面重载本地私钥，避免主界面沿用旧的启用状态
         MainActivity ma = MainActivity.sInstance == null ? null : MainActivity.sInstance.get();
-        if (ma != null && !ma.isFinishing()) ma.setRefreshLocalOnlyOnResume();
+        if (ma != null && !ma.isFinishing()) {
+            // 只有增删 key/启用开关才需主界面重拉链上；单改编号/分组/排序/主号只重建本地展示
+            if (chainDirty) ma.setRefreshLocalOnlyOnResume();
+            else ma.setRefreshGroupOnlyOnResume();
+        }
     }
 
     // endregion
@@ -472,6 +483,7 @@ public class PrivateKeyManageActivity extends BaseActivity {
                     KeyStoreManager mgr = AppGlobal.getMetaManager();
                     mgr.addPrivateKey(fullKey, pwd, customCode, group);
                     java.util.Arrays.fill(pwd, (char) 0);
+                    chainDirty = true;   // 新增 key 引入未查地址，回主界面需重拉链上
                     runOnUiThread(() -> {
                         Toast.makeText(this, R.string.toast_key_added, Toast.LENGTH_SHORT).show();
                         dialog.dismiss();
@@ -669,6 +681,7 @@ public class PrivateKeyManageActivity extends BaseActivity {
                         }
                         // 删掉的正好是主号时，清掉主号标记，避免批量充值指向一个不存在的账号
                         if (wasMaster) mgr.setMasterAccountId(-1);
+                        chainDirty = true;   // 删除改变地址集合与分母，回主界面重拉
                         final boolean fWasMaster = wasMaster;
                         runOnUiThread(() -> {
                             Toast.makeText(this, fWasMaster
@@ -751,7 +764,10 @@ public class PrivateKeyManageActivity extends BaseActivity {
             } catch (Exception e) {
                 Log.e("PrivateKeyManage", "setKeyEnabled error", e);
             }
-            if (affected > 0) return;
+            if (affected > 0) {
+                chainDirty = true;   // 启用集变了：关→开会引入本次未查的地址，主界面需重拉
+                return;
+            }
 
             final int rows = affected;
             runOnUiThread(() -> {

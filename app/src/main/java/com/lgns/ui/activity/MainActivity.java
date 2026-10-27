@@ -4,6 +4,7 @@ import android.content.Intent;
 import android.content.SharedPreferences;
 import android.os.Bundle;
 import android.util.Log;
+import android.view.MotionEvent;
 import android.view.View;
 import android.widget.ImageButton;
 import android.widget.LinearLayout;
@@ -101,6 +102,13 @@ public class MainActivity extends BaseActivity implements TaskLogCallback, Batch
     /** 标题栏副标题：加载/同步/就绪/失败/运行中，与按钮门控同源 */
     private TextView tvStatusSub;
     private LinearLayout btnBatchFund, btnBatchEnter, btnBatchClaim, btnFullWorkflow;
+    /** 四个批量按钮的运行态视图：运行中要拿「正在跑的那个」当停止键用 */
+    private final List<TaskButton> taskButtons = new ArrayList<>(4);
+    private TaskButton tbFund, tbEnter, tbClaim, tbWorkflow;
+    /** 当前正在跑的那个按钮：运行中只有它可点，点一下 = 打完这一圈再停 */
+    private volatile TaskButton activeTaskButton;
+    /** 本次运行是否已经按过停止：按下后按钮切「停止中」并禁用，避免连点刷日志 */
+    private volatile boolean stopRequested = false;
     // 控件引用：日志区
     private TextView tvLog;
     private ScrollView scrollView;
@@ -137,6 +145,8 @@ public class MainActivity extends BaseActivity implements TaskLogCallback, Batch
     private boolean skipRefreshOnResume = false;
     /** 本次 onResume 只重读本地清单、不拉链上统计：私钥增删改后只需重建行结构 */
     private boolean refreshLocalOnlyOnResume = false;
+    /** 本次 onResume 只按最新分组重建展示、不重新拉链上数据：分组名/顺序变更后（地址集合与链上值都没变） */
+    private boolean refreshGroupOnlyOnResume = false;
     /** 页面在后台时被判空闲上锁：先压住弹窗，等 onResume 再弹（后台不创建 Dialog） */
     private volatile boolean pendingIdleUnlock = false;
 
@@ -225,10 +235,38 @@ public class MainActivity extends BaseActivity implements TaskLogCallback, Batch
         btnBatchEnter = findViewById(R.id.btn_batch_enter);
         btnBatchClaim = findViewById(R.id.btn_batch_claim);
         btnFullWorkflow = findViewById(R.id.btn_full_workflow);
+        bindTaskButtons();
         tvLog = findViewById(R.id.tv_log);
         scrollView = findViewById(R.id.scrollView);
         layoutLogHeader = findViewById(R.id.layout_log_header);
         tvLogToggle = findViewById(R.id.tv_log_toggle);
+    }
+
+    /**
+     * 把四个批量按钮包装成运行态视图：记下各自的文字控件、原始文案与原始配色。
+     *
+     * <p>运行中需要把其中一个临时换成「停止」键，跑完必须原样还原。原始配色直接取自
+     * {@code getBackgroundTintList()}（即 layout 里的 {@code backgroundTint}），
+     * 不在代码里再写一份色表——以后调按钮配色只改 XML 就够。</p>
+     *
+     * <p>{@code roundBoundary} 标记这个按钮背后的任务有没有「圈」的概念：入场与完整流程有，
+     * 所以停必须停在圈与圈之间（停在圈内会把押金锁死）；充值/领取是一串独立账号交易，
+     * 当前账号跑完就能停。</p>
+     */
+    private void bindTaskButtons() {
+        taskButtons.clear();
+        tbFund = new TaskButton(btnBatchFund, findViewById(R.id.tv_btn_fund_label),
+                R.string.title_batch_fund, btnBatchFund.getBackgroundTintList(), false);
+        tbEnter = new TaskButton(btnBatchEnter, findViewById(R.id.tv_btn_enter_label),
+                R.string.common_btn_batch_enter, btnBatchEnter.getBackgroundTintList(), true);
+        tbClaim = new TaskButton(btnBatchClaim, findViewById(R.id.tv_btn_claim_label),
+                R.string.common_btn_batch_claim, btnBatchClaim.getBackgroundTintList(), false);
+        tbWorkflow = new TaskButton(btnFullWorkflow, findViewById(R.id.tv_btn_workflow_label),
+                R.string.common_btn_full_workflow, btnFullWorkflow.getBackgroundTintList(), true);
+        taskButtons.add(tbFund);
+        taskButtons.add(tbEnter);
+        taskButtons.add(tbClaim);
+        taskButtons.add(tbWorkflow);
     }
 
     /**
@@ -249,10 +287,11 @@ public class MainActivity extends BaseActivity implements TaskLogCallback, Batch
         });
         scrollView.setVisibility(View.VISIBLE);
 
-        btnBatchFund.setOnClickListener(v -> handleBatchFundClick());
-        btnBatchEnter.setOnClickListener(v -> handleBatchEnterClick());
-        btnBatchClaim.setOnClickListener(v -> handleBatchClaimClick());
-        btnFullWorkflow.setOnClickListener(v -> handleFullWorkflowClick());
+        // 四个按钮的统一入口：空闲时各自开活；运行中点「正在跑的那个」= 打完这圈再停
+        btnBatchFund.setOnClickListener(v -> onTaskButtonClick(this::handleBatchFundClick));
+        btnBatchEnter.setOnClickListener(v -> onTaskButtonClick(this::handleBatchEnterClick));
+        btnBatchClaim.setOnClickListener(v -> onTaskButtonClick(this::handleBatchClaimClick));
+        btnFullWorkflow.setOnClickListener(v -> onTaskButtonClick(this::handleFullWorkflowClick));
 
         // 统计加载失败时，汇总栏兼作重试入口（其他状态下点按无副作用）
         tvSummaryEnter.setOnClickListener(v -> {
@@ -290,6 +329,14 @@ public class MainActivity extends BaseActivity implements TaskLogCallback, Batch
     /**
      * 批量入场：前置检查后弹解密密码，密码通过才锁按钮并开后台线程。
      *
+     * <p>圈数取自 {@link ArenaConfig#enterRounds}，但<b>在任务启动时快照一次</b>再传下去：
+     * 任务一跑起来齿轮就置灰了（见 {@link #applyButtonEnabledState()}），但仍要保证
+     * 「点下去那一刻看到的配置」和「实际跑的圈数」严格一致，不能让中途改配置污染正在跑的这批。
+     * 1 圈 = 每号打一场就停（出厂默认）；10 圈 = 一次点完当日满勤，想拿满师徒分成自己改到 10；
+     * 最多 12 圈（合约硬上限）。
+     * 连打时任务会在两圈之间等上一轮封盘——
+     * 同一轮不能重复入座，而一轮要 24 座才封，账号数不够时任务会等到超时并提示。</p>
+     *
      * <p>密码数组用完必须 {@code Arrays.fill} 清零；无论任务成功失败，
      * finally 都要把按钮放开，否则一次异常就会把界面永久锁死。</p>
      */
@@ -307,16 +354,19 @@ public class MainActivity extends BaseActivity implements TaskLogCallback, Batch
         Log.d("UI_CLICK", "点击【批量入场】按钮");
         // 密码弹窗阶段不锁按钮：取消或输错都要保持可点，密码校验通过后才进入任务锁定
         dialogHelper.showDecryptPasswordDialog(pwdCharArray -> {
-            setTaskButtonsEnabled(false);
+            // 圈数在启动前读一次：之后配置页已被锁，但这个值也不再回读，避免“显示 12、实际打 1”
+            final int rounds = ArenaConfig.enterRounds;
+            beginTask(tbEnter);
             new Thread(() -> {
                 try {
-                    BatchEnterTask.batchEnterAllResume(getApplicationContext(), this, currentPlayMode, enabledList, pwdCharArray);
+                    BatchEnterTask.batchEnterAllRoundsResume(getApplicationContext(), this, currentPlayMode,
+                            rounds, enabledList, pwdCharArray);
                 } catch (Exception e) {
                     runOnUiThread(() -> appendLog("", "ENTER", "批量入场外层异常：" + e.getMessage()));
                     Log.e("BATCH_ENTER", "异常", e);
                 } finally {
                     Arrays.fill(pwdCharArray, (char) 0);
-                    runOnUiThread(() -> setTaskButtonsEnabled(true));
+                    runOnUiThread(this::endTask);
                 }
             }).start();
         });
@@ -340,7 +390,7 @@ public class MainActivity extends BaseActivity implements TaskLogCallback, Batch
         Log.d("UI_CLICK", "点击【批量领取】按钮");
         // 密码弹窗阶段不锁按钮：取消或输错都要保持可点，密码校验通过后才进入任务锁定
         dialogHelper.showDecryptPasswordDialog(pwdCharArray -> {
-            setTaskButtonsEnabled(false);
+            beginTask(tbClaim);
             new Thread(() -> {
                 try {
                     BatchClaimTask.batchClaimAllResume(getApplicationContext(), this, currentPlayMode, enabledList, pwdCharArray);
@@ -349,14 +399,24 @@ public class MainActivity extends BaseActivity implements TaskLogCallback, Batch
                     Log.e("BATCH_CLAIM", "异常", e);
                 } finally {
                     Arrays.fill(pwdCharArray, (char) 0);
-                    runOnUiThread(() -> setTaskButtonsEnabled(true));
+                    runOnUiThread(this::endTask);
                 }
             }).start();
         });
     }
 
     /**
-     * 完整工作流：充手续费 → 入场 → 领奖一次跑完（rounds 传 2 表示两轮）。
+     * 完整工作流：充 fLGNS 门票 → 入场（按 {@link ArenaConfig#enterRounds} 圈）→ 领奖一次跑完。
+     *
+     * <p>第 1 步的充值目标与圈数联动（{@link ArenaConfig#fundTargetFor(int)}）：补多少只看圈数，
+     * 默认 1 圈时每号补到 100，12 圈时补到 500——冠军拿的是锁仓甲子、不会形成 claimable，
+     * 只补一场门票的号第二圈就买不起票，缺一个座就让这一轮凑不满 24 座、后续圈全部取消。</p>
+     *
+     * <p>第 1 步<b>不含 DAI 手续费</b>：手续费不够的交易会直接失败，
+     * 所以 DAI 必须先到「批量充值手续费」页面补足，再点这个流程。</p>
+     *
+     * <p>传入的 {@code 2} 是甲子领取的每号最大重试次数（甲子一页 64 条，序号多的号需要多笔），
+     * 不是圈数——圈数在按下的那一刻快照一次，之后充值目标、预检、入场三处都用这个值。</p>
      *
      * <p>内含等待确认的固定延时，耗时比单独任务长，所以同样在后台线程执行、
      * 全程锁住四个批量按钮。</p>
@@ -375,16 +435,19 @@ public class MainActivity extends BaseActivity implements TaskLogCallback, Batch
         Log.d("UI_CLICK", "点击【完整工作流】按钮");
         // 密码弹窗阶段不锁按钮：取消或输错都要保持可点，密码校验通过后才进入任务锁定
         dialogHelper.showDecryptPasswordDialog(pwdCharArray -> {
-            setTaskButtonsEnabled(false);
+            // 圈数在启动前读一次，三个步骤（充值目标/预检/入场）共用，中途改配置影响不到这批
+            final int rounds = ArenaConfig.enterRounds;
+            beginTask(tbWorkflow);
             new Thread(() -> {
                 try {
-                    BatchWorkflowTask.fullArenaWorkflowResume(getApplicationContext(), this, 2, currentPlayMode, enabledList, pwdCharArray);
+                    BatchWorkflowTask.fullArenaWorkflowResume(getApplicationContext(), this, 2, rounds,
+                            currentPlayMode, enabledList, pwdCharArray);
                 } catch (Exception e) {
                     runOnUiThread(() -> appendLog("", "", "完整工作流外层异常：" + e.getMessage()));
                     Log.e("FULL_WORKFLOW", "异常", e);
                 } finally {
                     Arrays.fill(pwdCharArray, (char) 0);
-                    runOnUiThread(() -> setTaskButtonsEnabled(true));
+                    runOnUiThread(this::endTask);
                 }
             }).start();
         });
@@ -397,24 +460,159 @@ public class MainActivity extends BaseActivity implements TaskLogCallback, Batch
     }
 
     /**
+     * 任务开始：锁住四个按钮，只把「正在跑的那个」留成停止键。
+     *
+     * <p>先清两个请求标记：上一次的停止/取消标记若被带进来，任务一启动就会自行退出。</p>
+     *
+     * <p>齿轮菜单同时收起来：任务开始时还开着的菜单必须关掉，否则里面那些写操作项
+     * 会停在「任务启动前」的可用态上（置灰是在菜单弹出时算的）。</p>
+     */
+    private void beginTask(TaskButton active) {
+        activeTaskButton = active;
+        stopRequested = false;
+        Web3AndroidUtil.resetStop();
+        Web3AndroidUtil.resetCancel();
+        menuHelper.dismissPopup();
+        setTaskButtonsEnabled(false);
+    }
+
+    /**
+     * 任务收尾：清掉停止态，按钮回各自的文案与配色。
+     *
+     * <p>两个标记都要清：{@code beginTask} 里也会清，但它只在「开新任务」时执行；
+     * 上一次「立即取消」的标记若残留，下一次任务（无论走哪个入口）会一开头就自行退出。
+     * 收尾时线程已经结束，清掉不会漏响应。</p>
+     */
+    private void endTask() {
+        activeTaskButton = null;
+        stopRequested = false;
+        Web3AndroidUtil.resetStop();
+        Web3AndroidUtil.resetCancel();
+        setTaskButtonsEnabled(true);
+    }
+
+    /**
+     * 密码框显示期间，主界面一律不吃触摸。
+     *
+     * <p>弹窗自己的手势走的是它自己的窗口，根本不会经过这里；能走到这里的只有“穿透”下来的那一批：
+     * 弹窗窗口首帧还没注册好触摸区域时，系统会把第二击又派发回底下的 Activity
+     * （logcat 里因此能连出两条「点击【xx】按钮」，并建出第二个 EditText）。
+     * 在这一层直接吞掉，比去每个点击入口重复判一遍更彻底：四个按钮、齿轮菜单、汇总栏、安全提醒一并覆盖。</p>
+     *
+     * <p>看的是“有没有任何模态弹窗在显示”（{@code isModalDialogShowing}），不是只看密码框：
+     * 安全提醒、日志这类弹窗同样存在首帧未就绪的空档。</p>
+     *
+     * <p>整串吞是安全的：对应的 DOWN 已经吞掉了，后续 MOVE/UP 到达时也没有控件能把它拼成一次点击。</p>
+     */
+    @Override
+    public boolean dispatchTouchEvent(MotionEvent ev) {
+        if (dialogHelper != null && dialogHelper.isModalDialogShowing()) return true;
+        return super.dispatchTouchEvent(ev);
+    }
+
+    /**
+     * 四个批量按钮的唯一入口：空闲时开任务，运行中则转成「停止」请求。
+     *
+     * <p>运行中四个按钮里只有正在跑的那个还是 {@code enabled}（见
+     * {@link #applyButtonEnabledState()}），所以「停止」分支实际只会被它触发。</p>
+     *
+     * <p>第三道门是弹窗：弹窗刚弹出来的头一两百毫秒里，它的窗口首帧还没走完 layout，
+     * 那一段里点在底下的第二击会直接落到这里（logcat 里能连续看到两条「点击【xx】按钮」）。
+     * 不挡就会重建一个密码框，所以有弹窗盖着时把这一击直接丢掉——用户想接着用，
+     * 就把已经弹出来的那个填完，不用重新点按钮。</p>
+     */
+    private void onTaskButtonClick(Runnable startTask) {
+        if (isTaskRunning) {
+            requestStop();
+            return;
+        }
+        if (dialogHelper.isModalDialogShowing()) return;
+        startTask.run();
+    }
+
+    /**
+     * 「就停在这里」：按任务性质分两种停法。
+     *
+     * <p>入场与完整流程带「圈」——置 {@link Web3AndroidUtil#requestStopAfterRound()} 标记，
+     * 正在入场时当前这一圈会跑完、凑满 {@code SEATS_PER_ROUND} 座封盘后才退出。原因是合约没有
+     * 「轮次超时关闭」：{@code enterArena} 只在座满时结算，停在半轮里，已入座那些号的
+     * 100 fLGNS 会一直挂在 {@code inMatchDeposit} 上，既不结算也退不回。</p>
+     *
+     * <p>同一个标记在<b>完整流程的第 1 步（充值）</b>里是「立刻停」：那时还没人入座，
+     * 不存在半轮锁仓的风险，{@link BatchFundTask#executeAutoFund} 按 {@code isStopRequested()}
+     * 在当前这笔转账结束后就跳出，随后跳过入场直接领取。</p>
+     *
+     * <p>充值/领取是一串互不依赖的账号交易，没有押金风险，走立即取消（同样是当前账号
+     * 处理完就跳出，不会留下半笔交易）。</p>
+     */
+    private void requestStop() {
+        if (!isTaskRunning || stopRequested || activeTaskButton == null) return;
+        stopRequested = true;
+        if (activeTaskButton.roundBoundary) {
+            Web3AndroidUtil.requestStopAfterRound();
+            appendUiLog(null, "⏸ 已请求停止：还在充值就当前这笔转完即停（随后跳过入场）；已开始入场则打完这一圈封盘再停");
+        } else {
+            Web3AndroidUtil.requestCancel();
+            appendUiLog(null, "⏸ 已请求停止：当前账号处理完就停，已上链的交易不回滚");
+        }
+        applyButtonEnabledState();
+    }
+
+    /**
      * 按钮可用 = 本地清单已就绪 && 首轮链上统计已回填 && 当前没有任务在跑。
      * 关键在第二项：统计没回来之前，界面上的余额/入场/冠军全是占位 0，
      * 与真实的 0 无法区分，此时放行等于让用户基于错数据去点批量充值/入场。
+     *
+     * <p>运行中是唯一例外：正在跑的那个按钮要保持可点（红底「停止」），
+     * 它是用户在长任务里唯一的出口；已经按过停止就一并置灰，避免连点。</p>
+     *
+     * <p>齿轮不在这里管：任务跑着时齿轮仍然可点，但菜单里的写操作项由
+     * {@code MainMenuHelper} 逐项置灰，只留「看日志」「锦标赛统计」两个只读入口 ——
+     * 连打十来圈的途中查日志是刚需，不该逼用户先停任务。</p>
      */
     private void applyButtonEnabledState() {
         runOnUiThread(() -> {
-            boolean enabled = accountDataReady && statsPhase == STATS_READY && !isTaskRunning;
-            btnBatchFund.setEnabled(enabled);
-            btnBatchEnter.setEnabled(enabled);
-            btnBatchClaim.setEnabled(enabled);
-            btnFullWorkflow.setEnabled(enabled);
-            float alpha = enabled ? 1.0f : 0.5f;
-            btnBatchFund.setAlpha(alpha);
-            btnBatchEnter.setAlpha(alpha);
-            btnBatchClaim.setAlpha(alpha);
-            btnFullWorkflow.setAlpha(alpha);
+            boolean ready = accountDataReady && statsPhase == STATS_READY;
+            boolean idle = ready && !isTaskRunning;
+            for (TaskButton b : taskButtons) {
+                boolean stopKey = isTaskRunning && b == activeTaskButton;
+                boolean clickable = idle || (stopKey && !stopRequested);
+                b.layout.setEnabled(clickable);
+                b.layout.setAlpha(clickable ? 1.0f : 0.5f);
+                if (stopKey) {
+                    b.label.setText(stopRequested
+                            ? R.string.common_btn_stopping : R.string.common_btn_stop_after_round);
+                    b.layout.setBackgroundTintList(
+                            android.content.res.ColorStateList.valueOf(getColor(R.color.btn_stop)));
+                } else {
+                    b.label.setText(b.labelRes);
+                    b.layout.setBackgroundTintList(b.tint);
+                }
+            }
             refreshStatusSubtitle();
         });
+    }
+
+    /**
+     * 批量按钮的运行态视图：布局、文字控件、原始文案资源、原始背景色，
+     * 以及「这个按钮背后的任务有没有圈边界」。
+     */
+    private static final class TaskButton {
+        final LinearLayout layout;
+        final TextView label;
+        final int labelRes;
+        final android.content.res.ColorStateList tint;
+        /** true = 任务按圈跑，必须停在圈边界；false = 可直接取消 */
+        final boolean roundBoundary;
+
+        TaskButton(LinearLayout layout, TextView label, int labelRes,
+                   android.content.res.ColorStateList tint, boolean roundBoundary) {
+            this.layout = layout;
+            this.label = label;
+            this.labelRes = labelRes;
+            this.tint = tint;
+            this.roundBoundary = roundBoundary;
+        }
     }
 
     /**
@@ -478,9 +676,9 @@ public class MainActivity extends BaseActivity implements TaskLogCallback, Batch
 
     // endregion
 
-    // region 齿轮菜单与自动清理
+    // region 溢出菜单（⋮）与自动清理
 
-    /** 齿轮菜单：点开右上角折叠菜单（设置、统计、各种管理页的入口都在这） */
+    /** 溢出菜单（⋮）：点开右上角折叠菜单（设置、统计、各种管理页的入口都在这） */
     private void setupGearMenu() {
         btnSettingGear.setOnClickListener(v -> menuHelper.showCollapseMenu(v));
     }
@@ -762,7 +960,10 @@ public class MainActivity extends BaseActivity implements TaskLogCallback, Batch
         return dialogHelper;
     }
 
-    /** 是否有批量任务正在跑：任务层靠它拦住重复启动 */
+    /**
+     * 是否有批量任务正在跑：任务层靠它拦住重复启动，齿轮菜单也靠它决定
+     * 要不要把写操作项置灰（见 {@code MainMenuHelper#applyTaskRunningLock}）。
+     */
     @Override
     public boolean isRunning() {
         return isTaskRunning;
@@ -781,11 +982,13 @@ public class MainActivity extends BaseActivity implements TaskLogCallback, Batch
 
     // region 页面回调与结果回填
 
-    /** 退出时收起菜单并清空会话密码，同时注销单例引用与静态回调 */
+    /** 退出时收起菜单、关掉残留弹窗并清空会话密码，同时注销单例引用与静态回调 */
     @Override
     protected void onDestroy() {
         super.onDestroy();
         menuHelper.dismissPopup();
+        // 弹窗不主动 dismiss 会留下 WindowLeaked 警告，且销毁后状态不好回收
+        if (dialogHelper != null) dialogHelper.dismissModalDialogs();
         if (tempUserCryptoKey != null) {
             Arrays.fill(tempUserCryptoKey, (char) 0);
             tempUserCryptoKey = null;
@@ -812,6 +1015,17 @@ public class MainActivity extends BaseActivity implements TaskLogCallback, Batch
             refreshLocalOnlyOnResume = false;
             loadKeyListLocalOnly(this::applyLocalDefaults);
             Log.d("MainActivity", "onResume: refresh local only from key manage");
+        } else if (refreshGroupOnlyOnResume) {
+            refreshGroupOnlyOnResume = false;
+            // 分组/编号等本地变更只改标签，沿用已有链上值不再发 RPC；
+            // 但首屏链上数据还没回来（STATS_IDLE）时必须正常重载，否则数字会永久停在占位
+            if (statsPhase == STATS_IDLE) {
+                loadKeyListLocalOnly(this::applyLocalDefaults);
+                Log.d("MainActivity", "onResume: stats not ready, full reload");
+            } else {
+                loadKeyListLocalOnly(items -> applyLocalDefaults(items, false));
+                Log.d("MainActivity", "onResume: regroup local only from group manage (no chain)");
+            }
         } else {
             // 其他情况（如从日志查看返回），不刷新
             Log.d("MainActivity", "onResume: no refresh");
@@ -823,14 +1037,30 @@ public class MainActivity extends BaseActivity implements TaskLogCallback, Batch
         else refreshStatusSubtitle();
     }
 
-    /** 标记：下一次 onResume 跳过统计刷新（子页已经回填好数据时用） */
+    /**
+     * 标记：下一次 onResume 跳过统计刷新（子页已经回填好数据时用）。
+     *
+     * <p>三个刷新标志互斥：只保留最后一次设置。否则从菜单进页时预置了
+     * {@code refreshLocalOnlyOnResume}，子页 {@code onPause} 再选“不拉网络”也盖不住旧标志。</p>
+     */
     public void setSkipRefreshOnResume() {
         skipRefreshOnResume = true;
+        refreshLocalOnlyOnResume = false;
+        refreshGroupOnlyOnResume = false;
     }
 
-    /** 标记：下一次 onResume 只重读本地清单、不拉链上统计（私钥/分组变更后） */
+    /** 标记：下一次 onResume 只重读本地清单并重拉链上统计（私钥增删/启用开关/批量交易后） */
     public void setRefreshLocalOnlyOnResume() {
         refreshLocalOnlyOnResume = true;
+        skipRefreshOnResume = false;
+        refreshGroupOnlyOnResume = false;
+    }
+
+    /** 标记：下一次 onResume 只重新分组、不拉链上统计（分组名/编号/排序/主号等纯本地变更） */
+    public void setRefreshGroupOnlyOnResume() {
+        refreshGroupOnlyOnResume = true;
+        skipRefreshOnResume = false;
+        refreshLocalOnlyOnResume = false;
     }
 
     /** 批量任务结束回调：无论成败都按链上真实状态重拉一次统计 */
@@ -883,6 +1113,10 @@ public class MainActivity extends BaseActivity implements TaskLogCallback, Batch
     // 私钥管理变更/冷启动回调：数据库最新结构立即上屏；
     // 未变更地址继承已加载的链上数值（避免归零闪烁），新增地址零值兜底；汇总栏按合并值重算；随后链上异步回填
     private void applyLocalDefaults(List<AccountStatsAdapter.DisplayItem> items) {
+        applyLocalDefaults(items, true);
+    }
+
+    private void applyLocalDefaults(List<AccountStatsAdapter.DisplayItem> items, boolean repullChain) {
         Map<String, AccountStatsAdapter.AccountStatsItem> oldMap = accountStatsAdapter.snapshotAccountItems();
         int sumEnter = 0, sumTodayWin = 0, sumTotalWin = 0, knownToday = 0;
         BigInteger sumEarnings = BigInteger.ZERO;
@@ -917,6 +1151,8 @@ public class MainActivity extends BaseActivity implements TaskLogCallback, Batch
         int addrCount = countAddresses(getDisplayKeyItems());
         // 标签里直接写出地址数：分母是“地址数 × 12”，不写出来很容易被误读
         tvSummaryEnterLabel.setText(getString(R.string.summary_enter_label_fmt, addrCount));
+        // 分组变更不重拉链上：行值已全部继承自旧数据，直接按就绪态展示，不走占位符（失败态保留，不当成已加载）
+        if (!repullChain && statsPhase != STATS_FAILED) statsPhase = STATS_READY;
         if (statsPhase == STATS_READY) {
             tvSummaryEnter.setText(sumEnter + "/" + (addrCount * 12));
             tvSummaryTodayWin.setText((addrCount > 0 && knownToday == 0)
@@ -933,7 +1169,13 @@ public class MainActivity extends BaseActivity implements TaskLogCallback, Batch
             tvSummaryTotalWin.setText(R.string.common_placeholder);
             tvSummaryPrize.setText(R.string.common_placeholder);
         }
-        loadStatsOverview();
+        if (repullChain) {
+            loadStatsOverview();
+        } else {
+            // 分组变更无需重拉：沿用继承来的链上值，落到就绪态并撤掉同步条、重算按钮可用性
+            showSyncBar(false);
+            applyButtonEnabledState();
+        }
     }
 
     // 统计不可用：汇总栏改成提示语兼重试入口，避免用户把占位 0 当真实数据
@@ -1135,6 +1377,10 @@ public class MainActivity extends BaseActivity implements TaskLogCallback, Batch
      */
     private void loadStatsOverview() {
         final int seq = statsSeq.incrementAndGet();
+        // 立刻切回“同步中”：一箭双雕——
+        // ① 汇总栏在失败态下兼作重试入口，双击时第二击看到的不再是 FAILED，不会并发拉两轮 RPC；
+        // ② 副标题会显示“链上数据同步中…”，与真实正在发生的事一致
+        statsPhase = STATS_IDLE;
         final List<KeyListItem> enabledList = getDisplayKeyItems();
         // 整列表同步的唯一信号：顶部细进度条（行上不写任何进度）；
         // onBatchResult 等回调不保证在主线程，这里统一回到 UI 线程操作 View
@@ -1354,8 +1600,9 @@ public class MainActivity extends BaseActivity implements TaskLogCallback, Batch
             if (it.totalEarnings != null) sumEarnings = sumEarnings.add(it.totalEarnings);
         }
         tvSummaryEnterLabel.setText(getString(R.string.summary_enter_label_fmt, total));
-        // 分母 = 账号数 × 每日上限 12 场（合约 MAX_ENTRIES_PER_DAY）
-        tvSummaryEnter.setText(sumEnter + "/" + (total * 12));
+        // 分母 = 账号数 × 每日上限（合约 MAX_ENTRIES_PER_DAY），不写死 12：
+        // 与连打场数的默认值同源，日后合约调整日上限时这里不会先跑偏
+        tvSummaryEnter.setText(sumEnter + "/" + (total * ArenaConfig.MAX_ENTRIES_PER_DAY));
         // 一个今日冠军都没拿到时给占位：写 0 会被误读成“今天都没赢”
         tvSummaryTodayWin.setText((total > 0 && knownToday == 0)
                 ? getString(R.string.common_placeholder) : String.valueOf(sumTodayWin));
@@ -1390,27 +1637,49 @@ public class MainActivity extends BaseActivity implements TaskLogCallback, Batch
     /**
      * 批量充值确认页的回传：只有用户在确认页点了确定（{@code RESULT_OK}）才走一次密码验证，
      * 验密通过后锁按钮、后台执行充值，finally 释放密码数组与按钮。
+     *
+     * <p>两个细节：</p>
+     * <ul>
+     *   <li><b>不管确认还是取消</b>都要通知弹窗助手「确认页已关」，否则单飞标记一直为真，
+     *       用户之后再也拉不开充值页（双击防护的复位点就在这里）；</li>
+     *   <li>走 {@link #beginTask}/{@link #endTask} 而不是裸的 {@code setTaskButtonsEnabled}：
+     *       这条入口也要有红键可停，也要在收尾时把两个停止标记清干净，
+     *       不能四个按钮里只有它一套语义。</li>
+     * </ul>
      */
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
-        if (requestCode == REQUEST_BATCH_FUND && resultCode == RESULT_OK) {
-            // 用户确认充值：密码校验通过后才锁定按钮，取消弹窗不影响按钮
-            dialogHelper.showDecryptPasswordDialog(pwdCharArray -> {
-                setTaskButtonsEnabled(false);
-                new Thread(() -> {
-                    try {
-                        BatchFundTask.executeAutoFund(getEnabledKeyItems(), pwdCharArray, this);
-                    } catch (Exception e) {
-                        runOnUiThread(() -> appendLog("", "FUND",
-                                getString(R.string.fund_query_fail, Web3AndroidUtil.safeMessage(e))));
-                    } finally {
-                        Arrays.fill(pwdCharArray, (char) 0);
-                        runOnUiThread(() -> setTaskButtonsEnabled(true));
-                    }
-                }).start();
-            });
+        if (requestCode != REQUEST_BATCH_FUND) return;
+
+        // 确认页已经不在栈里：先复位，不然下次点「批量充值」会被单飞标记拦住
+        dialogHelper.markFundPreviewClosed();
+        if (resultCode != RESULT_OK) return;
+
+        // 防御：确认页是独立 Activity，站在它上面时主界面仍可能被排队的一下点击启动别的任务
+        // （比如“点完充值立刻又点到入场”），回来时就不能再开第二条
+        if (isTaskRunning) {
+            android.widget.Toast.makeText(this, R.string.task_running, android.widget.Toast.LENGTH_SHORT).show();
+            return;
         }
+
+        // 用户确认充值：密码校验通过后才锁定按钮，取消弹窗不影响按钮。
+        // 圈数在启动前快照：充值目标跟着它走，不能在转账过程中再回读配置
+        dialogHelper.showDecryptPasswordDialog(pwdCharArray -> {
+            final int rounds = ArenaConfig.enterRounds;
+            beginTask(tbFund);
+            new Thread(() -> {
+                try {
+                    BatchFundTask.executeAutoFund(getEnabledKeyItems(), pwdCharArray, this, rounds);
+                } catch (Exception e) {
+                    runOnUiThread(() -> appendLog("", "FUND",
+                            getString(R.string.fund_query_fail, Web3AndroidUtil.safeMessage(e))));
+                } finally {
+                    Arrays.fill(pwdCharArray, (char) 0);
+                    runOnUiThread(this::endTask);
+                }
+            }).start();
+        });
     }
 
     private static final int REQUEST_BATCH_FUND = 1001;

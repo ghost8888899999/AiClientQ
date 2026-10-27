@@ -22,4 +22,11 @@
     <!-- 标题栏副标题：常规态半透明白；会话已锁定时换琥珀色，因为那是唯一需要用户就地动手的状态 -->
     <color name="status_normal">#CCFFFFFF</color>
     <color name="status_locked">#FFFFD54F</color>
+
+    <!-- 运行中的停止键：与四个批量按钮的橙/蓝/绿/紫区分开，点错一次就是钱 -->
+    <color name="btn_stop">#FFC62828</color>
+
+    <!-- 师徒分成解锁提示：淡琥珀底 + 深橙字，要提醒但不想抢五列数字的视觉重心 -->
+    <color name="lineage_hint_bg">#FFFFF8E1</color>
+    <color name="lineage_hint_text">#FFE65100</color>
 </resources>

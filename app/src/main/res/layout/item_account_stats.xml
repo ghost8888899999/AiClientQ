@@ -169,5 +169,21 @@
                     android:textColor="#9E9E9E"/>
             </LinearLayout>
         </LinearLayout>
+
+        <!-- 师徒分成解锁提示：今日入场不足 10 场时出现，打满自动消失。
+             合约按 10%/场线性解锁且只认当天场次，不补打就白丢，所以单开一行说清楚 -->
+        <TextView
+            android:id="@+id/tv_lineage_hint"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:background="@drawable/bg_lineage_hint"
+            android:paddingStart="8dp"
+            android:paddingTop="4dp"
+            android:paddingEnd="8dp"
+            android:paddingBottom="4dp"
+            android:textSize="9sp"
+            android:textColor="@color/lineage_hint_text"
+            android:visibility="gone" />
     </LinearLayout>
 </androidx.cardview.widget.CardView>

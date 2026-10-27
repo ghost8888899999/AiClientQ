@@ -7,6 +7,7 @@ import com.google.gson.Gson;
 import com.lgns.manager.AppGlobal;
 import com.lgns.model.ArenaConfig;
 import com.lgns.contract.ArenaContractApi;
+import com.lgns.contract.BlockscoutApi;
 import com.lgns.model.KeyListItem;
 import com.lgns.manager.KeyStoreManager;
 import com.lgns.task.TaskLogCallback;
@@ -41,7 +42,8 @@ import java.util.regex.Pattern;
  *
  * <p>关键约束：</p>
  * <ul>
- *   <li>入场失败会记入 {@code enterFailedAddrSet}，供完整流程跳过已失败的账号。</li>
+ *   <li>入场失败会记入 {@code enterFailedAddrSet}，供领取阶段提示该号需要人工关注；
+ *       <b>不再用它跳过领取</b>——失败号反而更该把待领的钱收回来。</li>
  *   <li>一笔入场可能顺带结算多轮（最多 {@code MAX_AUTO_SETTLE}），gas 消耗因此波动很大，
  *       余额检查要用 gasLimit 上限而不是历史值。</li>
  *   <li>手续费币是 ERC20 DAI，原生 value 转账在该链不可用。</li>
@@ -92,6 +94,31 @@ public class BatchEnterTask {
      */
     private static final java.util.Map<String, Long> revertedCooldownMap = new HashMap<>();
     private static final long REVERTED_COOLDOWN_MS = 10 * 60 * 1000L;
+
+    /** 圈间等待封盘的轮询间隔：一轮大约几十秒封一次，5s 足够跟上又不打满节点 */
+    private static final long SEAL_WAIT_POLL_MS = 5_000L;
+    /** 圈间等待封盘的上限：一轮凑不齐就停下来，交给用户判断，不无限挂着 */
+    private static final long SEAL_WAIT_TIMEOUT_MS = 6 * 60 * 1000L;
+
+    /**
+     * 缺座时「座位数连续多久没有增长」就判这一轮补不满，提前收尾。
+     *
+     * <p>6 分钟那个上限是留给「有人在补座」的；更常见的是停在 22/23 座再没人进来，
+     * 那 6 分钟就是纯干等。座位数不再变化本身就是最直接的证据：缺的座没人填。</p>
+     */
+    private static final long SEAL_WAIT_NO_PROGRESS_MS = 2 * 60 * 1000L;
+
+    /** 等待期间每隔这么久输出一条进度，避免界面长时间没有反馈 */
+    private static final long SEAL_WAIT_REPORT_MS = 30_000L;
+
+    /** {@link #waitRoundSealed} 结果：已封盘换轮，可以开下一圈 */
+    private static final int WAIT_SEAL_OK = 1;
+    /** {@link #waitRoundSealed} 结果：等满超时仍未封盘 */
+    private static final int WAIT_SEAL_TIMEOUT = 0;
+    /** {@link #waitRoundSealed} 结果：座位数长时间不再增长，判定这一轮补不满，提前收尾 */
+    private static final int WAIT_SEAL_STALLED = -2;
+    /** {@link #waitRoundSealed} 结果：用户按下停止，不再等（可能留下未封盘的轮次） */
+    private static final int WAIT_SEAL_STOPPED = -1;
 
     /** 从执行日志里抠出 32 字节 txHash，用来判断这一笔是否真的发出了交易 */
     private static final Pattern TX_HASH_PATTERN = Pattern.compile("(0x[0-9a-fA-F]{64})");
@@ -322,7 +349,252 @@ public class BatchEnterTask {
             callback.onBatchResult(summaries);
         } catch (java.io.IOException dialFail) {
             callback.onLog("", "ENTER", "❌ " + ArenaConfig.RPC_URLS.length + " 个节点全不可达:" + msgOf(dialFail));
+            // 降级探测：用浏览器 API 判断「链活着、只是 RPC 网关挂」还是「链真停了」
+            Long height = BlockscoutApi.fetchLatestBlockHeight();
+            callback.onLog("", "ENTER", height != null
+                    ? "Blockscout 备用探测：链高度=" + height + "（链正常，稍后重试即可）"
+                    : "Blockscout 备用探测：浏览器也不可达，链可能停摆");
             throw dialFail;
+        } finally {
+            if (web3j != null) {
+                try { web3j.shutdown(); } catch (Exception ignore) {}
+            }
+        }
+    }
+
+    /**
+     * 连打多圈入口：一次密码输完，按 {@code rounds} 圈连续入场。
+     *
+     * <p>为什么需要它：合约按「今天打了几场」线性解锁师徒分成（10%/场），只打一场只能领 10%，
+     * 剩下 90% 到 D+2 就被 {@code _burnExpiredLineage} 烧掉。而同一轮不能重复入座
+     * （{@code isSeated[rid][msg.sender]}），所以第 2 场必须等上一轮凑满 24 座封盘。</p>
+     *
+     * <p>圈数被夹在 {@code [1, MAX_ENTRIES_PER_DAY]}（合约硬上限 12，越过就 revert
+     * {@code DailyLimitReached}）。但 12 不等于「都该打」：合约里从第 11 场起
+     * {@code _recordMatch} 就 {@code return false}，不再推进甲子释放、也不提高师徒系数与
+     * 解锁比例；第 11、12 场仍会正常买座与结算（输 100.8 / 冠军 200 甲子），但每轮固定烧 66，
+     * 而且新增的甲子只会拉长 60 天释放队列，所以默认推荐 10 场。</p>
+     *
+     * <p>每圈内部完全沿用 {@link #batchEnterAllResume}：预览、续跑、RPC 轮换、失败名单
+     * 都在那里。本方法只负责圈间节拍：确认所有账号都离开当前轮，再开下一圈。</p>
+     */
+    public static void batchEnterAllRoundsResume(Context ctx, TaskLogCallback callback, int playMode,
+                                                 int rounds, List<KeyListItem> selectedList,
+                                                 char[] sessionCryptoKey) throws Exception {
+        batchEnterAllRoundsResume(ctx, callback, playMode, rounds, selectedList, sessionCryptoKey, false);
+    }
+
+    /**
+     * 同上，多一个「预检是否已经做过」的开关。
+     *
+     * <p>{@code preflightDone=false}（单点「批量入场」）：先跑一遍预检，把圈数夹到全批最差的号
+     * 真能打的圈数；预检说 0 圈就干脆不发交易。以前单点完全没预检，DAI 见底、今日已打满
+     * 都要等每个号依次跑完才从日志里看到，而这期间还在圈间白白等封盘。</p>
+     *
+     * <p>{@code preflightDone=true}（完整流程）：充值之后已经预检并夹过圈数了，再查一遍只是
+     * 白花一轮 RPC、再打一条重复的「预检通过」。</p>
+     */
+    public static void batchEnterAllRoundsResume(Context ctx, TaskLogCallback callback, int playMode,
+                                                 int rounds, List<KeyListItem> selectedList,
+                                                 char[] sessionCryptoKey, boolean preflightDone) throws Exception {
+        int total = Math.max(1, Math.min(rounds, ArenaConfig.MAX_ENTRIES_PER_DAY));
+        if (!preflightDone) {
+            total = runPreflight(callback, selectedList, total);
+            if (total <= 0) {
+                // 一个号都不该进去：把上一轮的失败名单清掉，否则领取阶段会拿着旧名单提示「本次入场失败」
+                enterFailedAddrSet.clear();
+                return;
+            }
+        }
+        if (total <= 1) {
+            // 只打 1 圈时没有「圈边界」可停：开始前就收到请求就整段跳过，
+            // 开始后才收到就让它跑完——反正只有一圈，强行中断反而会留下半轮
+            if (Web3AndroidUtil.isStopAfterRoundRequested()) {
+                callback.onLog("", "ENTER", "⏸ 已按要求停止：停止请求在入场开始前收到，本次不入场");
+                return;
+            }
+            batchEnterAllResume(ctx, callback, playMode, selectedList, sessionCryptoKey);
+            if (Web3AndroidUtil.isStopAfterRoundRequested()) {
+                callback.onLog("", "ENTER", "⏸ 已按要求停止：本次只有 1 圈，已经跑完（没有半轮残留）");
+            }
+            return;
+        }
+        callback.onLog("", "ENTER", "连打模式 · 共 " + total + " 圈 · 在场 " + selectedList.size()
+                + " 个号（一轮需 " + ArenaConfig.SEATS_PER_ROUND + " 座）");
+        for (int r = 1; r <= total; r++) {
+            if (Web3AndroidUtil.isCancelRequested()) {
+                callback.onLog("", "ENTER", "🛑 用户取消，已打 " + (r - 1) + "/" + total + " 圈");
+                return;
+            }
+            // 「打完这圈就停」只在这里生效：上一圈已封盘、座位已清空，停下不会留下半轮。
+            // 半轮里的押金在合约里锁着（没有超时退款），所以不能停在圈内。
+            if (Web3AndroidUtil.isStopAfterRoundRequested()) {
+                callback.onLog("", "ENTER", "⏸ 已按要求停止：打完 " + (r - 1) + " 圈，剩余 "
+                        + (total - r + 1) + " 圈未打。已打的都停在封盘之后，没有半轮锁仓");
+                logResumeHint(callback, total - r + 1);
+                return;
+            }
+            callback.onLog("", "ENTER", "===== 第 " + r + "/" + total + " 圈 =====");
+            batchEnterAllResume(ctx, callback, playMode, selectedList, sessionCryptoKey);
+
+            if (r == total) break;
+            // 同一轮不能重复入座：没封盘就开下一圈，只会整批撞 AlreadySeated
+            int seal = waitRoundSealed(callback, selectedList, r);
+            if (seal == WAIT_SEAL_STOPPED) {
+                // 这一圈没等到封盘就退出：不是「打完 r 圈」，要如实说缺座与押金的后果
+                callback.onLog("", "ENTER", "⏸ 已按要求停止：第 " + r + " 圈未封盘就退出，剩余 "
+                        + (total - r) + " 圈未打。这一轮的押金要等凑满 "
+                        + ArenaConfig.SEATS_PER_ROUND + " 座才会结算");
+                logResumeHint(callback, total - r);
+                return;
+            }
+            if (seal == WAIT_SEAL_STALLED) {
+                // 座位数已经不再增长了：缺的座我们自己补不了，外部也没人来。
+                // 和等满 6 分钟的后果一样（后续圈取消、这一轮押金继续锁着），只是不再干耗时间
+                callback.onLog("", "ENTER", "⏹ 第 " + r + " 圈补不满，后续 " + (total - r)
+                        + " 圈已取消。这一轮的押金要等凑满 " + ArenaConfig.SEATS_PER_ROUND
+                        + " 座才会结算；补好缺座的号再点一次「批量入场」即可续打");
+                return;
+            }
+            if (seal == WAIT_SEAL_TIMEOUT) {
+                callback.onLog("", "ENTER", "⏹ 第 " + r + " 圈后未能封盘，后续"
+                        + (total - r) + " 圈已取消（先把这一轮凑满，再点一次入场即可续打）");
+                return;
+            }
+        }
+        callback.onLog("", "ENTER", "✅ 连打结束 · 共 " + total + " 圈");
+    }
+
+    /**
+     * 单点「批量入场」的开打前预检：把圈数夹到「全批最差那个号」真能打的圈数。
+     *
+     * <p>完整流程在充值之后会做同一件事，单点过去没有：DAI 见底、今日已打满 12 场、
+     * 门票不够，都要等每个号依次跑完才从日志里看到，而且前两种还会在前面白花时间。
+     * 判据直接复用 {@link BatchWorkflowTask#preflight}，不另写一套—两份账早晚会对不上。</p>
+     *
+     * @return 实际应打的圈数；0 表示这一批不该开打（原因已写进日志）
+     */
+    private static int runPreflight(TaskLogCallback callback, List<KeyListItem> selectedList, int wantRounds) {
+        BatchWorkflowTask.Preflight pf = BatchWorkflowTask.preflight(callback, selectedList, wantRounds);
+        if (pf.fatal) {
+            callback.onLog("", "ENTER", "⛔ 预检未通过，本次不入场（原因见上方）");
+            return 0;
+        }
+        if (pf.rounds <= 0) {
+            callback.onLog("", "ENTER", "⏹ 预检：本轮不入场（原因见上方）。补好 DAI 或等明天再点；"
+                    + "先点「批量领取」也能把分成与奖金领回来");
+            return 0;
+        }
+        if (pf.rounds < wantRounds) {
+            callback.onLog("", "ENTER", "ℹ 圈数已按预检夹到 " + pf.rounds + " 圈（配置 " + wantRounds + " 圈）");
+        }
+        return pf.rounds;
+    }
+
+    /** 停止后给一句可操作的续打指引：不用改配置，圈数会被夹到今日剩余场次 */
+    private static void logResumeHint(TaskLogCallback callback, int remainRounds) {
+        if (remainRounds <= 0) return;
+        callback.onLog("", "ENTER", "💡 续打：再点一次「批量入场」即可 —— 配置不用改，"
+                + "今日剩余场次不够时会自动夹到 " + remainRounds + " 圈以内");
+    }
+
+    /**
+     * 等「所有账号都离开当前轮」，即上一轮已凑满 24 座并封盘。
+     *
+     * <p>判据是 {@code playerSummary.seatedInCurrentRound}：只要还有一个号坐在当轮，
+     * 继续入场就会撞 {@code AlreadySeated}。封盘时 {@code currentRoundId} 已经 +1，
+     * 旧座位的 {@code isSeated} 也随之清掉，所以「全部为 false」就等于「已经换轮了」。</p>
+     *
+     * <p>一轮要 24 座，因此只有「在场账号数 >= 24」时才会立即通过。缺座时不能只管等：
+     * 这个等待期间只有外部玩家会往里坐，所以<b>座位数连续 {@code SEAL_WAIT_NO_PROGRESS_MS}
+     * 不再增长</b>就等于「这一轮补不满」，提前返回 {@link #WAIT_SEAL_STALLED}，
+     * 不再陪着干等满 {@code SEAL_WAIT_TIMEOUT_MS}。座位数还在涨就继续等，最长仍是 6 分钟。</p>
+     *
+     * @return {@link #WAIT_SEAL_OK} 已封盘可以开下一圈；{@link #WAIT_SEAL_STALLED}
+     *         缺座且长时间无新增入座；{@link #WAIT_SEAL_TIMEOUT} 等满超时或查询失败；
+     *         {@link #WAIT_SEAL_STOPPED} 用户要求停止
+     */
+    private static int waitRoundSealed(TaskLogCallback callback, List<KeyListItem> selectedList, int roundNo) {
+        List<String> addrs = new ArrayList<>();
+        for (KeyListItem item : selectedList) {
+            if (item.address != null && !item.address.isEmpty()) addrs.add(item.address);
+        }
+        if (addrs.isEmpty()) return WAIT_SEAL_OK;
+
+        Web3j web3j = null;
+        try {
+            web3j = Web3AndroidUtil.dialAny();
+            long start = System.currentTimeMillis();
+            long deadline = start + SEAL_WAIT_TIMEOUT_MS;
+            // 首次轮询就报一次：缺座时让用户 5 秒内看到实情，而不是干等 30 秒才出第一行日志
+            long nextReport = start;
+            // 上一轮读到的入座数，仅用于停止时把账说清楚；-1 表示还没查到
+            int lastSeated = -1;
+            // 座位数最近一次变多的时刻。这个等待期间只有外部玩家会往里坐，
+            // 所以它连续不动够久，就是「这一轮没人补座」的证据
+            long lastProgressAt = start;
+            while (System.currentTimeMillis() < deadline) {
+                if (Web3AndroidUtil.isCancelRequested()) return WAIT_SEAL_TIMEOUT;
+                // 停止检查放在查询之前：RPC 一直拿不到数时也要能停下来，不能被查询卡住
+                if (Web3AndroidUtil.isStopAfterRoundRequested()) {
+                    if (lastSeated <= 0) {
+                        callback.onLog("", "ENTER", "⏸ 已按要求停止等待封盘");
+                    } else {
+                        int lack = Math.max(0, ArenaConfig.SEATS_PER_ROUND - lastSeated);
+                        callback.onLog("", "ENTER", "⏸ 已按要求停止等待封盘：当前轮已入座 "
+                                + lastSeated + " 座，还差 " + lack + " 座 —— 这轮的押金要等凑满 "
+                                + ArenaConfig.SEATS_PER_ROUND + " 座才会结算");
+                    }
+                    return WAIT_SEAL_STOPPED;
+                }
+                java.util.Map<String, ArenaContractApi.PlayerSummary> summaries =
+                        ArenaContractApi.callPlayerSummaryBatch(web3j, addrs);
+                // 查询不全就不能当「已封盘」：宁可多等一轮，也不要带着旧状态开下一圈
+                if (summaries == null || summaries.size() < addrs.size()) {
+                    Thread.sleep(SEAL_WAIT_POLL_MS);
+                    continue;
+                }
+                // 先数实际入座数：日志必须报「已入座 N 座」，不能报账号总数——
+                // 有号因余额不足跳过时，总数仍是 24，但座位只有 23，用户会看不懂“还差 0 座为何封不了盘”
+                int seatedCount = 0;
+                for (ArenaContractApi.PlayerSummary s : summaries.values()) {
+                    if (s != null && s.seatedInCurrentRound) seatedCount++;
+                }
+                long now = System.currentTimeMillis();
+                if (seatedCount > lastSeated) lastProgressAt = now;
+                lastSeated = seatedCount;
+                if (seatedCount == 0) {
+                    callback.onLog("", "ENTER", "✅ 第 " + roundNo + " 圈已封盘，继续下一圈");
+                    return WAIT_SEAL_OK;
+                }
+                // 座位数不再增长 = 缺的座没人来补，再等下去只是干耗时间
+                if (now - lastProgressAt >= SEAL_WAIT_NO_PROGRESS_MS) {
+                    int lack = Math.max(0, ArenaConfig.SEATS_PER_ROUND - seatedCount);
+                    callback.onLog("", "ENTER", "⏹ 第 " + roundNo + " 圈 " + (SEAL_WAIT_NO_PROGRESS_MS / 1000L)
+                            + "s 没有新增入座：停在 " + seatedCount + " 座 / 需 "
+                            + ArenaConfig.SEATS_PER_ROUND + " 座（还差 " + lack
+                            + " 座），判定外部玩家不会补这一轮，不再等待");
+                    return WAIT_SEAL_STALLED;
+                }
+                if (now >= nextReport) {
+                    long remainSec = (deadline - now) / 1000;
+                    int lack = Math.max(0, ArenaConfig.SEATS_PER_ROUND - seatedCount);
+                    callback.onLog("", "ENTER", "⏳ 第 " + roundNo + " 圈尚未封盘：已入座 " + seatedCount
+                            + " 座 / 需 " + ArenaConfig.SEATS_PER_ROUND + " 座，还差 " + lack
+                            + " 座；最多再等 " + remainSec + "s");
+                    // 缺座且不会再有人补：提前说清后果，别让用户干等满 6 分钟
+                    if (lack > 0) {
+                        callback.onLog("", "ENTER", "💡 缺的座位只能靠外部玩家补。若一直等不到，"
+                                + "本轮不封盘、后续圈会取消（多半是某个冠军号钱包已空，下一圈买不了票）");
+                    }
+                    nextReport = now + SEAL_WAIT_REPORT_MS;
+                }
+                Thread.sleep(SEAL_WAIT_POLL_MS);
+            }
+            return WAIT_SEAL_TIMEOUT;
+        } catch (Exception e) {
+            callback.onLog("", "ENTER", "⚠️等待封盘时查询失败:" + msgOf(e));
+            return WAIT_SEAL_TIMEOUT;
         } finally {
             if (web3j != null) {
                 try { web3j.shutdown(); } catch (Exception ignore) {}

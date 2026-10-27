@@ -9,7 +9,7 @@
 
     <!-- 标题栏：与各子页同一套框架（primary 蓝底 / 56dp / 白字 17sp 标题 / 11sp 副标题），
          从子页返回时不再出现「蓝底 56dp → 白底 48dp」的跳变。
-         左侧用 App 图标顶替子页返回键的位置，右侧文字入口收成胶囊徽标、齿轮补足 44dp 热区。 -->
+         左侧用 App 图标顶替子页返回键的位置，右侧文字入口收成胶囊徽标、溢出菜单补足 44dp 热区。 -->
     <LinearLayout
         android:id="@+id/toolbar"
         android:layout_width="match_parent"
@@ -73,6 +73,8 @@
             android:textColor="@color/white"
             android:textSize="12sp" />
 
+        <!-- 溢出菜单（⋮）：对应 gear_pop_menu 的混合功能项（密钥/分组/日志/模式/统计），
+             语义上是「更多」而非「设置」，故用 Material 标准 more_vert；真正设置项才用齿轮。 -->
         <ImageButton
             android:id="@+id/btn_setting_gear"
             android:layout_width="44dp"
@@ -81,8 +83,8 @@
             android:contentDescription="@string/common_cd_more_settings"
             android:padding="10dp"
             android:scaleType="fitCenter"
-            android:src="@drawable/ic_gear_svg"
-            android:tint="@color/white" />
+            android:src="@drawable/ic_more_vert"
+            app:tint="@color/white" />
     </LinearLayout>
 
     <!-- 汇总数据卡：从「通栏白条」收成卡片，和蓝色标题栏拉开层次；padding 保持 8dp，高度不增 -->
@@ -249,6 +251,7 @@
                 android:src="@drawable/ic_fund_svg"
                 android:layout_marginEnd="4dp" />
             <TextView
+                android:id="@+id/tv_btn_fund_label"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="@string/title_batch_fund"
@@ -275,6 +278,7 @@
                 android:src="@drawable/ic_enter_svg"
                 android:layout_marginEnd="4dp" />
             <TextView
+                android:id="@+id/tv_btn_enter_label"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="@string/common_btn_batch_enter"
@@ -301,6 +305,7 @@
                 android:src="@drawable/ic_claim_svg"
                 android:layout_marginEnd="4dp" />
             <TextView
+                android:id="@+id/tv_btn_claim_label"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="@string/common_btn_batch_claim"
@@ -327,6 +332,7 @@
                 android:src="@drawable/ic_workflow_svg"
                 android:layout_marginEnd="4dp" />
             <TextView
+                android:id="@+id/tv_btn_workflow_label"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="@string/common_btn_full_workflow"

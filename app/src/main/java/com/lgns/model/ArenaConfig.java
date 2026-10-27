@@ -61,7 +61,18 @@ public class ArenaConfig {
      */
     public static final boolean DEBUG_FIXED_ADDR_ENABLE = false;
     /**
-     * 调试展示地址池：每条地址都作为主界面的一行，按分组顺序平分到各分组
+     * 调试展示地址池：每条地址都作为主界面的一行，按分组顺序平分到各分组。
+     *
+     * <p><b>这批是链上真实的玩家地址，但没有任何一条的私钥。</b>所以：</p>
+     * <ul>
+     *   <li>能用的：查 {@code playerSummary}、算统计、跑锦标赛——数据全是真的，
+     *   适合拿它们对账界面算得对不对；</li>
+     *   <li>不能用的：任何需要签名的动作（入场/领取/转账）。{@code buildDebugKeyItems}
+     *   给的 cipherText 是 null、keyId 是负数，拿去解密只会报「解密失败」，
+     *   要验证写链路必须换真实私钥账号。</li>
+     * </ul>
+     * <p>写操作不经过本池：批量任务的入参走 {@code getEnabledKeyItems()}（真实清单），
+     * 只有展示与统计走 {@code getDisplayKeyItems()} / {@code getSelectedKeyItem()}。</p>
      */
     public static final String[] DEBUG_FIXED_ADDRs = {
             "0x86f990B428e4f1aaCf3cD0272941b52a74d36c8E",
@@ -147,10 +158,92 @@ public class ArenaConfig {
 
     /** 入场费 100 * 10^18（合约 ENTRY_FEE）：每场先扣门票，本场结束再按名次返还 */
     public static final BigInteger ENTRY_FEE = BigInteger.valueOf(100).multiply(BigInteger.TEN.pow(18));
+
+    /**
+     * 批量充值的目标持有量：连打 N 圈时每个号该备几张门票（下标 = 圈数）。
+     *
+     * <p><b>为什么不能恒等于 1 张</b>：第 1 圈全员从钱包扣 100；结算时 23 个输家拿到 100.8
+     * 进 {@code claimable}，下一圈直接抵扣不用再出钱；<b>但唯一那个冠军拿的是 200 甲子
+     * （锁仓 60 天），claimable 仍是 0</b>，下一圈只能再从钱包扣 100。
+     * 每夺冠一次就多耗一张门票，所以目标量要按「N 圈内单号最坏夺冠次数」预留。</p>
+     *
+     * <p>取值依据：单号在 N 圈内夺冠次数近似泊松分布（λ = (N-1)/24），按「24 个号里
+     * 最坏那个也够用」取——12 圈取 5 张（500 fLGNS）时，某号需第 6 张的概率约 0.5%。
+     * 不能省：缺一个号就让这一轮凑不满 {@link #SEATS_PER_ROUND} 座、后续所有圈全部取消，
+     * 代价远大于多充几百。</p>
+     */
+    private static final int[] FUND_TICKETS_BY_ROUNDS = {
+            0,  // 占位：圈数从 1 开始
+            1,  // 1 圈：只打一场，备一张门票
+            2,  // 2 圈
+            2,  // 3 圈
+            3,  // 4 圈
+            3,  // 5 圈
+            3,  // 6 圈
+            4,  // 7 圈
+            4,  // 8 圈
+            4,  // 9 圈
+            5,  // 10 圈
+            5,  // 11 圈
+            5,  // 12 圈
+    };
+
+    /**
+     * 连打 {@code rounds} 圈时，批量充值应把每个号补到的目标余额（含首场门票）。
+     *
+     * <p>圈数为 1 时等价于 {@link #ENTRY_FEE}；越界圈数先夹到 {@code [1, MAX_ENTRIES_PER_DAY]}
+     * 再查表，保证任何时候都有确定值。调用方拿它同时做「筛不筛进待充名单」「算差额」
+     * 「判断是否已够」三件事，<b>三处必须是同一个值</b>，否则会出现「筛进来了却算出差额 0」。</p>
+     */
+    public static BigInteger fundTargetFor(int rounds) {
+        int r = Math.max(1, Math.min(rounds, MAX_ENTRIES_PER_DAY));
+        return ENTRY_FEE.multiply(BigInteger.valueOf(FUND_TICKETS_BY_ROUNDS[r]));
+    }
+
     /** 甲子俸单页领取上限 64（合约 MAX_JIAZI_BATCH）：服务端限制每次调用最多释放 64 条记录 */
     public static final BigInteger MAX_JIAZI_BATCH = BigInteger.valueOf(64);
     /** 日切偏移 8 小时：合约按 UTC+8 算「今天」，本地算今日场次时必须加上这个偏移 */
     public static final long DAY_OFFSET = 8 * 3600L;
+
+    /**
+     * 一天打满这么多场，师徒分成才 100% 解锁（合约 FULL_ACTIVITY_MATCHES）。
+     *
+     * <p>不足时按 10%/场折算，且只认「当天」的场次：今天没打，昨天攒下的分成一分都领不到，
+     * 到 D+2 就会被合约的 {@code _burnExpiredLineage} 烧掉。所以界面上要把「今日已打几场」
+     * 和「解锁几成」绑在一起显示，那是唯一能提醒用户补场的机会。</p>
+     */
+    public static final int FULL_ACTIVITY_MATCHES = 10;
+
+    /**
+     * 一天最多能入场的场次（合约 MAX_ENTRIES_PER_DAY）：超过就 revert {@code DailyLimitReached}。
+     *
+     * <p>它不是「收益上限」，而是「收益形态的分界线」：第 11、12 场仍会正常买座、
+     * 参与封盘与结算（输家 +100.8、冠军仍拿 200 甲子），但合约里
+     * {@code if (matches >= FULL_ACTIVITY_MATCHES) return false} 已提前返回，
+     * 所以不再推进甲子释放、也不提高师徒系数与解锁比例。每多打一轮就多烧 66，
+     * 新增的甲子只会拉长 60 天的释放队列，所以界面默认推荐 10 场。</p>
+     */
+    public static final int MAX_ENTRIES_PER_DAY = 12;
+
+    /**
+     * 连打圈数的出厂默认值：1 圈，点一次打一场。
+     *
+     * <p>只影响「从没在系统配置页点过保存」的设备：{@code loadConfig} 读 SP 时用这个值做默认。
+     * 用户一旦改过并存盘，就以 SP 里的值为准，不会被本常量覆盖。</p>
+     *
+     * <p>为什么默认 1 而不是日上限 12：老用户的心智模型是「点一次 = 打一场」，
+     * 也就是旧版（wlClient_2-1026）「批量充值 + 批量入场」成对点 12 次的节奏，
+     * 每点完一次就能立刻看到这一局的输赢。若默认 12，第一次点的人会被直接锁进十几分钟的长任务，
+     * 中途想停还得按停止键等当前这圈封盘。默认 1 把「一次跑多少」变成显式选择，可预期。</p>
+     *
+     * <p>代价要讲清楚：只打 1 场时师徒分成只解锁 10%（满勤线是 {@link #FULL_ACTIVITY_MATCHES} = 10），
+     * 当天不补满，剩下的 90% 到 D+2 就被合约烧掉。所以想拿满收益的用户必须自己把这一项改到 10~12，
+     * 这是唯一需要主动改的配置。</p>
+     */
+    public static final int DEFAULT_ENTER_ROUNDS = 1;
+
+    /** 一轮需要的座位数（合约 SEATS）：满 24 座才封盘、才会进结算队列 */
+    public static final int SEATS_PER_ROUND = 24;
 
     // endregion
 
@@ -168,6 +261,25 @@ public class ArenaConfig {
     public static final BigInteger GAS_LIMIT_ERC20_TRANSFER = BigInteger.valueOf(100000);
     /** 补 Gas 走 GAS_TOKEN 的 transfer：实测 gasUsed ≈ 34,768，留一倍余量防 OOG */
     public static final BigInteger GAS_LIMIT_GAS_TOKEN_TRANSFER = BigInteger.valueOf(80000);
+
+    /**
+     * 单笔入场的 gas 估算值（不是上限）：合约注释里的实测值是 138,730，留 1.5 倍余量。
+     *
+     * <p>为什么不能直接用 {@link #GAS_LIMIT_ENTER_ARENA}（1,500,000）来算「DAI 够不够打 N 圈」：
+     * 那是给交易留的硬上限（带结算、带师徒分成的偶发大额消耗），拿它当估算会把需求高估十倍，
+     * 用户 DAI 明明够也会被预检拦住。反过来也不能只填实测值，gas 会随结算轮数波动。</p>
+     */
+    public static final BigInteger ENTER_GAS_ESTIMATE = BigInteger.valueOf(208_095L);
+
+    /**
+     * 预检时给「领取阶段」预留的 gas 额度：甲子俸 / 师徒分成 / 擂台奖金三笔的上限之和。
+     *
+     * <p>为什么算 DAI 是否够打 N 圈时要把这笔扣掉：入场和领取是两个阶段，同一个号要付两次手续费。
+     * 只按入场算，预检会放行「刚好打得动 12 圈」的账号，等打完第 12 圈才发现在 DAI 上见底，
+     * 于是那一批师徒分成和甲子俸全部领不回来——比少打一圈贵得多。</p>
+     */
+    public static final BigInteger CLAIM_GAS_RESERVE = GAS_LIMIT_CLAIM_JIAZI
+            .add(GAS_LIMIT_CLAIM_LINEAGE).add(GAS_LIMIT_CLAIM_REWARDS);
 
     // endregion
 
@@ -238,6 +350,24 @@ public class ArenaConfig {
     public static int playModeIndex = 0; // 0=能打就打,1=等齐再打
 
     /**
+     * 批量入场连打圈数：1 = 打一场就停，{@link #FULL_ACTIVITY_MATCHES} = 一次点完当日满勤。
+     *
+     * <p>一圈 = 每个账号入场 1 次。为什么需要连打：合约按「今天打了几场」线性解锁师徒分成，
+     * 只打一场只能领 10%，剩下 90% 到 D+2 就被烧掉。而同一轮不能重复入座，
+     * 所以打第 2 场必须等上一轮凑满 24 座封盘。</p>
+     *
+     * <p>上限取 {@link #MAX_ENTRIES_PER_DAY}（合约硬上限 12），出厂默认值是 1
+     * （见 {@link #DEFAULT_ENTER_ROUNDS}），即「点一次打一场」，沿用旧版的操作习惯；
+     * 想一次点满当日满勤就把这一项改到 10~12。
+     * 但 12 不等于「都该打」：打满 {@link #FULL_ACTIVITY_MATCHES} 场后甲子就不再推进、
+     * 师徒系数也封顶，第 11、12 场只剩参赛收益（输 100.8 / 冠军 200 甲子）而不再有结构性收益，
+     * 且每轮固定烧 66。想省 gas 的用户可以在配置页下调到 10。</p>
+     *
+     * <p>账号数不是 24 的整数倍时，多出来的号会卡在未封盘的轮次里，任务会等到超时并提示。</p>
+     */
+    public static int enterRounds = DEFAULT_ENTER_ROUNDS;
+
+    /**
      * 日志自动清除（独立开关：只删除早于间隔的旧记录，保留最近数据）。
      * 默认启用 + 默认保留 1 天：日志只留最近一天，数据库不会无限膨胀。
      */
@@ -263,6 +393,7 @@ public class ArenaConfig {
         editor.putInt("auto_clear_interval_value", autoClearIntervalValue);
         editor.putInt("auto_clear_interval_unit_index", autoClearIntervalUnitIndex);
         editor.putInt("play_mode_index", playModeIndex);
+        editor.putInt("enter_rounds", enterRounds);
         editor.putBoolean("log_clear_enable", logClearEnable);
         editor.putInt("log_clear_interval_value", logClearIntervalValue);
         editor.putInt("log_clear_interval_unit_index", logClearIntervalUnitIndex);
@@ -283,6 +414,10 @@ public class ArenaConfig {
         autoClearIntervalValue = sp.getInt("auto_clear_interval_value", 1);
         autoClearIntervalUnitIndex = sp.getInt("auto_clear_interval_unit_index", 1);
         playModeIndex = sp.getInt("play_mode_index", 0);
+        // 存量/越界兜底：非正或超出日上限一律回落到出厂默认值（1 场），
+        // 否则任务会按一个无意义的圈数循环，或者直接把日上限撞满
+        int rounds = sp.getInt("enter_rounds", DEFAULT_ENTER_ROUNDS);
+        enterRounds = (rounds >= 1 && rounds <= MAX_ENTRIES_PER_DAY) ? rounds : DEFAULT_ENTER_ROUNDS;
         logClearEnable = sp.getBoolean("log_clear_enable", true);
         // 存量脏配置兜底：数值非正、单位越界都回落到默认的 1 天，
         // 否则 getIntervalInMinutes() 会算出 0 或负数，清理永远等不到触发

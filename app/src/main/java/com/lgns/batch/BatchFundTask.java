@@ -15,6 +15,7 @@ import com.lgns.helper.MainDialogHelper;
 import com.lgns.manager.AppGlobal;
 import com.lgns.manager.KeyStoreManager;
 import com.lgns.contract.ArenaContractApi;
+import com.lgns.contract.BlockscoutApi;
 import com.lgns.model.ArenaConfig;
 import com.lgns.model.KeyListItem;
 import com.lgns.task.TaskLogCallback;
@@ -104,12 +105,26 @@ public class BatchFundTask {
     /**
      * 工作流调用版充值：没有弹窗，直接把差额补齐后返回。
      *
-     * <p>先筛出 fLGNS 余额低于单席门票（100）的账号，再由主号逐笔转差额。
-     * 每笔转账前重新读一次余额，已够就跳过；单笔失败只记日志，剩下的账号继续。</p>
+     * <p>目标余额按连打圈数取 {@link ArenaConfig#fundTargetFor(int)}，<b>不是固定 100</b>：
+     * 每夺冠一次就多耗一张门票（冠军拿的是锁仓甲子，不是 claimable 现金），
+     * 只补 100 会让冠军号在下一圈买不起票 → 这一轮凑不满 24 座 → 后续圈全部被取消。</p>
+     *
+     * <p>圈数由调用方在任务启动时快照传入，本方法内<b>不再回读</b>
+     * {@code ArenaConfig.enterRounds}：读一次存成局部变量，筛名单 / 二次校验 / 算差额 / 写日志
+     * 全用同一个值；否则中途改配置会出现「日志写 500、实际转 100」这种对不上的账。</p>
+     *
+     * <p>先筛出余额低于目标的账号，再由主号逐笔转差额。每笔转账前重新读一次余额，
+     * 已够就跳过；单笔失败只记日志，剩下的账号继续。</p>
+     *
+     * <p>停止检查用 {@link Web3AndroidUtil#isStopRequested()}：本方法没有圈边界，
+     * 「立即取消」与「打完这圈再停」在这里都意味着「当前这笔转完就别再转了」。</p>
+     *
+     * @param rounds 连打圈数快照，决定每号要补到多少 fLGNS
      */
     public static void executeAutoFund(List<KeyListItem> enabledList,
                                        char[] pwdCharArray,
-                                       TaskLogCallback callback) {
+                                       TaskLogCallback callback,
+                                       int rounds) {
         if (enabledList == null || enabledList.isEmpty()) return;
 
         try {
@@ -128,10 +143,15 @@ public class BatchFundTask {
 
             Web3j web3j = Web3AndroidUtil.dialAny();
             try {
+                // 目标持有量：跟着连打圈数走。本方法内「筛名单 / 二次校验 / 算差额 / 日志」
+                // 四处必须是同一个 target，否则会出现筛进来了却算出差额 0 的错配
+                // 圈数已由调用方快照传入，夹到合法区间只防越界的脏配置
+                final int roundsUsed = Math.max(1, Math.min(rounds, ArenaConfig.MAX_ENTRIES_PER_DAY));
+                BigInteger target = ArenaConfig.fundTargetFor(roundsUsed);
                 List<String> needFundAddrs = new ArrayList<>();
                 List<String> needFundLabels = new ArrayList<>();
 
-                // 先筛一遍需要充值的账号：余额已过 100 的不进转账队列
+                // 先筛一遍需要充值的账号：余额已达目标的不进转账队列
                 for (KeyListItem item : enabledList) {
                     // 主号保护用 keyId：地址可能已被调试开关替换，地址比较不可靠
                     if (item.keyId == masterId) continue;
@@ -140,7 +160,7 @@ public class BatchFundTask {
                             && ArenaConfig.isDebugAddr(item.address)) continue;
                     if (item.address == null || item.address.equalsIgnoreCase(masterEntry.address)) continue;
                     BigInteger bal = ArenaContractApi.callErc20Balance(web3j, item.address);
-                    if (bal.compareTo(ArenaConfig.ENTRY_FEE) < 0) {
+                    if (bal.compareTo(target) < 0) {
                         String no = (item.customCode != null && !item.customCode.isEmpty())
                                 ? item.customCode : item.displayNo;
                         needFundAddrs.add(item.address);
@@ -149,9 +169,15 @@ public class BatchFundTask {
                 }
 
                 if (needFundAddrs.isEmpty()) {
-                    if (callback != null) callback.onLog("", "FUND", "所有账号余额充足，无需充值");
+                    if (callback != null) callback.onLog("", "FUND",
+                            "所有账号余额已达 " + toToken(target) + " fLGNS（连打 "
+                                    + roundsUsed + " 圈），无需充值");
                     return;
                 }
+
+                if (callback != null) callback.onLog("", "FUND", "充值目标：连打 "
+                        + roundsUsed + " 圈 × 每号 " + toToken(target)
+                        + " fLGNS（预留冠军轮空的门票）");
 
                 String masterPk = mgr.decryptCipherText(masterEntry.cipherText, pwdCharArray);
                 ECKeyPair masterKeyPair = Web3AndroidUtil.pkToKeyPair(masterPk);
@@ -163,8 +189,12 @@ public class BatchFundTask {
 
                 // nonce 在主号上一路递增：同一出资方的多笔 transfer 必须串行，不能并发
                 for (int i = 0; i < needFundAddrs.size(); i++) {
-                    if (Web3AndroidUtil.isCancelRequested()) {
-                        if (callback != null) callback.onLog("", "FUND", "⚠用户取消充值");
+                    // 两种停止请求都认：本阶段没有座位与押金，停就是停，
+                    // 唯一代价是当前这笔转账已经发出、要等它上链（不回滚）
+                    if (Web3AndroidUtil.isStopRequested()) {
+                        if (callback != null) callback.onLog("", "FUND",
+                                "⏸ 已请求停止：充值中断，剩余 " + (needFundAddrs.size() - i)
+                                        + " 个号未补（已发出的交易不回滚）");
                         break;
                     }
 
@@ -172,13 +202,13 @@ public class BatchFundTask {
                     final int index = i;
                     BigInteger bal = ArenaContractApi.callErc20Balance(web3j, addr);
 
-                    if (bal.compareTo(ArenaConfig.ENTRY_FEE) >= 0) {
+                    if (bal.compareTo(target) >= 0) {
                         final String label = needFundLabels.get(index);
                         if (callback != null) callback.onLog("", "FUND", "➖ " + label + " 余额已够,跳过");
                         continue;
                     }
 
-                    BigInteger diff = ArenaConfig.ENTRY_FEE.subtract(bal);
+                    BigInteger diff = target.subtract(bal);
                     try {
                         ArenaContractApi.doErc20Transfer(web3j, masterKeyPair, addr, diff, nonce, gasPrice);
                         nonce = nonce.add(BigInteger.ONE);
@@ -258,6 +288,10 @@ public class BatchFundTask {
             result.hasMaster = true;
             Web3j web3j = Web3AndroidUtil.dialAny();
             try {
+                // 目标持有量与确认页差额同源：补到多少就看这个值（跟连打圈数联动）
+                BigInteger target = ArenaConfig.fundTargetFor(ArenaConfig.enterRounds);
+                result.targetPerAccount = target;
+
                 // 主号真实余额（资金源口径）
                 result.masterBalance = ArenaContractApi.callErc20Balance(web3j, result.masterEntry.address);
 
@@ -296,13 +330,13 @@ public class BatchFundTask {
                     BigDecimal balF = new BigDecimal(bal).divide(
                             new BigDecimal(BigInteger.TEN.pow(18)), 2, java.math.RoundingMode.HALF_UP);
 
-                    BigInteger diff = ArenaConfig.ENTRY_FEE.subtract(bal);
+                    BigInteger diff = target.subtract(bal);
                     BigInteger showDiff = diff.signum() > 0 ? diff : BigInteger.ZERO;
                     BigDecimal needF = new BigDecimal(showDiff).divide(
                             new BigDecimal(BigInteger.TEN.pow(18)), 2, java.math.RoundingMode.HALF_UP);
                     FundPreviewResult.FundDetail d =
                             new FundPreviewResult.FundDetail(no, item.address, balF, needF);
-                    d.sufficient = bal.compareTo(ArenaConfig.ENTRY_FEE) >= 0;
+                    d.sufficient = bal.compareTo(target) >= 0;
                     result.fundDetails.add(d);
                     // 结果先入列表再回调，页面拿到 detail 即可立刻回填这一行
                     if (callback != null) callback.onProgress(done, total, d);
@@ -310,7 +344,7 @@ public class BatchFundTask {
                     // 合计只用于页面展示：调试地址也要计入，否则调试模式下合计恒为 0、
                     // 确认按钮被置灰，看不到真实效果；真实转账由 executeAutoFund /
                     // processBatchFund 里的 isDebugAddr 护栏拦截
-                    if (bal.compareTo(ArenaConfig.ENTRY_FEE) < 0) {
+                    if (bal.compareTo(target) < 0) {
                         result.totalNeeded = result.totalNeeded.add(diff);
                         result.needFundAddrs.add(item.address);
                         result.needFundLabels.add(no + " (余额:" + balF + ")");
@@ -322,8 +356,85 @@ public class BatchFundTask {
         } catch (Exception e) {
             android.util.Log.e("BatchFundTask", "queryFundPreview error", e);
             result.error = e;
+            // RPC 链路失败（节点全挂/超时）→ 尝试走 Blockscout 降级通道查余额
+            tryBlockscoutFallback(result, enabledList, callback);
         }
         return result;
+    }
+
+    /**
+     * Blockscout 降级预览：RPC 节点全不可达时，用浏览器 REST API 查余额。
+     *
+     * <p>口径已实测验证：tokenbalance 与 playerSummary.walletBalance 一致
+     * （都是 fLGNS wei 原值），所以缺口计算与正常路径完全等价。</p>
+     *
+     * <p>只有全部行都查到才清 error 并置 degraded：任何一行失败都保留原错误，
+     * 维持「余额没读完 ≠ 无需充值」的既有约定。</p>
+     */
+    private static void tryBlockscoutFallback(FundPreviewResult result,
+                                              List<KeyListItem> enabledList,
+                                              ProgressCallback callback) {
+        try {
+            if (!result.hasMaster || result.masterEntry == null
+                    || result.masterEntry.address == null) return;
+            BigInteger masterBal = BlockscoutApi.fetchFlgnsBalance(result.masterEntry.address);
+            if (masterBal == null) return;   // 浏览器也连不上，保留原 error
+            result.masterBalance = masterBal;
+            result.masterShowAddr = result.masterEntry.address;
+            result.masterShowBalance = masterBal;
+            result.masterKeyNo = (result.masterEntry.customCode != null
+                    && !result.masterEntry.customCode.isEmpty())
+                    ? result.masterEntry.customCode
+                    : String.format(java.util.Locale.getDefault(), "%03d", result.masterEntry.id);
+
+            // 主流程可能已填了一半行：先清空重建，避免 fundDetails 重复
+            result.fundDetails.clear();
+            result.needFundAddrs.clear();
+            result.needFundLabels.clear();
+            result.totalNeeded = BigInteger.ZERO;
+
+            BigInteger target = ArenaConfig.fundTargetFor(ArenaConfig.enterRounds);
+            result.targetPerAccount = target;
+
+            int total = 0;
+            for (KeyListItem item : enabledList) {
+                if (item.address == null || item.keyId == result.masterEntry.id || !item.enabled) continue;
+                total++;
+            }
+            int done = 0;
+            boolean allOk = true;
+            for (KeyListItem item : enabledList) {
+                if (item.address == null) continue;
+                if (item.keyId == result.masterEntry.id) continue;
+                if (!item.enabled) continue;
+                String no = (item.customCode != null && !item.customCode.isEmpty())
+                        ? item.customCode : item.displayNo;
+                BigInteger bal = BlockscoutApi.fetchFlgnsBalance(item.address);
+                done++;
+                if (bal == null) { allOk = false; continue; }
+                BigDecimal balF = toToken(bal);
+
+                BigInteger diff = target.subtract(bal);
+                BigInteger showDiff = diff.signum() > 0 ? diff : BigInteger.ZERO;
+                FundPreviewResult.FundDetail d =
+                        new FundPreviewResult.FundDetail(no, item.address, balF, toToken(showDiff));
+                d.sufficient = bal.compareTo(target) >= 0;
+                result.fundDetails.add(d);
+                if (callback != null) callback.onProgress(done, total, d);
+
+                if (bal.compareTo(target) < 0) {
+                    result.totalNeeded = result.totalNeeded.add(diff);
+                    result.needFundAddrs.add(item.address);
+                    result.needFundLabels.add(no + " (余额:" + balF + ")");
+                }
+            }
+            if (allOk && done > 0) {
+                result.error = null;
+                result.degraded = true;
+            }
+        } catch (Exception ignore) {
+            // 降级通道自身失败不处理：保留原 RPC 错误即可
+        }
     }
 
     // endregion
@@ -369,6 +480,9 @@ public class BatchFundTask {
         BigDecimal masterBalF = new BigDecimal(masterBalance)
                 .divide(new BigDecimal(BigInteger.TEN.pow(18)), 2, java.math.RoundingMode.HALF_UP);
 
+        // 与预览、执行阶段同一个目标（含冠军轮空预留），判断与差额都必须用它
+        BigInteger target = ArenaConfig.fundTargetFor(ArenaConfig.enterRounds);
+
         List<String> needFundAddrs = new ArrayList<>();
         List<String> needFundLabels = new ArrayList<>();
         BigInteger totalNeeded = BigInteger.ZERO;
@@ -380,8 +494,8 @@ public class BatchFundTask {
             if (ArenaConfig.DEBUG_FIXED_ADDR_ENABLE && ArenaConfig.isDebugAddr(item.address)) continue;
             if (item.address == null || item.address.equalsIgnoreCase(masterEntry.address)) continue;
             BigInteger bal = ArenaContractApi.callErc20Balance(web3j, item.address);
-            if (bal.compareTo(ArenaConfig.ENTRY_FEE) < 0) {
-                BigInteger diff = ArenaConfig.ENTRY_FEE.subtract(bal);
+            if (bal.compareTo(target) < 0) {
+                BigInteger diff = target.subtract(bal);
                 totalNeeded = totalNeeded.add(diff);
                 String no = (item.customCode != null && !item.customCode.isEmpty()) ? item.customCode : item.displayNo;
                 BigDecimal balF = new BigDecimal(bal)
@@ -428,7 +542,9 @@ public class BatchFundTask {
             StringBuilder sb = new StringBuilder();
             sb.append("主号: ").append(masterAddr.substring(0, 10)).append("...\n");
             sb.append("主号余额: ").append(masterBal).append(" fLGNS\n\n");
-            sb.append("以下账号需要补齐到 100：\n");
+            sb.append("以下账号需要补齐到 ")
+                    .append(toToken(ArenaConfig.fundTargetFor(ArenaConfig.enterRounds)))
+                    .append(" fLGNS（连打 ").append(ArenaConfig.enterRounds).append(" 圈）：\n");
             for (int i = 0; i < labels.size(); i++) {
                 sb.append("  ").append(i + 1).append(". ").append(labels.get(i)).append("\n");
             }
@@ -466,6 +582,9 @@ public class BatchFundTask {
                 ECKeyPair masterKeyPair = Web3AndroidUtil.pkToKeyPair(masterPk);
                 String masterAddr = Web3AndroidUtil.getAddress(masterKeyPair);
 
+                // 与预览/确认页同一个目标：确认页停留期间配置可能被改，这里重新取一次
+                BigInteger target = ArenaConfig.fundTargetFor(ArenaConfig.enterRounds);
+
                 Web3j w3 = Web3AndroidUtil.dialAny();
                 BigInteger gasPrice = w3.ethGasPrice().send().getGasPrice();
                 BigInteger nonce = w3.ethGetTransactionCount(masterAddr,
@@ -476,13 +595,13 @@ public class BatchFundTask {
                     String addr = addrs.get(i);
                     final int index = i;
                     BigInteger bal = ArenaContractApi.callErc20Balance(w3, addr);
-                    if (bal.compareTo(ArenaConfig.ENTRY_FEE) >= 0) {
+                    if (bal.compareTo(target) >= 0) {
                         final String label = labels.get(index);
                         activity.runOnUiThread(() -> callback.onLog("", "FUND",
                                 "➖ " + label + " 余额已够,跳过"));
                         continue;
                     }
-                    BigInteger diff = ArenaConfig.ENTRY_FEE.subtract(bal);
+                    BigInteger diff = target.subtract(bal);
                     try {
                         ArenaContractApi.doErc20Transfer(w3, masterKeyPair, addr, diff, nonce, gasPrice);
                         nonce = nonce.add(BigInteger.ONE);
@@ -524,6 +643,12 @@ public class BatchFundTask {
 
     // region 结果模型
 
+    /** wei 转展示用代币数值（18 位精度、保留 2 位）：日志与弹窗共用同一口径，避免各算各的 */
+    private static BigDecimal toToken(BigInteger wei) {
+        return new BigDecimal(wei).divide(new BigDecimal(BigInteger.TEN.pow(18)),
+                2, java.math.RoundingMode.HALF_UP);
+    }
+
     /**
      * 充值预览结果：主号卡片数据 + 每个启用账号的余额/缺口。
      *
@@ -535,6 +660,8 @@ public class BatchFundTask {
         public boolean hasMaster = false;
         /** 查询异常：非空表示余额没能读完（网络/节点问题），不能当成“无需充值” */
         public Exception error = null;
+        /** true = 本结果来自 Blockscout 降级通道（RPC 节点全不可达），余额口径一致但需提示用户 */
+        public boolean degraded = false;
         /** 主号在库里的条目（含密文），执行阶段靠它取私钥 */
         public KeyStoreManager.KeyEntry masterEntry = null;
         /** 主号真实余额（资金源口径，单位 wei） */
@@ -551,6 +678,8 @@ public class BatchFundTask {
         public List<String> needFundLabels = new ArrayList<>();
         /** 每个启用账号一行的明细，确认页直接拿来铺列表 */
         public List<FundDetail> fundDetails = new ArrayList<>();
+        /** 本次充值的目标持有量（含首场门票，单位 wei）；与差额计算同源，界面直接展示 */
+        public BigInteger targetPerAccount = BigInteger.ZERO;
         /** 全部缺口汇总（单位 wei） */
         public BigInteger totalNeeded = BigInteger.ZERO;
 

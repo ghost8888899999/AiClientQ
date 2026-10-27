@@ -87,7 +87,7 @@ public class ArenaContractApi {
      * 解码时某个字越界就保留默认值而不是抛异常，避免一个字段异常拖垮整行展示。</p>
      */
     public static class PlayerSummary {
-        /** [0] 钱包内 ERC20 余额（本链即 Gas 币余额） */
+        /** [0] 钱包内的游戏代币（fLGNS）余额，即入场门票所在的钱包；<b>不是</b> DAI 手续费 */
         public BigInteger walletBalance = BigInteger.ZERO;
         /** [1] 钱包给 Arena 的授权额度 */
         public BigInteger allowance = BigInteger.ZERO;
@@ -95,7 +95,7 @@ public class ArenaContractApi {
         public BigInteger prize = BigInteger.ZERO;
         /** [3] 当前比赛中的押金 */
         public BigInteger inMatchDeposit = BigInteger.ZERO;
-        /** [4] 累计入场次数 */
+        /** [4] 奖金 + 未结算押金（合约 {@code prize + inMatchDeposit}），<b>不是</b>入场次数；历史场次看 {@link #battles} */
         public BigInteger arenaTotal = BigInteger.ZERO;
         /** [5] 累计对局数 */
         public BigInteger battles = BigInteger.ZERO;
@@ -237,6 +237,53 @@ public class ArenaContractApi {
         String hexValue = res.getValue();
         Log.d("RPC_DEBUG", "jiaziCount[" + owner + "] 原始返回：" + hexValue);
         return decodeUint256At(hexValue, 0);
+    }
+
+    /**
+     * 查询待领擂台奖金（{@code claimable} 公开 mapping 的 getter），单位 wei。
+     *
+     * <p>与甲子俸是两笔独立的钱：每输一场 +100.8，永不过期。
+     * 拿它做领取前置判断，才不至于把从没拿过冠军的账号当成「没东西可领」。</p>
+     *
+     * @throws Exception RPC 返回错误；调用方应把查询失败当成「可能有」，不能当 0
+     */
+    public static BigInteger callClaimable(Web3j web3j, String owner) throws Exception {
+        List<Type> inputs = new ArrayList<Type>();
+        inputs.add(new Address(owner));
+        List<TypeReference<?>> outputs = new ArrayList<TypeReference<?>>();
+        outputs.add(TypeReference.create(Uint256.class));
+        Function f = new Function("claimable", inputs, outputs);
+        String callData = FunctionEncoder.encode(f);
+        EthCall res = web3j.ethCall(
+                Transaction.createEthCallTransaction(null, ARENA_ADDR, callData),
+                DefaultBlockParameterName.LATEST
+        ).send();
+        if (res.hasError()) throw new Exception("claimable error:" + res.getError().getMessage());
+        return decodeUint256At(res.getValue(), 0);
+    }
+
+    /**
+     * 查询今日实际可领的师徒分成（{@code lineagePending}），单位 wei。
+     *
+     * <p>合约只结算 `今天-1` 那一天，且按「今天已经打了几场」的比例解锁（10% 一场，10 场满额）。
+     * 返回 0 时发交易必然 revert {@code NothingToClaimLineage}，所以调用前先查一次，
+     * 既省 gas，也不会把一个正常结果记成失败。</p>
+     *
+     * @throws Exception RPC 返回错误
+     */
+    public static BigInteger callLineagePending(Web3j web3j, String owner) throws Exception {
+        List<Type> inputs = new ArrayList<Type>();
+        inputs.add(new Address(owner));
+        List<TypeReference<?>> outputs = new ArrayList<TypeReference<?>>();
+        outputs.add(TypeReference.create(Uint256.class));
+        Function f = new Function("lineagePending", inputs, outputs);
+        String callData = FunctionEncoder.encode(f);
+        EthCall res = web3j.ethCall(
+                Transaction.createEthCallTransaction(null, ARENA_ADDR, callData),
+                DefaultBlockParameterName.LATEST
+        ).send();
+        if (res.hasError()) throw new Exception("lineagePending error:" + res.getError().getMessage());
+        return decodeUint256At(res.getValue(), 0);
     }
 
     /**

@@ -250,6 +250,6 @@
         android:layout_marginBottom="24dp"
         android:contentDescription="@string/cd_add_key"
         android:src="@drawable/ic_add_svg"
-        android:tint="@color/white" />
+        app:tint="@color/white" />
 
 </RelativeLayout>

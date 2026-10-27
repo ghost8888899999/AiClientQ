@@ -10,6 +10,7 @@ import androidx.annotation.NonNull;
 import androidx.recyclerview.widget.RecyclerView;
 
 import com.lgns.R;
+import com.lgns.model.ArenaConfig;
 
 import java.math.BigDecimal;
 import java.math.BigInteger;
@@ -273,6 +274,8 @@ public class AccountStatsAdapter extends RecyclerView.Adapter<RecyclerView.ViewH
     static class AccountVH extends RecyclerView.ViewHolder {
         TextView tvName, tvAddr, tvStatusTag;
         TextView tvBalance, tvEntries, tvTodayChampion, tvTotalChampion, tvPrize;
+        /** 师徒分成解锁提示条：今日场次不足 10 场时显示，满额/未开打时隐藏 */
+        TextView tvLineageHint;
 
         AccountVH(@NonNull View itemView) {
             super(itemView);
@@ -284,6 +287,7 @@ public class AccountStatsAdapter extends RecyclerView.Adapter<RecyclerView.ViewH
             tvTodayChampion = itemView.findViewById(R.id.tv_today_champion);
             tvTotalChampion = itemView.findViewById(R.id.tv_total_champion);
             tvPrize = itemView.findViewById(R.id.tv_prize);
+            tvLineageHint = itemView.findViewById(R.id.tv_lineage_hint);
         }
 
         void bind(AccountStatsItem item) {
@@ -309,6 +313,7 @@ public class AccountStatsAdapter extends RecyclerView.Adapter<RecyclerView.ViewH
                 tvTodayChampion.setText(R.string.common_placeholder);
                 tvTotalChampion.setText(R.string.common_placeholder);
                 tvPrize.setText(R.string.common_placeholder);
+                tvLineageHint.setVisibility(View.GONE);
                 return;
             }
             // 视图复用：非 pending 行必须把状态位与透明度恢复出来
@@ -324,6 +329,7 @@ public class AccountStatsAdapter extends RecyclerView.Adapter<RecyclerView.ViewH
                 tvTodayChampion.setText(R.string.common_placeholder);
                 tvTotalChampion.setText(R.string.common_placeholder);
                 tvPrize.setText(R.string.common_placeholder);
+                tvLineageHint.setVisibility(View.GONE);
                 return;
             }
 
@@ -347,6 +353,19 @@ public class AccountStatsAdapter extends RecyclerView.Adapter<RecyclerView.ViewH
                     : String.valueOf(item.todayChampion));
             tvTotalChampion.setText(String.valueOf(item.totalChampion));
             tvPrize.setText(formatToken(item.totalEarnings));
+
+            // 师徒分成按「今天打了几场」线性解锁（合约 10%/场），且只认当天场次：
+            // 昨天攒下的份额今天不补齐就白丢（D+2 由合约的 _burnExpiredLineage 烧掉）。
+            // 只在「已经开打、还没打满」时提示：0 场的号每行都挂橙条会变成噪音，
+            // 打满的号没有风险，两种情况都不显示。
+            int fullMatches = ArenaConfig.FULL_ACTIVITY_MATCHES;
+            if (item.entriesToday > 0 && item.entriesToday < fullMatches) {
+                tvLineageHint.setVisibility(View.VISIBLE);
+                tvLineageHint.setText(ctx.getString(R.string.stats_lineage_hint_fmt,
+                        item.entriesToday, fullMatches, item.entriesToday * 100 / fullMatches));
+            } else {
+                tvLineageHint.setVisibility(View.GONE);
+            }
         }
 
         private String formatToken(BigInteger wei) {
