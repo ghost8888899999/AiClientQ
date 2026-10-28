@@ -86,7 +86,7 @@
 
     <!-- ══════════ 系统配置页 ══════════ -->
     <string name="dialog_init_db_title">初始化数据库</string>
-    <string name="dialog_init_db_msg">确定重新初始化数据库吗？\n\n将删除以下表并重建：\n• 当日状态\n• 失败日志\n• 操作日志\n\n分组信息不会被删除。</string>
+    <string name="dialog_init_db_msg">"确定重新初始化数据库吗？\n\n将删除以下表并重建：\n• 当日状态\n• 失败日志\n• 操作日志\n\n分组信息不会被删除。"</string>
     <string name="toast_db_initialized">数据库已初始化</string>
     <string name="toast_init_failed_fmt">初始化失败: %1$s</string>
     <string name="toast_config_saved">配置已保存</string>
@@ -204,8 +204,8 @@
     <!-- ══════════ 密码安全说明 ══════════ -->
     <string name="dialog_security_title">密码强度说明（离线爆破估算）</string>
     <string name="dialog_security_warn_title">安全风险提醒</string>
-    <string name="dialog_security_msg">【事实·代码可查】AES-256-GCM 加密；每把钥匙独立随机 salt/IV；PBKDF2-SHA256 65536 轮派生密钥；密码仅存内存、退出即清零。\n\n【假设·保守基准】设备丢失后攻击者离线爆破，按单张现代 GPU ≈10^5 次/秒估算；以下为破解时间下限，攻击者越弱实际越久。\n公式：期望时间 ≈ 密码空间 ÷ (2 × 猜测速度)\n\n≤7 位字母+数字 → 数月~1 年 ❌\n8 位字母+数字 → 数十年（多卡集群数年）⚠️\n10 位字母+数字 → 十万年以上 ✅\n12 位含符号 → 亿年以上 ✅✅\n\n建议：至少 10 位，最好 12 位并混合大小写/数字/符号。</string>
-    <string name="dialog_security_warn_msg">1. 本APP仅为链上操作工具，不是硬件钱包，请勿存放大额资产私钥\n\n2. 手机若已Root，任何APP都可能读取私钥，存在被盗风险\n\n3. 解密密码仅在运行时使用，关闭APP后即清除，不会保存在手机中\n\n4. 配置私钥自动清除，若手机开启了省电/后台限制，清除时间可能延迟，重新打开APP会立即清除</string>
+    <string name="dialog_security_msg">"【事实·代码可查】AES-256-GCM 加密；每把钥匙独立随机 salt/IV；PBKDF2-SHA256 65536 轮派生密钥；密码仅存内存、退出即清零。\n\n【假设·保守基准】设备丢失后攻击者离线爆破，按单张现代 GPU ≈10^5 次/秒估算；以下为破解时间下限，攻击者越弱实际越久。\n公式：期望时间 ≈ 密码空间 ÷ (2 × 猜测速度)\n\n≤7 位字母+数字 → 数月~1 年 ❌\n8 位字母+数字 → 数十年（多卡集群数年）⚠️\n10 位字母+数字 → 十万年以上 ✅\n12 位含符号 → 亿年以上 ✅✅\n\n建议：至少 10 位，最好 12 位并混合大小写/数字/符号。"</string>
+    <string name="dialog_security_warn_msg">"1. 本APP仅为链上操作工具，不是硬件钱包，请勿存放大额资产私钥\n\n2. 手机若已Root，任何APP都可能读取私钥，存在被盗风险\n\n3. 解密密码仅在运行时使用，关闭APP后即清除，不会保存在手机中\n\n4. 配置私钥自动清除，若手机开启了省电/后台限制，清除时间可能延迟，重新打开APP会立即清除"</string>
     <!-- ══════════ 添加密钥校验（既有） ══════════ -->
     <string name="dialog_select_group">请选择分组！</string>
     <string name="dialog_key_empty">密钥内容不能为空！</string>
@@ -298,7 +298,7 @@
     <string name="auto_clear_tv_status_label">当前状态</string>
     <string name="auto_clear_et_value_hint">数值</string>
     <string name="auto_clear_tv_unit_per">每</string>
-    <string name="auto_clear_tv_desc_note">说明：\n• 启用后，到达设定时长会自动清除所有私钥\n• 清除后需重新添加私钥才能使用\n• 打开APP时会立即校验是否到期\n• 建议设置15分钟以上</string>
+    <string name="auto_clear_tv_desc_note">"说明：\n• 启用后，到达设定时长会自动清除所有私钥\n• 清除后需重新添加私钥才能使用\n• 打开APP时会立即校验是否到期\n• 建议设置15分钟以上"</string>
 
     <!-- ══════════ 分组管理 activity_group_manage ══════════ -->
     <string name="group_manage_tv_empty">暂无分组\n点击右下角 + 添加</string>
@@ -331,5 +331,65 @@
     <string name="stats_overview_card_today_champion_title">🏆 今日冠军</string>
     <string name="stats_overview_card_enter_stats_title">🎯 入场统计</string>
     <string name="stats_overview_section_asset_detail">💎 资产明细</string>
+
+    <!-- ══════════ 主界面账号行的待领小标签（甲子/擂台/师徒三类可领额度） ══════════ -->
+    <!-- 数字与标签同色，>0 用绿、=0 用灰，一眼能看出这个号有没有钱可领 -->
+    <string name="account_tag_jiazi_fmt">甲子 %1$s</string>
+    <string name="account_tag_arena_fmt">擂台 %1$s</string>
+    <string name="account_tag_lineage_fmt">师徒 %1$s</string>
+    <!-- 行尾 › 的无障碍描述：读屏时代替纯图标，说明点击去向 -->
+    <string name="account_row_open_detail">查看该账号详情</string>
+
+    <!-- ══════════ 账号详情页（点主界面某行进入，展示入场/领取明细并就地操作） ══════════ -->
+    <string name="common_title_account_detail">账号详情</string>
+    <string name="detail_section_enter">🎯 入场详情</string>
+    <string name="detail_section_claim">💰 领取详情</string>
+    <string name="detail_btn_enter">入场</string>
+    <string name="detail_btn_claim">领取</string>
+    <string name="detail_refresh">刷新</string>
+    <!-- 明细行标签：右侧数值在代码里回填，标签固定不变 -->
+    <string name="detail_label_wallet_balance">钱包余额 (fLGNS)</string>
+    <string name="detail_label_allowance">合约授权 (fLGNS)</string>
+    <string name="detail_label_entries_today">今日已入场</string>
+    <string name="detail_label_entries_remaining">今日剩余入场</string>
+    <!-- 「当前轮是否入座」已改成 KPI 右侧的状态胶囊，不再占一行，原标签串随之删除 -->
+    <string name="detail_label_in_match_deposit">赛中押金 (fLGNS)</string>
+    <string name="detail_label_next_fee_source">下一场门票来源</string>
+    <string name="detail_label_battles">累计场次</string>
+    <string name="detail_label_championships">累计冠军</string>
+    <string name="detail_label_jiazi_claimable">甲子可提 (fLGNS)</string>
+    <string name="detail_label_jiazi_released">甲子已释放 (fLGNS)</string>
+    <string name="detail_label_jiazi_granted">甲子累计发放 (fLGNS)</string>
+    <string name="detail_label_arena_claimable">擂台可领 (fLGNS)</string>
+    <string name="detail_label_lineage_pending">师徒可领 (fLGNS)</string>
+    <string name="detail_label_prize">可抵门票奖金 (fLGNS)</string>
+    <!-- 卡片内部分组小标题：把十来行明细拆成「资金 / 门票 / 累计 / 甲子」，避免平铺难扫读 -->
+    <string name="detail_group_fund">资金</string>
+    <string name="detail_group_fee">门票</string>
+    <string name="detail_group_stats">累计</string>
+    <string name="detail_group_jiazi">甲子</string>
+    <!-- KPI 数值的单位后缀：与数字同基线、小一号，不占标签位 -->
+    <string name="detail_unit_match">场</string>
+    <string name="detail_unit_flgns">fLGNS</string>
+    <string name="detail_seat_yes">已入座</string>
+    <string name="detail_seat_no">未入座</string>
+    <string name="detail_fee_from_prize">奖金抵扣</string>
+    <string name="detail_fee_from_wallet">钱包支付</string>
+    <string name="detail_entries_fmt">%1$d / %2$d</string>
+    <string name="detail_debug_no_key">调试地址池账号没有私钥，无法执行入场/领取</string>
+    <!-- 详情页日志来源前缀：与主界面批量操作日志区分（上屏与落库都带） -->
+    <string name="detail_log_prefix">【详情】</string>
+    <!-- 版本：详情页按钮点击不弹 Toast，改为写日志并落库 -->
+    <string name="detail_log_click_enter">点击【入场】，准备单号入场</string>
+    <string name="detail_log_click_claim">点击【领取】，准备单号领取</string>
+    <string name="detail_log_click_refresh">点击【刷新】，重新拉取链上明细</string>
+    <string name="detail_key_missing">未在本机找到该地址对应的私钥，无法执行操作</string>
+    <!-- 跨页任务闸门与密码弹窗取消：按钮操作改走日志，不弹 Toast -->
+    <string name="detail_task_busy_other">另一个任务正在运行中（可能是主界面批量任务），本次操作已拦下</string>
+    <string name="detail_pwd_canceled">已取消解密密码输入，本次操作放弃</string>
+    <!-- 固定补一场 / 领取范围：写进日志，避免与主界面圈数配置混淆 -->
+    <string name="detail_log_enter_single">开始单号入场：本次固定补 1 场（详情页不跟随主界面圈数）</string>
+    <string name="detail_log_claim_start">开始单号领取：依次领取甲子/师徒/擂台并扫入钱包</string>
+    <string name="detail_chain_failed_fmt">链上数据加载失败：%1$s</string>
 
 </resources>

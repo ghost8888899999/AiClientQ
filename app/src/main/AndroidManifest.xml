@@ -59,6 +59,11 @@
             android:label="锦标赛统计" />
 
         <activity
+            android:name=".ui.activity.AccountDetailActivity"
+            android:exported="false"
+            android:label="@string/common_title_account_detail" />
+
+        <activity
             android:name=".ui.activity.AutoClearConfigActivity"
             android:exported="false"
             android:label="自动清除配置" />

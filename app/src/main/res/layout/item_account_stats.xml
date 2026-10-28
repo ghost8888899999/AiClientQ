@@ -4,186 +4,277 @@
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:layout_marginBottom="6dp"
+    android:clickable="true"
+    android:focusable="true"
+    android:foreground="?attr/selectableItemBackground"
     app:cardCornerRadius="8dp"
     app:cardElevation="2dp"
     app:cardBackgroundColor="@android:color/white">
 
+    <!-- 横向两栏：左「内容列」+ 右「披露指示器」。
+         指示器必须挂在卡片这一层、而不是内容的第一行里——挂在行内只能贴着状态胶囊，
+         会被读成「胶囊的一部分」；挂在外层才能靠 gravity 垂直居中于整张卡片右缘，
+         这才是 iOS disclosure indicator / Material 列表尾部图标的标准位置。
+         内边距因此从内容列上移到外层：图标距右缘 8dp（比左侧 10dp 略紧一点，视觉上更贴边、更像列表项） -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:orientation="vertical"
-        android:padding="10dp">
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingStart="10dp"
+        android:paddingTop="10dp"
+        android:paddingEnd="8dp"
+        android:paddingBottom="10dp">
 
+        <!-- 内容列：宽度让给指示器（weight=1），换行/截断规则与改造前一致 -->
         <LinearLayout
-            android:layout_width="match_parent"
+            android:layout_width="0dp"
             android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:gravity="center_vertical"
-            android:layout_marginBottom="6dp">
+            android:layout_weight="1"
+            android:orientation="vertical">
 
-            <TextView
-                android:id="@+id/tv_account_name"
-                android:layout_width="wrap_content"
+            <LinearLayout
+                android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="Y26"
-                android:textSize="14sp"
-                android:textStyle="bold"
-                android:textColor="#212121"/>
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:layout_marginBottom="6dp">
 
-            <TextView
-                android:id="@+id/tv_account_addr"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:layout_marginStart="6dp"
-                android:text="0x86f9...36c8E"
-                android:textSize="10sp"
-                android:textColor="#9E9E9E"/>
+                <TextView
+                    android:id="@+id/tv_account_name"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Y26"
+                    android:textSize="14sp"
+                    android:textStyle="bold"
+                    android:textColor="#212121"/>
 
-            <TextView
-                android:id="@+id/tv_status_tag"
-                android:layout_width="wrap_content"
+                <TextView
+                    android:id="@+id/tv_account_addr"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:layout_marginStart="6dp"
+                    android:text="0x86f9...36c8E"
+                    android:textSize="10sp"
+                    android:textColor="#9E9E9E"/>
+
+                <TextView
+                    android:id="@+id/tv_status_tag"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/common_tag_enterable"
+                    android:textSize="10sp"
+                    android:textStyle="bold"
+                    android:textColor="#FFFFFF"
+                    android:paddingStart="6dp"
+                    android:paddingEnd="6dp"
+                    android:paddingTop="2dp"
+                    android:paddingBottom="2dp"/>
+            </LinearLayout>
+
+            <LinearLayout
+                android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="@string/common_tag_enterable"
-                android:textSize="10sp"
-                android:textStyle="bold"
-                android:textColor="#FFFFFF"
-                android:paddingStart="6dp"
-                android:paddingEnd="6dp"
-                android:paddingTop="2dp"
-                android:paddingBottom="2dp"/>
+                android:orientation="horizontal">
+
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:orientation="vertical"
+                    android:gravity="center">
+                    <TextView
+                        android:id="@+id/tv_balance"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="125.50"
+                        android:textSize="14sp"
+                        android:textStyle="bold"
+                        android:textColor="#1976D2"/>
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/common_label_balance_short"
+                        android:textSize="9sp"
+                        android:textColor="#9E9E9E"/>
+                </LinearLayout>
+
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:orientation="vertical"
+                    android:gravity="center">
+                    <TextView
+                        android:id="@+id/tv_entries"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="5/12"
+                        android:textSize="14sp"
+                        android:textStyle="bold"
+                        android:textColor="#4CAF50"/>
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/common_label_enter_short"
+                        android:textSize="9sp"
+                        android:textColor="#9E9E9E"/>
+                </LinearLayout>
+
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:orientation="vertical"
+                    android:gravity="center">
+                    <TextView
+                        android:id="@+id/tv_today_champion"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="2"
+                        android:textSize="14sp"
+                        android:textStyle="bold"
+                        android:textColor="#FF5722"/>
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/common_label_today_champion"
+                        android:textSize="9sp"
+                        android:textColor="#9E9E9E"/>
+                </LinearLayout>
+
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:orientation="vertical"
+                    android:gravity="center">
+                    <TextView
+                        android:id="@+id/tv_total_champion"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="15"
+                        android:textSize="14sp"
+                        android:textStyle="bold"
+                        android:textColor="#E65100"/>
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/common_label_total_champion"
+                        android:textSize="9sp"
+                        android:textColor="#9E9E9E"/>
+                </LinearLayout>
+
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:orientation="vertical"
+                    android:gravity="center">
+                    <TextView
+                        android:id="@+id/tv_prize"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="85.20"
+                        android:textSize="14sp"
+                        android:textStyle="bold"
+                        android:textColor="#FF9800"/>
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/common_label_total_prize"
+                        android:textSize="9sp"
+                        android:textColor="#9E9E9E"/>
+                </LinearLayout>
+            </LinearLayout>
+
+            <!-- 待领小标签行：甲子/擂台/师徒三类可领额度各一个胶囊，与批量领取口径一致。
+                 绿=有待领、灰=此刻为 0，一眼看出这个号能不能领；具体数值与显隐在适配器里回填 -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:layout_marginTop="6dp">
+
+                <TextView
+                    android:id="@+id/tv_tag_jiazi"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginEnd="6dp"
+                    android:background="@drawable/bg_tag_gray"
+                    android:paddingStart="6dp"
+                    android:paddingEnd="6dp"
+                    android:paddingTop="2dp"
+                    android:paddingBottom="2dp"
+                    android:textSize="10sp"
+                    android:textStyle="bold"
+                    android:textColor="#FFFFFF"
+                    android:visibility="gone"/>
+
+                <TextView
+                    android:id="@+id/tv_tag_arena"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginEnd="6dp"
+                    android:background="@drawable/bg_tag_gray"
+                    android:paddingStart="6dp"
+                    android:paddingEnd="6dp"
+                    android:paddingTop="2dp"
+                    android:paddingBottom="2dp"
+                    android:textSize="10sp"
+                    android:textStyle="bold"
+                    android:textColor="#FFFFFF"
+                    android:visibility="gone"/>
+
+                <TextView
+                    android:id="@+id/tv_tag_lineage"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:background="@drawable/bg_tag_gray"
+                    android:paddingStart="6dp"
+                    android:paddingEnd="6dp"
+                    android:paddingTop="2dp"
+                    android:paddingBottom="2dp"
+                    android:textSize="10sp"
+                    android:textStyle="bold"
+                    android:textColor="#FFFFFF"
+                    android:visibility="gone"/>
+            </LinearLayout>
+
+            <!-- 师徒分成解锁提示：今日入场不足 10 场时出现，打满自动消失。
+                 合约按 10%/场线性解锁且只认当天场次，不补打就白丢，所以单开一行说清楚 -->
+            <TextView
+                android:id="@+id/tv_lineage_hint"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:background="@drawable/bg_lineage_hint"
+                android:paddingStart="8dp"
+                android:paddingTop="4dp"
+                android:paddingEnd="8dp"
+                android:paddingBottom="4dp"
+                android:textSize="9sp"
+                android:textColor="@color/lineage_hint_text"
+                android:visibility="gone" />
         </LinearLayout>
 
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal">
-
-            <LinearLayout
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:orientation="vertical"
-                android:gravity="center">
-                <TextView
-                    android:id="@+id/tv_balance"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="125.50"
-                    android:textSize="14sp"
-                    android:textStyle="bold"
-                    android:textColor="#1976D2"/>
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="@string/common_label_balance_short"
-                    android:textSize="9sp"
-                    android:textColor="#9E9E9E"/>
-            </LinearLayout>
-
-            <LinearLayout
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:orientation="vertical"
-                android:gravity="center">
-                <TextView
-                    android:id="@+id/tv_entries"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="5/12"
-                    android:textSize="14sp"
-                    android:textStyle="bold"
-                    android:textColor="#4CAF50"/>
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="@string/common_label_enter_short"
-                    android:textSize="9sp"
-                    android:textColor="#9E9E9E"/>
-            </LinearLayout>
-
-            <LinearLayout
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:orientation="vertical"
-                android:gravity="center">
-                <TextView
-                    android:id="@+id/tv_today_champion"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="2"
-                    android:textSize="14sp"
-                    android:textStyle="bold"
-                    android:textColor="#FF5722"/>
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="@string/common_label_today_champion"
-                    android:textSize="9sp"
-                    android:textColor="#9E9E9E"/>
-            </LinearLayout>
-
-            <LinearLayout
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:orientation="vertical"
-                android:gravity="center">
-                <TextView
-                    android:id="@+id/tv_total_champion"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="15"
-                    android:textSize="14sp"
-                    android:textStyle="bold"
-                    android:textColor="#E65100"/>
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="@string/common_label_total_champion"
-                    android:textSize="9sp"
-                    android:textColor="#9E9E9E"/>
-            </LinearLayout>
-
-            <LinearLayout
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:orientation="vertical"
-                android:gravity="center">
-                <TextView
-                    android:id="@+id/tv_prize"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="85.20"
-                    android:textSize="14sp"
-                    android:textStyle="bold"
-                    android:textColor="#FF9800"/>
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="@string/common_label_total_prize"
-                    android:textSize="9sp"
-                    android:textColor="#9E9E9E"/>
-            </LinearLayout>
-        </LinearLayout>
-
-        <!-- 师徒分成解锁提示：今日入场不足 10 场时出现，打满自动消失。
-             合约按 10%/场线性解锁且只认当天场次，不补打就白丢，所以单开一行说清楚 -->
-        <TextView
-            android:id="@+id/tv_lineage_hint"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="6dp"
-            android:background="@drawable/bg_lineage_hint"
-            android:paddingStart="8dp"
-            android:paddingTop="4dp"
-            android:paddingEnd="8dp"
-            android:paddingBottom="4dp"
-            android:textSize="9sp"
-            android:textColor="@color/lineage_hint_text"
-            android:visibility="gone" />
+        <!-- 行尾披露指示器：告诉用户「这一行能进详情页」。
+             对标大厂：iOS 的 disclosure indicator、Material 列表尾部图标都是这个位置与语义，
+             比再写两个字「详情」省空间，也不会和状态胶囊抢注意力。
+             垂直居中由外层 gravity=center_vertical 保证：卡片高度随内容列变化（待领标签、
+             师徒提示条都按需出现），固定 marginTop 之类的写法会在内容变高时错位。
+             刻意设为不可点/不可聚焦：整行已经是一个点击热区，图标只做视觉提示，
+             否则它会自成焦点，读屏与键盘导航都会在这里多停一次 -->
+        <ImageView
+            android:id="@+id/iv_row_arrow"
+            android:layout_width="16dp"
+            android:layout_height="16dp"
+            android:layout_marginStart="4dp"
+            android:layout_gravity="center_vertical"
+            android:src="@drawable/ic_chevron_right_svg"
+            android:contentDescription="@string/account_row_open_detail"
+            android:clickable="false"
+            android:focusable="false"/>
     </LinearLayout>
 </androidx.cardview.widget.CardView>

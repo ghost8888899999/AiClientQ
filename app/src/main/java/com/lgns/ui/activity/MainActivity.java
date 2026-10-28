@@ -130,6 +130,15 @@ public class MainActivity extends BaseActivity implements TaskLogCallback, Batch
     private ProgressBar pbStatsSync;
 
     private volatile boolean isTaskRunning = false;
+    /**
+     * 本页是否真的持有跨页闸门（{@code AppGlobal.acquireTask()} 的返回值）。
+     *
+     * <p>闸门是 CAS 占锁，会失败：点击时的两层门与 {@code beginTask} 之间仍有极窄的窗口，
+     * 详情页单号任务可能在这期间抢先占住。此时任务照跑（密码已验、用户已确认，回滚更糟），
+     * 但收尾就<b>不能</b>释放——那把锁是别人的，一放就把详情页任务与其它入口同时放开。
+     * 所以单独记一个归属位，保证「谁抢到谁释放」。</p>
+     */
+    private volatile boolean taskGateOwned = false;
     // 本地账号清单是否已就绪：未就绪时禁止发起批量操作，避免拿半成品清单去跑任务
     private volatile boolean accountDataReady = false;
     // 链上统计状态：主界面上的余额/入场/冠军全是占位 0 时不允许点按钮，
@@ -147,6 +156,8 @@ public class MainActivity extends BaseActivity implements TaskLogCallback, Batch
     private boolean refreshLocalOnlyOnResume = false;
     /** 本次 onResume 只按最新分组重建展示、不重新拉链上数据：分组名/顺序变更后（地址集合与链上值都没变） */
     private boolean refreshGroupOnlyOnResume = false;
+    /** 本次 onResume 需重拉一次链上统计：从账号详情页返回时用（详情页可能已就地入场/领取，数值变了） */
+    private boolean refreshStatsFromDetailOnResume = false;
     /** 页面在后台时被判空闲上锁：先压住弹窗，等 onResume 再弹（后台不创建 Dialog） */
     private volatile boolean pendingIdleUnlock = false;
 
@@ -182,6 +193,8 @@ public class MainActivity extends BaseActivity implements TaskLogCallback, Batch
         rvAccountList.setLayoutManager(new LinearLayoutManager(this));
         accountStatsAdapter = new AccountStatsAdapter();
         rvAccountList.setAdapter(accountStatsAdapter);
+        // 点账号行→该地址详情页（入场/领取明细+就地操作）；调试地址池行无私钥，标为不可操作
+        accountStatsAdapter.setOnAccountClickListener(this::openAccountDetail);
 
         spAppSetting = AppPrefs.get(this);
         currentPlayMode = spAppSetting.getInt("play_mode", MODE_FLEXIBLE);
@@ -309,6 +322,30 @@ public class MainActivity extends BaseActivity implements TaskLogCallback, Batch
 
     // endregion
 
+    // region 账号详情跳转
+
+    /**
+     * 打开某地址的详情页：把展示行已有的地址/名称/分组传给详情页，行上已回填的待领值不重复传。
+     *
+     * <p>不经 Intent 传密文/私钥（敏感）：详情页自己按地址从 {@code KeyStoreManager} 查回真实密钥。
+     * 调试地址池行（展示源是固定地址池）没有对应私钥，传 {@code operable=false}，详情页只展示不可操作。</p>
+     */
+    private void openAccountDetail(AccountStatsAdapter.AccountStatsItem item) {
+        if (item == null || item.address == null || item.address.isEmpty()) return;
+        boolean debugMode = ArenaConfig.DEBUG_FIXED_ADDR_ENABLE
+                && debugKeyItems != null && !debugKeyItems.isEmpty();
+        Intent intent = new Intent(this, AccountDetailActivity.class);
+        intent.putExtra(AccountDetailActivity.EXTRA_ADDRESS, item.address);
+        intent.putExtra(AccountDetailActivity.EXTRA_NAME, item.name);
+        intent.putExtra(AccountDetailActivity.EXTRA_GROUP, item.groupNo);
+        intent.putExtra(AccountDetailActivity.EXTRA_OPERABLE, !debugMode);
+        // 详情页可能就地入场/领取，返回时必须按链上真实状态重拉，待领小标签才会更新
+        refreshStatsFromDetailOnResume = true;
+        startActivity(intent);
+    }
+
+    // endregion
+
     // region 批量任务入口
 
     /**
@@ -318,7 +355,9 @@ public class MainActivity extends BaseActivity implements TaskLogCallback, Batch
      * <p>密码弹窗阶段不锁按钮：用户取消或输错密码都不应该把界面卡住，校验通过后才锁定。</p>
      */
     private void handleBatchFundClick() {
-        if (isTaskRunning) {
+        // 两层门「本地先判、全局后判」：先看本页 isTaskRunning（快，且能提示“本页正在跑”），
+        // 再靠短路求值判跨页闸门（详情页单号任务可能还在跑，本页看不到它，不判就会并发签名）
+        if (isTaskRunning || AppGlobal.isTaskBusy()) {
             android.widget.Toast.makeText(this, R.string.task_running, android.widget.Toast.LENGTH_SHORT).show();
             return;
         }
@@ -341,7 +380,9 @@ public class MainActivity extends BaseActivity implements TaskLogCallback, Batch
      * finally 都要把按钮放开，否则一次异常就会把界面永久锁死。</p>
      */
     private void handleBatchEnterClick() {
-        if (isTaskRunning) {
+        // 两层门「本地先判、全局后判」：先看本页 isTaskRunning（快，且能提示“本页正在跑”），
+        // 再靠短路求值判跨页闸门（详情页单号任务可能还在跑，本页看不到它，不判就会并发签名）
+        if (isTaskRunning || AppGlobal.isTaskBusy()) {
             android.widget.Toast.makeText(this, R.string.task_running, android.widget.Toast.LENGTH_SHORT).show();
             return;
         }
@@ -377,7 +418,9 @@ public class MainActivity extends BaseActivity implements TaskLogCallback, Batch
      * 具体领什么、按什么顺序领由 {@link BatchClaimTask} 决定。
      */
     private void handleBatchClaimClick() {
-        if (isTaskRunning) {
+        // 两层门「本地先判、全局后判」：先看本页 isTaskRunning（快，且能提示“本页正在跑”），
+        // 再靠短路求值判跨页闸门（详情页单号任务可能还在跑，本页看不到它，不判就会并发签名）
+        if (isTaskRunning || AppGlobal.isTaskBusy()) {
             android.widget.Toast.makeText(this, R.string.task_running, android.widget.Toast.LENGTH_SHORT).show();
             return;
         }
@@ -422,7 +465,9 @@ public class MainActivity extends BaseActivity implements TaskLogCallback, Batch
      * 全程锁住四个批量按钮。</p>
      */
     private void handleFullWorkflowClick() {
-        if (isTaskRunning) {
+        // 两层门「本地先判、全局后判」：先看本页 isTaskRunning（快，且能提示“本页正在跑”），
+        // 再靠短路求值判跨页闸门（详情页单号任务可能还在跑，本页看不到它，不判就会并发签名）
+        if (isTaskRunning || AppGlobal.isTaskBusy()) {
             android.widget.Toast.makeText(this, R.string.task_running, android.widget.Toast.LENGTH_SHORT).show();
             return;
         }
@@ -468,6 +513,12 @@ public class MainActivity extends BaseActivity implements TaskLogCallback, Batch
      * 会停在「任务启动前」的可用态上（置灰是在菜单弹出时算的）。</p>
      */
     private void beginTask(TaskButton active) {
+        // 占用跨页闸门：与详情页单号任务互斥（点击时已判过，这里兜住并发窗口）。
+        // 必须记住是否抢到：收尾只释放自己抢到的锁
+        taskGateOwned = AppGlobal.acquireTask();
+        if (!taskGateOwned) {
+            appendUiLog(null, "⚠ 跨页闸门正被另一入口占用，本次任务未取得互斥，收尾不会释放该锁");
+        }
         activeTaskButton = active;
         stopRequested = false;
         Web3AndroidUtil.resetStop();
@@ -489,6 +540,11 @@ public class MainActivity extends BaseActivity implements TaskLogCallback, Batch
         Web3AndroidUtil.resetStop();
         Web3AndroidUtil.resetCancel();
         setTaskButtonsEnabled(true);
+        // 任务收尾必须放闸门，否则详情页之后所有操作都会被拒绝；只放自己抢到的那把（见 taskGateOwned）
+        if (taskGateOwned) {
+            taskGateOwned = false;
+            AppGlobal.releaseTask();
+        }
     }
 
     /**
@@ -1008,7 +1064,12 @@ public class MainActivity extends BaseActivity implements TaskLogCallback, Batch
         super.onResume();
         checkAutoClearBoot();
 
-        if (skipRefreshOnResume) {
+        if (refreshStatsFromDetailOnResume) {
+            // 从账号详情返回：详情页可能已就地入场/领取，按链上真实状态重拉，待领小标签随之更新
+            refreshStatsFromDetailOnResume = false;
+            loadStatsOverview();
+            Log.d("MainActivity", "onResume: reload stats from account detail");
+        } else if (skipRefreshOnResume) {
             skipRefreshOnResume = false;
             Log.d("MainActivity", "onResume: skip refresh from sys config");
         } else if (refreshLocalOnlyOnResume) {
@@ -1132,6 +1193,9 @@ public class MainActivity extends BaseActivity implements TaskLogCallback, Batch
                 item.totalChampion = old.totalChampion;
                 item.prize = old.prize;
                 item.totalEarnings = old.totalEarnings;
+                item.jiaziClaimable = old.jiaziClaimable;
+                item.arenaClaimable = old.arenaClaimable;
+                item.lineagePending = old.lineagePending;
                 item.pending = old.pending;
                 item.unknown = old.unknown;
             } else {
@@ -1197,8 +1261,8 @@ public class MainActivity extends BaseActivity implements TaskLogCallback, Batch
     }
 
     /**
-     * 同步进度条按比例推进：进度按「两波查询」计，第一波主体数据、第二波今日冠军，
-     * 各占一半。用确定进度而不是一直转的不确定条，地址多时用户能看到数字在涨。
+     * 同步进度条按比例推进：进度按「三波查询」计，第一波主体数据、第二波今日冠军、
+     * 第三波待领额度，各占一份。用确定进度而不是一直转的不确定条，地址多时用户能看到数字在涨。
      */
     private void updateSyncProgress(int doneUnits, int totalUnits) {
         if (pbStatsSync == null || totalUnits <= 0) return;
@@ -1465,7 +1529,7 @@ public class MainActivity extends BaseActivity implements TaskLogCallback, Batch
                         }
                         accountStatsAdapter.notifyStatsChanged();
                         refreshSummary(rows, total);
-                        updateSyncProgress(fDone, total * 2);
+                        updateSyncProgress(fDone, total * 3);
                     });
                 }
 
@@ -1505,21 +1569,60 @@ public class MainActivity extends BaseActivity implements TaskLogCallback, Batch
                         }
                         accountStatsAdapter.notifyStatsChanged();
                         refreshSummary(rows, total);
-                        updateSyncProgress(total + fDoneToday, total * 2);
+                        updateSyncProgress(total + fDoneToday, total * 3);
                     });
                 }
 
-                final int fUnknown = unknownTotal, fTodayMiss = todayMiss;
+                // 第三波：擂台可领 claimable() + 师徒可领 lineagePending()，逐地址一次 eth_call。
+                // 这两个 mapping 没有批量 getter，只能单号查；失败只置 null 让该行标签隐藏，
+                // 不伪造 0，也不影响其它列——它们只是列表上的待领小标签，不进汇总。
+                int doneClaim = 0, claimMiss = 0;
+                for (int start = 0; start < total; start += ArenaConfig.STATS_CHUNK_SIZE) {
+                    int end = Math.min(start + ArenaConfig.STATS_CHUNK_SIZE, total);
+                    final List<String> slice = new ArrayList<>(addrs.subList(start, end));
+                    final Map<String, BigInteger> claimMap = new java.util.HashMap<>();
+                    final Map<String, BigInteger> lineageMap = new java.util.HashMap<>();
+                    for (String addr : slice) {
+                        BigInteger c = null, lpc = null;
+                        try { c = ArenaContractApi.callClaimable(web3j, addr); } catch (Exception ignore) {}
+                        try { lpc = ArenaContractApi.callLineagePending(web3j, addr); } catch (Exception ignore) {}
+                        if (c == null && lpc == null) claimMiss++;
+                        claimMap.put(addr, c);
+                        lineageMap.put(addr, lpc);
+                    }
+                    doneClaim += slice.size();
+                    final int fDoneClaim = doneClaim;
+                    runOnUiThread(() -> {
+                        if (seq != statsSeq.get()) return;
+                        for (String addr : slice) {
+                            List<AccountStatsAdapter.AccountStatsItem> bucket = byAddr.get(addr);
+                            if (bucket == null) continue;
+                            BigInteger c = claimMap.get(addr);
+                            BigInteger lpc = lineageMap.get(addr);
+                            for (AccountStatsAdapter.AccountStatsItem it : bucket) {
+                                it.arenaClaimable = c;
+                                it.lineagePending = lpc;
+                            }
+                        }
+                        accountStatsAdapter.notifyStatsChanged();
+                        updateSyncProgress(2 * total + fDoneClaim, total * 3);
+                    });
+                }
+
+                final int fUnknown = unknownTotal, fTodayMiss = todayMiss, fClaimMiss = claimMiss;
                 runOnUiThread(() -> {
                     if (seq != statsSeq.get()) return;
                     refreshSummary(rows, total);
-                    // 两波都结束：进度条退场，界面回到静止态
+                    // 三波都结束：进度条退场，界面回到静止态
                     showSyncBar(false);
                     if (fUnknown > 0) {
                         appendUiLog(null, "有 " + fUnknown + " 个账号链上数据未返回，已标记为未查到");
                     }
                     if (fTodayMiss > 0) {
                         appendUiLog(null, "有 " + fTodayMiss + " 个账号今日冠军未查到，该列不计入合计");
+                    }
+                    if (fClaimMiss > 0) {
+                        appendUiLog(null, "有 " + fClaimMiss + " 个账号待领额度未查到，对应小标签暂不显示");
                     }
                 });
 
@@ -1574,6 +1677,8 @@ public class MainActivity extends BaseActivity implements TaskLogCallback, Batch
                     it.totalChampion = s.championships.intValue();
                     it.prize = s.prize;
                     it.totalEarnings = calcNetEarnings(s);
+                    // 甲子可提随 playerSummary 免费带回，第一波即有值；擂台/师徒靠第三波逐地址查
+                    it.jiaziClaimable = s.jiaziClaimable;
                 }
             }
         }
@@ -1657,8 +1762,8 @@ public class MainActivity extends BaseActivity implements TaskLogCallback, Batch
         if (resultCode != RESULT_OK) return;
 
         // 防御：确认页是独立 Activity，站在它上面时主界面仍可能被排队的一下点击启动别的任务
-        // （比如“点完充值立刻又点到入场”），回来时就不能再开第二条
-        if (isTaskRunning) {
+        // （比如“点完充值立刻又点到入场”），回来时就不能再开第二条；详情页单号任务同样要靠跨页闸门拦
+        if (isTaskRunning || AppGlobal.isTaskBusy()) {
             android.widget.Toast.makeText(this, R.string.task_running, android.widget.Toast.LENGTH_SHORT).show();
             return;
         }

@@ -9,6 +9,9 @@
     <color name="card_bg">#FFFFFFFF</color>
     <color name="text_primary">#FF212121</color>
     <color name="text_secondary">#FF757575</color>
+    <!-- 提示级文字：KPI 小标签、单位后缀、分组小标题。比 text_secondary 更淡，
+         用来「在但不抢」——核心数字才是详情页的视觉主体 -->
+    <color name="text_hint">#FF8A94A6</color>
     <color name="divider">#FFEEEEEE</color>
 
     <color name="switch_track_on">#FF4CAF50</color>
@@ -29,4 +32,7 @@
     <!-- 师徒分成解锁提示：淡琥珀底 + 深橙字，要提醒但不想抢五列数字的视觉重心 -->
     <color name="lineage_hint_bg">#FFFFF8E1</color>
     <color name="lineage_hint_text">#FFE65100</color>
+
+    <!-- 详情页领取核心指标强调色：与主界面「批量领取」按钮同绿，跨页语义一致 -->
+    <color name="claim_green">#FF388E3C</color>
 </resources>

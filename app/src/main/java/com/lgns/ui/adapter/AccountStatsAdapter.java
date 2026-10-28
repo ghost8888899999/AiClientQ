@@ -47,6 +47,22 @@ public class AccountStatsAdapter extends RecyclerView.Adapter<RecyclerView.ViewH
     };
     // region 数据源与分组状态
 
+    /**
+     * 账号行点击回调：点某一行进入该地址的详情页。
+     * 只在账号行（TYPE_ACCOUNT）触发，分组头行的折叠点击不走这里。
+     */
+    public interface OnAccountClickListener {
+        void onAccountClick(AccountStatsItem item);
+    }
+
+    /** 页面设置的行点击监听，null 时账号行不可点 */
+    private OnAccountClickListener accountClickListener;
+
+    /** 装配账号行点击回调（详情页跳转由此触发） */
+    public void setOnAccountClickListener(OnAccountClickListener listener) {
+        this.accountClickListener = listener;
+    }
+
     /** 页面塞进来的完整数据（含所有分组与账号），用于计数与回填 */
     private final List<DisplayItem> allList = new ArrayList<>();
     /** 实际交给 RecyclerView 的可见列表：折叠的分组只保留组头 */
@@ -80,6 +96,12 @@ public class AccountStatsAdapter extends RecyclerView.Adapter<RecyclerView.ViewH
         public BigInteger totalEarnings;
         /** 所属分组名，用于按组折叠与上色 */
         public String groupNo;
+        /** 甲子可提（wei）：随 playerSummary 免费带回，第一波即有值 */
+        public BigInteger jiaziClaimable;
+        /** 擂台可领（wei）：第三波逐地址 claimable() 查回，未查到时为 null */
+        public BigInteger arenaClaimable;
+        /** 师徒可领（wei）：第三波逐地址 lineagePending() 查回，未查到时为 null */
+        public BigInteger lineagePending;
         /** 本轮结果还没回来（首次上屏/刷新中）：数值显示占位，状态位留空 */
         public boolean pending;
         /** 本轮查询结束但链上没返回这个地址：显示“未查到” */
@@ -167,7 +189,16 @@ public class AccountStatsAdapter extends RecyclerView.Adapter<RecyclerView.ViewH
             h.ivExpand.setRotation(expanded ? 90 : 0);
             h.itemView.setOnClickListener(v -> toggleGroup(item.groupName));
         } else if (holder instanceof AccountVH) {
-            ((AccountVH) holder).bind(item.account);
+            AccountVH a = (AccountVH) holder;
+            a.bind(item.account);
+            // 账号行整行可点→详情页；分组头行的折叠在上方 header 分支单独处理
+            if (accountClickListener != null && item.account != null) {
+                a.itemView.setOnClickListener(v ->
+                        accountClickListener.onAccountClick(item.account));
+            } else {
+                a.itemView.setOnClickListener(null);
+                a.itemView.setClickable(false);
+            }
         }
     }
 
@@ -276,6 +307,8 @@ public class AccountStatsAdapter extends RecyclerView.Adapter<RecyclerView.ViewH
         TextView tvBalance, tvEntries, tvTodayChampion, tvTotalChampion, tvPrize;
         /** 师徒分成解锁提示条：今日场次不足 10 场时显示，满额/未开打时隐藏 */
         TextView tvLineageHint;
+        /** 三个待领小标签：甲子/擂台/师徒，与批量领取口径一致 */
+        TextView tvTagJiazi, tvTagArena, tvTagLineage;
 
         AccountVH(@NonNull View itemView) {
             super(itemView);
@@ -288,6 +321,9 @@ public class AccountStatsAdapter extends RecyclerView.Adapter<RecyclerView.ViewH
             tvTotalChampion = itemView.findViewById(R.id.tv_total_champion);
             tvPrize = itemView.findViewById(R.id.tv_prize);
             tvLineageHint = itemView.findViewById(R.id.tv_lineage_hint);
+            tvTagJiazi = itemView.findViewById(R.id.tv_tag_jiazi);
+            tvTagArena = itemView.findViewById(R.id.tv_tag_arena);
+            tvTagLineage = itemView.findViewById(R.id.tv_tag_lineage);
         }
 
         void bind(AccountStatsItem item) {
@@ -314,6 +350,7 @@ public class AccountStatsAdapter extends RecyclerView.Adapter<RecyclerView.ViewH
                 tvTotalChampion.setText(R.string.common_placeholder);
                 tvPrize.setText(R.string.common_placeholder);
                 tvLineageHint.setVisibility(View.GONE);
+                hideTags();
                 return;
             }
             // 视图复用：非 pending 行必须把状态位与透明度恢复出来
@@ -330,6 +367,7 @@ public class AccountStatsAdapter extends RecyclerView.Adapter<RecyclerView.ViewH
                 tvTotalChampion.setText(R.string.common_placeholder);
                 tvPrize.setText(R.string.common_placeholder);
                 tvLineageHint.setVisibility(View.GONE);
+                hideTags();
                 return;
             }
 
@@ -353,6 +391,7 @@ public class AccountStatsAdapter extends RecyclerView.Adapter<RecyclerView.ViewH
                     : String.valueOf(item.todayChampion));
             tvTotalChampion.setText(String.valueOf(item.totalChampion));
             tvPrize.setText(formatToken(item.totalEarnings));
+            bindTags(item);
 
             // 师徒分成按「今天打了几场」线性解锁（合约 10%/场），且只认当天场次：
             // 昨天攒下的份额今天不补齐就白丢（D+2 由合约的 _burnExpiredLineage 烧掉）。
@@ -373,6 +412,41 @@ public class AccountStatsAdapter extends RecyclerView.Adapter<RecyclerView.ViewH
             BigDecimal bd = new BigDecimal(wei)
                     .divide(new BigDecimal(BigInteger.TEN.pow(18)), 2, RoundingMode.HALF_UP);
             return bd.toPlainString();
+        }
+
+        /** 三个待领标签全隐藏（pending/unknown 行不展示半成品数值） */
+        private void hideTags() {
+            tvTagJiazi.setVisibility(View.GONE);
+            tvTagArena.setVisibility(View.GONE);
+            tvTagLineage.setVisibility(View.GONE);
+        }
+
+        /**
+         * 绑定甲子/擂台/师徒三个待领胶囊：
+         * <p>数值为 null 表示本轮没查到，直接隐藏该标签（不伪造 0）；查到就显示，
+         * &gt;0 用绿底一眼看出有钱可领、=0 用灰底。甲子随 playerSummary 免费带回，
+         * 擂台/师徒靠第三波逐地址查询。口径与批量领取一致。</p>
+         */
+        private void bindTags(AccountStatsItem item) {
+            android.content.Context ctx = itemView.getContext();
+            applyTag(tvTagJiazi, item.jiaziClaimable,
+                    ctx.getString(R.string.account_tag_jiazi_fmt, formatToken(item.jiaziClaimable)));
+            applyTag(tvTagArena, item.arenaClaimable,
+                    ctx.getString(R.string.account_tag_arena_fmt, formatToken(item.arenaClaimable)));
+            applyTag(tvTagLineage, item.lineagePending,
+                    ctx.getString(R.string.account_tag_lineage_fmt, formatToken(item.lineagePending)));
+        }
+
+        /** 单个待领标签：null→隐藏；否则显文本并按 >0/0 切绿/灰底 */
+        private void applyTag(TextView tv, BigInteger wei, String label) {
+            if (wei == null) {
+                tv.setVisibility(View.GONE);
+                return;
+            }
+            tv.setVisibility(View.VISIBLE);
+            tv.setText(label);
+            tv.setBackgroundResource(wei.signum() > 0
+                    ? R.drawable.bg_tag_green : R.drawable.bg_tag_gray);
         }
     }
 

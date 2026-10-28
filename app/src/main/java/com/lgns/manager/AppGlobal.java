@@ -11,6 +11,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
@@ -286,6 +287,35 @@ public class AppGlobal {
             default: return value;
         }
     }
+
+    // region 全局任务闸门（跨页面互斥）
+
+    /**
+     * 全局任务闸门：主界面批量任务与详情页单号任务共用同一把锁。
+     *
+     * <p>为什么不能只靠各页面自己的 {@code isTaskRunning}：主界面与详情页是两个 Activity，
+     * 批量任务跑到某个号时，用户完全可以在详情页对同一个号点「入场」——两条链路用同一把私钥
+     * 并发签名，结果是 nonce 冲突、重复入场、重复扣费。闸门放在进程级静态变量上，
+     * 任何入口都必须先 {@link #acquireTask()} 才能发交易。</p>
+     */
+    private static final AtomicBoolean TASK_BUSY = new AtomicBoolean(false);
+
+    /** 占用闸门；已有任务在跑返回 false（调用方据此直接拒绝，不排队） */
+    public static boolean acquireTask() {
+        return TASK_BUSY.compareAndSet(false, true);
+    }
+
+    /** 释放闸门；必须在任务收尾的 finally 里调，漏一次后面所有任务都会被拦 */
+    public static void releaseTask() {
+        TASK_BUSY.set(false);
+    }
+
+    /** 是否有任一入口的任务在跑（主界面批量 / 详情页单号） */
+    public static boolean isTaskBusy() {
+        return TASK_BUSY.get();
+    }
+
+    // endregion
 
     // region 空闲自动上锁
 
