@@ -21,7 +21,7 @@
             android:layout_width="28dp"
             android:layout_height="wrap_content"
             android:textSize="12sp"
-            android:textColor="#BDBDBD"
+            android:textColor="@color/text_secondary"
             android:gravity="center" />
 
         <TextView
@@ -59,11 +59,15 @@
             android:textColor="#424242"
             android:gravity="center" />
 
+        <!-- 状态徽标：底色由 DailyStatusAdapter 按正常/失败两套 setBackgroundResource 切换，
+             这里给一个静态默认值只为了给布局编辑器/A11Y 检查一个真实底色去算对比度（白字 11sp），
+             运行时一定会被覆盖，不会影响显示 -->
         <TextView
             android:id="@+id/tv_status_badge"
             android:layout_width="48dp"
             android:layout_height="22dp"
             android:layout_marginStart="8dp"
+            android:background="@drawable/bg_status_badge"
             android:gravity="center"
             android:textSize="11sp"
             android:textColor="#FFFFFF"

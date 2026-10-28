@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <shape xmlns:android="http://schemas.android.com/apk/res/android"
     android:shape="rectangle">
-    <solid android:color="#4CAF50" />
+    <!-- 白字 11sp 徽标底：#4CAF50 上白字只有 1.48:1，几乎读不出；深一档到 Green 800 -->
+    <solid android:color="@color/success_deep" />
     <corners android:radius="11dp" />
 </shape>

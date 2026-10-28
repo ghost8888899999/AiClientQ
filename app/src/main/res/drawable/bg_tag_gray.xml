@@ -1,5 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- 中性状态标签（未入座 / 已禁用 / 未分组）。
+     底色必须是 #616161 这一档：白字压在 #9E9E9E 上只有 2.7:1，达不到 WCAG 4.5:1；
+     压到 #616161 后为 6.3:1，仍保持「灰=中性」的语义，不会和 danger/claim 抢注意力。 -->
 <shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
-    <solid android:color="#9E9E9E"/>
+    <solid android:color="#616161"/>
     <corners android:radius="4dp"/>
 </shape>

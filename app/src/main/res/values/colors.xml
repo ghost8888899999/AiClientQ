@@ -8,10 +8,15 @@
     <color name="bg_page">#FFF5F5F5</color>
     <color name="card_bg">#FFFFFFFF</color>
     <color name="text_primary">#FF212121</color>
-    <color name="text_secondary">#FF757575</color>
+    <!-- 次要文字：说明、时间戳、序号。#757575 在 #F5F5F5/F7F7F7 卡面上只有 4.2~4.3:1，
+         差 WCAG 4.5:1 一点，Android Studio 会逐条报 Insufficient text color contrast；
+         加深到 Grey 700 (#616161) 后同一底色 5.7:1，视觉上仍是「次要」而不是「正文」 -->
+    <color name="text_secondary">#FF616161</color>
     <!-- 提示级文字：KPI 小标签、单位后缀、分组小标题。比 text_secondary 更淡，
-         用来「在但不抢」——核心数字才是详情页的视觉主体 -->
-    <color name="text_hint">#FF8A94A6</color>
+         用来「在但不抢」——核心数字才是详情页的视觉主体。
+         但不能淡到失去可读性：#8A94A6 在白卡上只有 3.0:1，过不了 WCAG 4.5:1；
+         #667080 保持同样的冷灰调，对比度升到 4.9:1 -->
+    <color name="text_hint">#FF667080</color>
     <color name="divider">#FFEEEEEE</color>
 
     <color name="switch_track_on">#FF4CAF50</color>
@@ -20,7 +25,16 @@
 
     <!-- 危险/警告类操作 -->
     <color name="danger">#FFE53935</color>
+    <!-- 深红（Red 700）：白字压在 #E53935 上只有 4.23:1，压在这里 5.62:1。
+         所有「白字 + 红底」的填充按钮、失败徽标都用它；红字正文/图标仍用 danger -->
+    <color name="danger_dark">#FFC62828</color>
     <color name="danger_bg">#FFFDECEA</color>
+    <!-- 绿字/绿底同理：#4CAF50 上白字 1.48:1、白底上绿字 2.8:1，两处都不达标。
+         Green 800 (#2E7D32) 白底绿字 5.13:1、白字绿底 5.13:1，一个色值两头够用 -->
+    <color name="success_deep">#FF2E7D32</color>
+    <!-- 琥珀提示条上的正文：#E65100 压在 #FFF8E1 上只有 3.57:1，
+         换成 Deep Orange 900 (#BF360C) 后 5.27:1，仍是「警示橙」只是不再发飘 -->
+    <color name="warn_text">#FFBF360C</color>
 
     <!-- 标题栏副标题：常规态半透明白；会话已锁定时换琥珀色，因为那是唯一需要用户就地动手的状态 -->
     <color name="status_normal">#CCFFFFFF</color>
@@ -31,7 +45,7 @@
 
     <!-- 师徒分成解锁提示：淡琥珀底 + 深橙字，要提醒但不想抢五列数字的视觉重心 -->
     <color name="lineage_hint_bg">#FFFFF8E1</color>
-    <color name="lineage_hint_text">#FFE65100</color>
+    <color name="lineage_hint_text">@color/warn_text</color>
 
     <!-- 详情页领取核心指标强调色：与主界面「批量领取」按钮同绿，跨页语义一致 -->
     <color name="claim_green">#FF388E3C</color>

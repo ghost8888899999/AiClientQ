@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <shape xmlns:android="http://schemas.android.com/apk/res/android"
     android:shape="rectangle">
-    <solid android:color="#F44336" />
+    <!-- 失败徽标：同理 #F44336 上白字 3.68:1（11sp 不够），换 Red 700 后 5.62:1 -->
+    <solid android:color="@color/danger_dark" />
     <corners android:radius="11dp" />
 </shape>

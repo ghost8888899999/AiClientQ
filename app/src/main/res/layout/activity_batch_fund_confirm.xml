@@ -50,7 +50,9 @@
     </LinearLayout>
 
     <!-- 汇总卡 + 主号卡 + 明细列表（头部随列表滚动）。下方锚 tv_degraded_tip：
-         提示条 gone 时RelativeLayout 仍按锚点排版，列表位置不跳 -->
+         提示条 gone 时其高度为 0，列表顶部仍恰好贴在 toolbar 下方，不会跳；
+         注意：提示条自身只能 below toolbar，绝不能反过来 above 列表——
+         那会让列表 below 提示条、提示条 above 列表互为前置，RelativeLayout 直接崩（Circular dependencies） -->
     <androidx.recyclerview.widget.RecyclerView
         android:id="@+id/rv_fund_list"
         android:layout_width="match_parent"
@@ -67,7 +69,6 @@
         android:id="@+id/tv_degraded_tip"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_above="@id/rv_fund_list"
         android:layout_below="@id/toolbar"
         android:layout_marginStart="16dp"
         android:layout_marginTop="8dp"
