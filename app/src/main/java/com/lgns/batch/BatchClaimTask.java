@@ -65,6 +65,20 @@ public class BatchClaimTask {
     private static String msgOf(Throwable e) { return Web3AndroidUtil.safeMessage(e); }
 
     /**
+     * 这次 revert 是不是「把 gas 上限吃光」的 OOG，而不是「这一页没得领」的正常 revert。
+     *
+     * <p>OOG 时回执的 gasUsed 恰好等于发交易时挂的上限；NothingToClaim 只消耗真实计算量，
+     * 远低于上限。两者必须在日志里分开：前者意味着 {@code GAS_LIMIT_CLAIM_JIAZI}
+     * 盖不住俸禄条数（旧版 300k 对 ≥10 笔俸禄的号必 OOG，却被记成「未释放」），
+     * 后者才是正常结果。</p>
+     */
+    private static boolean isOutOfGas(Exception e) {
+        if (!(e instanceof ArenaContractApi.RevertedTxException)) return false;
+        java.math.BigInteger used = ((ArenaContractApi.RevertedTxException) e).gasUsed;
+        return used != null && used.compareTo(ArenaConfig.GAS_LIMIT_CLAIM_JIAZI) >= 0;
+    }
+
+    /**
      * catch 之后重新对齐 nonce。
      *
      * <p>领取链路的失败有两种，对 nonce 的影响相反：交易已上链但 revert（nonce 被消耗）、
@@ -409,8 +423,10 @@ public class BatchClaimTask {
                 }
             } while (remainJiazi.signum() > 0 && retryCount < maxRetryPerAccount);
             if (remainJiazi.signum() > 0) {
+                // 这里固定补一句 gas 提示：重试耗尽最常见的原因就是 OOG（每轮都撞同一上限），
+                // 而单号日志里的 OOG 计数只反映本号，不在这条汇总里重复算一遍
                 callback.onLog(keyNo, "CLAIM", "❌重试耗尽,仍有 " + fmtDai(remainJiazi)
-                        + " fLGNS 甲子未领,下次点领取会继续补");
+                        + " fLGNS 甲子未领,下次点领取会继续补;若上方日志有 OOG 提示,是 gas 上限问题,不是没得领");
             }
         } finally {
             keyPair = null;
@@ -437,6 +453,7 @@ public class BatchClaimTask {
         BigInteger jiaziTotal = ArenaContractApi.callJiaziCount(web3j, addr);
         BigInteger claimedJ = BigInteger.ZERO;
         int jiaziRevertBatch = 0;
+        int jiaziOogBatch = 0;
         if (jiaziTotal.compareTo(BigInteger.ZERO) > 0) {
             // 甲子俸按序号分批：合约一页最多 64 个，超出必须拆成多笔
             for (BigInteger start = BigInteger.ZERO; start.compareTo(jiaziTotal) < 0; start = start.add(MAX_JIAZI_BATCH)) {
@@ -453,6 +470,8 @@ public class BatchClaimTask {
                     // 连后面能领的师徒分成和擂台奖金一起丢掉。
                     // 不 break：释放虽然「越靠前的 stipend 越早满」，但前面的页全部领完之后，
                     // 后面的页仍可能有小额可领，逐页试才不会漏。
+                    // OOG 单独计数：它不是「没得领」，是 gas 上限不够，日志必须分开说
+                    if (isOutOfGas(e)) jiaziOogBatch++;
                     jiaziRevertBatch++;
                     currentNonce = resyncNonce(web3j, addr, currentNonce);
                 }
@@ -460,7 +479,8 @@ public class BatchClaimTask {
         }
         // claimedJ 累加的是「条数」（每笔 claim 覆盖的 stipend 数），不是金额
         logSb.append("甲子:领了 ").append(claimedJ).append(" 条");
-        if (jiaziRevertBatch > 0) logSb.append("(未释放 ").append(jiaziRevertBatch).append(" 批)");
+        if (jiaziRevertBatch - jiaziOogBatch > 0) logSb.append("(未释放 ").append(jiaziRevertBatch - jiaziOogBatch).append(" 批)");
+        if (jiaziOogBatch > 0) logSb.append(" | ⚠️").append(jiaziOogBatch).append(" 批 OOG:gas 上限盖不住俸禄条数");
         logSb.append(" | ");
 
         // 师徒分成只结算「已封盘」那天，且按今天的场次比例解锁（10% 一场，打满 10 场才 100%）。

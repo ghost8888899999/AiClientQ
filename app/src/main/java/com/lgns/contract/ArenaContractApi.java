@@ -493,9 +493,19 @@ public class ArenaContractApi {
     public static class RevertedTxException extends Exception {
         /** 已上链的失败交易哈希，供业务回查与写 outcome */
         public final String txHash;
+        /** 失败交易实际消耗的 gas；等于发交易时的上限即 OOG，供业务区分「gas 没给够」与「没东西可领」；可为 null */
+        public final BigInteger gasUsed;
 
         /** @param txHash 已上链的失败交易哈希，供业务回查与写 outcome */
-        public RevertedTxException(String msg, String txHash) { super(msg); this.txHash = txHash; }
+        public RevertedTxException(String msg, String txHash) { this(msg, txHash, null); }
+
+        /**
+         * @param txHash 已上链的失败交易哈希，供业务回查与写 outcome
+         * @param gasUsed 回执里的实际 gas 消耗，拿不到时传 null
+         */
+        public RevertedTxException(String msg, String txHash, BigInteger gasUsed) {
+            super(msg); this.txHash = txHash; this.gasUsed = gasUsed;
+        }
     }
 
     /** 签名结果：rawTx 用于广播，txHash 用于本地先落盘再发（不依赖 RPC 回包） */
@@ -563,7 +573,9 @@ public class ArenaContractApi {
                 TransactionReceipt rcpt = receiptResp.getTransactionReceipt().get();
                 if (!rcpt.isStatusOK()) {
                     String revertReason = rcpt.getRevertReason() != null ? rcpt.getRevertReason() : "未知";
-                    throw new RevertedTxException("tx reverted, hash=" + txHash + " | reason=" + revertReason, txHash);
+                    // OOG 时节点给不出 revert reason，只能靠 gasUsed 撞上限识别，随异常一并带出
+                    throw new RevertedTxException("tx reverted, hash=" + txHash + " | reason=" + revertReason,
+                            txHash, rcpt.getGasUsed());
                 }
                 return rcpt;
             }
