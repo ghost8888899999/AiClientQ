@@ -5,6 +5,7 @@ import android.os.Bundle;
 import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.View;
+import android.widget.AdapterView;
 import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.Spinner;
@@ -21,7 +22,7 @@ import com.lgns.manager.AppGlobal;
 import com.lgns.util.Web3AndroidUtil;
 
 /**
- * 自动清理配置页：设置账号间隔、日志间隔、清理方式与播放模式等，保存后交给后台任务执行。
+ * 自动清理配置页：设置账号间隔、日志间隔、清理方式与播放模式、批量转账方式等，保存后交给后台任务执行。
  *
  * <p>职责边界：页面只负责读写配置与开关联动，真正的清理动作由后台 Worker 定时触发；
  * 页面不持有清理逻辑，避免配置与执行口径分裂。</p>
@@ -47,6 +48,15 @@ public class AutoClearConfigActivity extends BaseActivity {
      * 想打满 12 场会因此多点一次。</p>
      */
     private Spinner spEnterRounds;
+    /**
+     * 批量转账方式下拉：选中索引直接存入 ArenaConfig.transferMode（0=按收益比例，1=按收益数额）。
+     *
+     * <p>选项来自 arrays.xml 的 transfer_mode_array，两项与 ArenaConfig.TRANSFER_MODE_* 一一对应，
+     * 所以存取都不需要 ±1；改了只影响批量转账页拿哪个字段当分配依据，不碰已存的比例与数额。</p>
+     */
+    private Spinner spTransferMode;
+    /** 当前转账方式的一句话说明，随下拉选择实时切换 */
+    private TextView tvTransferModeDesc;
     /** 日志自动清除开关（关闭时停掉后台清理调度） */
     private SwitchCompat swLogClearEnable;
     /** 日志保留时长数值，与 spLogTimeUnit 组成「N 小时/天」 */
@@ -155,6 +165,8 @@ public class AutoClearConfigActivity extends BaseActivity {
         spTimeUnit = findViewById(R.id.sp_time_unit);
         spPlayMode = findViewById(R.id.sp_play_mode);
         spEnterRounds = findViewById(R.id.sp_enter_rounds);
+        spTransferMode = findViewById(R.id.sp_transfer_mode);
+        tvTransferModeDesc = findViewById(R.id.tv_transfer_mode_desc);
         swLogClearEnable = findViewById(R.id.sw_log_clear_enable);
         etLogClearVal = findViewById(R.id.et_log_clear_val);
         spLogTimeUnit = findViewById(R.id.sp_log_time_unit);
@@ -169,6 +181,18 @@ public class AutoClearConfigActivity extends BaseActivity {
         swLogClearEnable.setOnCheckedChangeListener((b, checked) -> {
             applyLogIntervalEnabled(checked);
             updateStatusText();
+        });
+
+        // 说明文字跟着下拉走：两个模式的拦点不同（比例在收款方页拦，数额在转账页拦），
+        // 不写清楚很容易让用户以为改完不生效
+        spTransferMode.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
+            @Override
+            public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
+                applyTransferModeDesc(position);
+            }
+
+            @Override
+            public void onNothingSelected(AdapterView<?> parent) { }
         });
     }
 
@@ -223,6 +247,18 @@ public class AutoClearConfigActivity extends BaseActivity {
             }
             spEnterRounds.setSelection(rounds - 1);
 
+            // 批量转账方式：只有 0/1 两个合法值，越界（包括旧版本没这个 key 时手动改脏）回默认比例模式
+            int tMode = ArenaConfig.transferMode;
+            if (tMode < 0 || tMode >= spTransferMode.getCount()) {
+                String warnMsg = "配置项 transferMode 越界: " + tMode + "，已重置为默认值 "
+                        + ArenaConfig.DEFAULT_TRANSFER_MODE + "(按收益比例)";
+                Log.w("AutoClearConfig", warnMsg);
+                writeErrorToDb("CONFIG_WARN", warnMsg);
+                tMode = Math.min(ArenaConfig.DEFAULT_TRANSFER_MODE, spTransferMode.getCount() - 1);
+            }
+            spTransferMode.setSelection(tMode);
+            applyTransferModeDesc(tMode);
+
             etLogClearVal.setText(String.valueOf(ArenaConfig.logClearIntervalValue));
 
             int logTimeUnitIndex = ArenaConfig.logClearIntervalUnitIndex;
@@ -250,6 +286,10 @@ public class AutoClearConfigActivity extends BaseActivity {
             spPlayMode.setSelection(0);
             spEnterRounds.setSelection(Math.min(ArenaConfig.DEFAULT_ENTER_ROUNDS,
                     spEnterRounds.getCount()) - 1);
+            int fallbackMode = Math.min(ArenaConfig.DEFAULT_TRANSFER_MODE,
+                    Math.max(0, spTransferMode.getCount() - 1));
+            spTransferMode.setSelection(fallbackMode);
+            applyTransferModeDesc(fallbackMode);
             swLogClearEnable.setChecked(true);
             etLogClearVal.setText("1");
             spLogTimeUnit.setSelection(2);
@@ -298,6 +338,7 @@ public class AutoClearConfigActivity extends BaseActivity {
             ArenaConfig.autoClearIntervalUnitIndex = spTimeUnit.getSelectedItemPosition();
             ArenaConfig.playModeIndex = spPlayMode.getSelectedItemPosition();
             ArenaConfig.enterRounds = spEnterRounds.getSelectedItemPosition() + 1;
+            ArenaConfig.transferMode = spTransferMode.getSelectedItemPosition();
             ArenaConfig.logClearEnable = swLogClearEnable.isChecked();
             ArenaConfig.logClearIntervalValue = logIntervalValue;
             ArenaConfig.logClearIntervalUnitIndex = spLogTimeUnit.getSelectedItemPosition();
@@ -310,6 +351,7 @@ public class AutoClearConfigActivity extends BaseActivity {
                     "私钥清除间隔=" + ArenaConfig.autoClearIntervalValue + " " + getTimeUnitText(ArenaConfig.autoClearIntervalUnitIndex) + ", " +
                     "入场模式=" + getPlayModeText(ArenaConfig.playModeIndex) + ", " +
                     "连打场数=" + ArenaConfig.enterRounds + " 场, " +
+                    "批量转账=" + getTransferModeText(ArenaConfig.transferMode) + ", " +
                     "日志自动清除=" + (ArenaConfig.logClearEnable ? "开启" : "关闭") + ", " +
                     "日志保留=" + ArenaConfig.logClearIntervalValue + " " + getTimeUnitText(ArenaConfig.logClearIntervalUnitIndex);
             AppLogDbHelper dbHelper = AppLogDbHelper.getInstance(this);
@@ -352,6 +394,28 @@ public class AutoClearConfigActivity extends BaseActivity {
             return playModes[modeIndex];
         }
         return getString(R.string.play_mode_flexible);
+    }
+
+    /** 批量转账方式索引转文案，越界时回退到默认的比例模式，只用于日志拼接 */
+    private String getTransferModeText(int modeIndex) {
+        String[] modes = getResources().getStringArray(R.array.transfer_mode_array);
+        if (modeIndex >= 0 && modeIndex < modes.length) {
+            return modes[modeIndex];
+        }
+        return getString(R.string.transfer_mode_ratio);
+    }
+
+    /**
+     * 按当前选中的转账方式刷新一句话说明。
+     *
+     * <p>越界时不报错也不改选中项，只回退到比例说明：保存前还有一道越界保护，
+     * 这里只负责把界面文字弄得可读，不让它显示成空白。</p>
+     */
+    private void applyTransferModeDesc(int modeIndex) {
+        if (tvTransferModeDesc == null) return;
+        tvTransferModeDesc.setText(modeIndex == ArenaConfig.TRANSFER_MODE_AMOUNT
+                ? R.string.auto_clear_transfer_mode_desc_amount
+                : R.string.auto_clear_transfer_mode_desc_ratio);
     }
 
     /** 私钥间隔区的启用态：整块透明度 + 输入框/下拉可编辑性同步切换 */

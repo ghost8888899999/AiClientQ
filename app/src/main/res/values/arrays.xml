@@ -25,7 +25,9 @@
 
         10 是唯一的例外语义：它是结构收益的封顶线（FULL_ACTIVITY_MATCHES = 10），
         目标就是「每天打 10 场收工」时选它完全正确；标「不建议」只是提醒
-        「别拿它去凑 12 场」。11 场两个问题都占：既超出满勤（每轮多烧 66），又除不尽。
+        「别拿它去凑 12 场」。11 场两个问题都占：既超过满勤线（结构收益已封顶），又除不尽。
+        第 11、12 场并非「零收益」，抽奖与师承加成还在涨，完整算式只写在
+        ArenaConfig.MAX_ENTRIES_PER_DAY 的注释里，这里不重抄。
 
         文本只用于显示：取值一律按「下拉索引 + 1」，见 AutoClearConfigActivity#saveConfigs。
     -->
@@ -40,7 +42,20 @@
         <item>8 场（不建议）</item>
         <item>9 场（不建议）</item>
         <item>10 场（满勤·不建议）</item>
-        <item>11 场（超出满勤·不建议）</item>
+        <item>11 场（超过满勤·不建议）</item>
         <item>12 场（每日上限）</item>
+    </string-array>
+
+    <!--
+        批量转账的分配方式（对应 ArenaConfig.transferMode）。
+
+        索引必须与 ArenaConfig.TRANSFER_MODE_RATIO / TRANSFER_MODE_AMOUNT 一一对应，
+        所以这一项只能加在末尾，中间插位会静默改变已有配置的含义。
+
+        两个值都保存在收款方管理里（ratio 与 amount 各一列），切模式不会丢另一边已填的数据。
+    -->
+    <string-array name="transfer_mode_array">
+        <item>@string/transfer_mode_ratio</item>
+        <item>@string/transfer_mode_amount</item>
     </string-array>
 </resources>

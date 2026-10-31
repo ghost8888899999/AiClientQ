@@ -370,13 +370,13 @@ public class BatchEnterTask {
      * （{@code isSeated[rid][msg.sender]}），所以第 2 场必须等上一轮凑满 24 座封盘。</p>
      *
      * <p>圈数被夹在 {@code [1, MAX_ENTRIES_PER_DAY]}（合约硬上限 12，越过就 revert
-     * {@code DailyLimitReached}）。但 12 不等于「都该打」：合约里从第 11 场起
-     * {@code _recordMatch} 就 {@code return false}，不再推进甲子释放、也不提高师徒系数与
-     * 解锁比例；第 11、12 场仍会正常买座与结算（输 100.8 / 冠军 200 甲子），但每轮固定烧 66，
-     * 而且新增的甲子只会拉长 60 天释放队列，所以默认推荐 10 场。</p>
-     *
-     * <p>每圈内部完全沿用 {@link #batchEnterAllResume}：预览、续跑、RPC 轮换、失败名单
-     * 都在那里。本方法只负责圈间节拍：确认所有账号都离开当前轮，再开下一圈。</p>
+     * {@code DailyLimitReached}）。但 12 不等于「都该打」：甲子释放、师徒系数、解锁比例
+     * 三项都在第 10 场封顶（{@code _recordMatch} 从第 11 场起就 {@code return false}）。
+     * 第 11、12 场并不是白打——每场仍是一次独立的 1/24 抽奖，师承加成也继续逐席计提
+     * （那里的 {@code mine} 只被 12 封顶），所以 12 场比 10 场多约 +10.67 fLGNS 名义期望，
+     * 只多付 2 笔手续费。推荐 10 场真正的理由是<b>余量</b>：打满 12 场当天额度清零，
+     * 任一号失败就再无重试机会，而缺一个座这一轮就封不了盘。完整口径见
+     * {@link ArenaConfig#MAX_ENTRIES_PER_DAY}，本处不再复述，避免两份账跑偏。</p>
      */
     public static void batchEnterAllRoundsResume(Context ctx, TaskLogCallback callback, int playMode,
                                                  int rounds, List<KeyListItem> selectedList,

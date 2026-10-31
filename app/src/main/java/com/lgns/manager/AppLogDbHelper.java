@@ -40,7 +40,7 @@ public class AppLogDbHelper extends SQLiteOpenHelper {
     /** 库文件名 */
     private static final String DB_NAME = "app_log.db";
     /** 库版本：改表结构必须 +1，并在 onUpgrade 里补对应段落 */
-    private static final int DB_VERSION = 9;
+    private static final int DB_VERSION = 10;
     /** 进程内单例 */
     private static AppLogDbHelper instance;
 
@@ -133,7 +133,12 @@ public class AppLogDbHelper extends SQLiteOpenHelper {
     public static final String COL_KM_VALUE = "meta_value";
 
     /**
-     * 地址簿表：收款地址 + 收益比例（比例合计上限 100% 由 AddressBookManager 校验，库层不约束）。
+     * 地址簿表：收款地址 + 收益比例 + 收益数额。
+     *
+     * <p>比例与数额是两套互斥的分配口径，由系统配置页的「批量转账」决定走哪一套：
+     * 按比例分支付方全部余额，按数额则每号固定拿这么多 fLGNS。
+     * 比例合计上限 100% 由 AddressBookManager 校验；数额没有固定上限（它要跟链上余额比），
+     * 所以库层与 Manager 都不拦，实际「累计数额 ≤ 支付方余额」要到批量转账页查完余额才判。</p>
      */
     public static final String TABLE_ADDRESS = "address_entry";
     /** 地址簿：编号 */
@@ -144,6 +149,8 @@ public class AppLogDbHelper extends SQLiteOpenHelper {
     public static final String COL_AD_ADDRESS = "address";
     /** 地址簿：比例，存字符串避免浮点误差 */
     public static final String COL_AD_RATIO = "ratio";
+    /** 地址簿：收益数额（fLGNS 枚数的十进制字符串），同样存字符串避免浮点误差 */
+    public static final String COL_AD_AMOUNT = "amount";
     /** 地址簿：是否参与分配 */
     public static final String COL_AD_ENABLED = "enabled";
     /** 地址簿：排序值 */
@@ -182,6 +189,7 @@ public class AppLogDbHelper extends SQLiteOpenHelper {
                     COL_AD_GROUP_NO + " TEXT DEFAULT ''," +
                     COL_AD_ADDRESS + " TEXT NOT NULL," +
                     COL_AD_RATIO + " TEXT DEFAULT '0.00'," +
+                    COL_AD_AMOUNT + " TEXT DEFAULT '0.00'," +
                     COL_AD_ENABLED + " INTEGER DEFAULT 1," +
                     COL_AD_SORT_ORDER + " INTEGER DEFAULT 0," +
                     COL_AD_CREATED + " INTEGER);";
@@ -285,7 +293,7 @@ public class AppLogDbHelper extends SQLiteOpenHelper {
      *
      * <p>版本台账：2 重建日志表 / 3 新增分组表 / 4 新增当日状态与失败日志 /
      * 5 加 is_failed / 6 新增私钥表与元数据 / 7 给两张表加 group_no /
-     * 8 新增地址簿与支付方 / 9 支付方表列名对齐。</p>
+     * 8 新增地址簿与支付方 / 9 支付方表列名对齐 / 10 地址簿加 amount 收益数额。</p>
      */
     @Override
     public void onUpgrade(SQLiteDatabase db, int oldVersion, int newVersion) {
@@ -358,6 +366,10 @@ public class AppLogDbHelper extends SQLiteOpenHelper {
         if (oldVersion < 9) {
             // 支付方表结构对齐密钥表：created -> created_at，并清掉旧列（重建表，数据原样搬迁）
             rebuildPayerTable(db);
+        }
+        if (oldVersion < 10) {
+            // 地址簿加「收益数额」列：按数额转账模式的分配依据，存量行默认 0（等于不参与）
+            try { db.execSQL("ALTER TABLE " + TABLE_ADDRESS + " ADD COLUMN " + COL_AD_AMOUNT + " TEXT DEFAULT '0.00'"); } catch (Exception ignored) {}
         }
     }
 
