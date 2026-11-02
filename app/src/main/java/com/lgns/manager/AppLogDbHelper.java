@@ -116,7 +116,7 @@ public class AppLogDbHelper extends SQLiteOpenHelper {
     public static final String COL_KE_GROUP_NO = "group_no";
     /** 私钥：密文（PBKDF2 + AES-GCM 后的 Base64） */
     public static final String COL_KE_CIPHER_TEXT = "cipher_text";
-    /** 私钥：地址（旧数据可能为空，靠“补全地址”写入） */
+    /** 私钥：地址（旧数据可能为空） */
     public static final String COL_KE_ADDRESS = "address";
     /** 私钥：是否启用 */
     public static final String COL_KE_ENABLED = "enabled";
@@ -756,13 +756,6 @@ public class AppLogDbHelper extends SQLiteOpenHelper {
         cv.put(COL_KE_GROUP_NO, newGroup != null ? newGroup : "");
         return getWritableDatabase().update(TABLE_KEY_ENTRY, cv,
                 COL_KE_GROUP_NO + "=?", new String[]{oldGroup == null ? "" : oldGroup});
-    }
-
-    /** 只补地址，供历史数据补全地址时逐条写入，替代整表覆盖 */
-    public int updateKeyEntryAddress(int id, String address) {
-        ContentValues cv = new ContentValues();
-        cv.put(COL_KE_ADDRESS, address);
-        return getWritableDatabase().update(TABLE_KEY_ENTRY, cv, COL_KE_ID + "=?", new String[]{String.valueOf(id)});
     }
 
     /** 只改排序值（拖拽落盘时逐条调用） */

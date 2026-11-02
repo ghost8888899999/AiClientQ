@@ -23,5 +23,4 @@
 
     <item android:title="锦标赛统计" android:enabled="false"/>
     <item android:id="@+id/menu_championship_stats" android:title="查看锦标赛统计"/>
-    <item android:id="@+id/menu_migrate_addresses" android:title="补全密钥地址(旧数据迁移)"/>
 </menu>

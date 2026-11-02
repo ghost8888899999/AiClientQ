@@ -382,11 +382,6 @@ public class KeyStoreManager {
         db.updateKeyEntryMeta(id, customCode, groupNo);
     }
 
-    /** 只补地址，供「补全密钥地址」逐条写入，替代整表覆盖 */
-    public void updateKeyEntryAddress(int id, String address) {
-        db.updateKeyEntryAddress(id, address);
-    }
-
     /** 分组重命名：一条 UPDATE 改完同组记录 */
     public int renameKeyGroup(String oldGroup, String newGroup) {
         return db.updateKeyGroupNo(oldGroup, newGroup);

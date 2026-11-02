@@ -52,8 +52,7 @@ public class MainMenuHelper {
      * 其余全部是写入口，按风险分三类：</p>
      * <ul>
      *   <li><b>抢 nonce / 另开转账</b>：批量充值、批量充值手续费、批量转账；</li>
-     *   <li><b>改正在跑的那批数据</b>：系统配置（连打场数）、私钥管理（启用/主号/删除）、
-     *       迁移地址（改写 address）；</li>
+     *   <li><b>改正在跑的那批数据</b>：系统配置（连打场数）、私钥管理（启用/主号/删除）；</li>
      *   <li><b>改后续流程的输入</b>：分组管理、支付方管理、地址管理。</li>
      * </ul>
      *
@@ -67,7 +66,6 @@ public class MainMenuHelper {
             R.id.menu_payer_manage,
             R.id.menu_address_manage,
             R.id.menu_batch_transfer,
-            R.id.menu_migrate_addresses,
             R.id.menu_sys_config,
     };
 
@@ -199,11 +197,6 @@ public class MainMenuHelper {
 
         popView.findViewById(R.id.menu_championship_stats).setOnClickListener(v -> {
             activity.getDialogHelper().showChampionshipStatsDialog();
-            dismissPopup();
-        });
-
-        popView.findViewById(R.id.menu_migrate_addresses).setOnClickListener(v -> {
-            activity.getDialogHelper().showMigrateAddressesDialog();
             dismissPopup();
         });
 

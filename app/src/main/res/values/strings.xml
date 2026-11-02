@@ -192,14 +192,10 @@
     <string name="dialog_decrypt_pwd_subtitle">执行任务前需验证解密密码</string>
     <string name="hint_decrypt_pwd">解密密码</string>
 
-    <!-- ══════════ 锦标赛 / 地址迁移 ══════════ -->
+    <!-- ══════════ 锦标赛 ══════════ -->
     <string name="dialog_select_accounts">请先勾选要查询的账号</string>
     <string name="dialog_no_addr_title">地址未生成</string>
-    <string name="dialog_no_addr_msg">所选账号均为旧密钥，没有地址信息。\n\n请使用菜单「补全密钥地址」输入密码一次性迁移。</string>
-    <string name="migrate_success_fmt">已为 %d 个密钥补全地址</string>
-    <string name="migrate_fail_fmt">迁移失败：%s</string>
-    <string name="migrate_none">所有密钥均已有地址，无需补全</string>
-    <string name="migrate_decrypt_fail">补全失败：无法解密私钥，请确认密码是否正确</string>
+    <string name="dialog_no_addr_msg">所选账号均为旧密钥，没有地址信息。\n\n请在「私钥管理」中重新导入这些私钥，新导入的密钥会自动生成地址。</string>
 
     <!-- ══════════ 密码安全说明 ══════════ -->
     <string name="dialog_security_title">密码强度说明（离线爆破估算）</string>
@@ -282,7 +278,6 @@
     <string name="common_title_championship_stats">锦标赛统计</string>
     <string name="common_title_stats_dashboard">数据总览</string>
     <string name="common_title_operation_log">操作日志</string>
-    <string name="common_title_complete_key_addr">补全密钥地址</string>
     <string name="common_section_asset_overview">💰 资产总览</string>
     <string name="common_section_battle_stats">🏆 战绩统计</string>
     <string name="common_section_today_status">⏱️ 今日状态</string>

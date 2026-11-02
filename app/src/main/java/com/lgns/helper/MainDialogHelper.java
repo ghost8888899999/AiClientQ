@@ -26,7 +26,6 @@ import com.lgns.service.AutoClearWorker;
 import com.lgns.model.KeyListItem;
 import com.lgns.manager.KeyStoreManager;
 import com.lgns.R;
-import com.lgns.util.Web3AndroidUtil;
 import com.lgns.ui.activity.BatchFundConfirmActivity;
 import com.lgns.ui.activity.ChampionshipStatsActivity;
 import com.lgns.ui.activity.LogViewActivity;
@@ -169,67 +168,6 @@ public class MainDialogHelper {
         intent.putStringArrayListExtra("groups", new ArrayList<>(groups));
         intent.putIntegerArrayListExtra("initChamps", new ArrayList<>(initChamps));
         activity.startActivity(intent);
-    }
-
-    /**
-     * 一键为旧密钥补全地址：先验密码，再拿密码逐条解出私钥推导地址。
-     *
-     * <p>只处理 {@code address} 为空的条目，已有的跳过；单条解密失败只计数不中断，
-     * 最后按「成功数 > 0 / 全失败 / 无待迁移」三种情况给不同文案。</p>
-     *
-     * <p>注意写库方式：每条只调 {@code updateKeyEntryAddress} 改自己那一行，
-     * 而不是最后整表回存——否则解密期间用户改过的启用状态会被整体冲回旧值。</p>
-     */
-    public void showMigrateAddressesDialog() {
-        showDecryptPasswordDialog(pwdCharArray -> new Thread(() -> {
-            try {
-                // 解密用弹窗里现输的密码，不依赖会话；会话过期时也能就地补全地址
-                KeyStoreManager mgr = AppGlobal.getMetaManager();
-                List<KeyStoreManager.KeyEntry> entries = mgr.loadKeyEntryList();
-                int migrated = 0;
-                int failed = 0;
-                for (KeyStoreManager.KeyEntry entry : entries) {
-                    if (entry.address != null && !entry.address.isEmpty()) continue;
-                    try {
-                        String pk = mgr.decryptCipherText(entry.cipherText, pwdCharArray);
-                        String addr = "0x" + org.web3j.crypto.Keys.getAddress(
-                                org.web3j.crypto.ECKeyPair.create(org.web3j.utils.Numeric.toBigInt(pk)));
-                        entry.address = addr;
-                        // 只写这一条的 address：旧实现最后 saveKeyEntryList 整表覆盖，
-                        // 会把解密期间用户改的启用状态全部冲回旧值
-                        mgr.updateKeyEntryAddress((int) entry.id, addr);
-                        migrated++;
-                    } catch (Exception ignore) {
-                        failed++;
-                    }
-                }
-                final int count = migrated;
-                final int failCount = failed;
-                activity.runOnUiThread(() -> {
-                    String msg;
-                    if (count > 0) {
-                        msg = activity.getString(R.string.migrate_success_fmt, count);
-                    } else if (failCount > 0) {
-                        msg = activity.getString(R.string.migrate_decrypt_fail);
-                    } else {
-                        msg = activity.getString(R.string.migrate_none);
-                    }
-                    activity.appendLog("", "", msg);
-                    if (count > 0) activity.refreshLocalAndStats();
-                    styledDialog()
-                            .setMessage(msg)
-                            .setPositiveButton(R.string.btn_ok, null)
-                            .show();
-                });
-            } catch (Exception e) {
-                activity.runOnUiThread(() -> styledDialog()
-                        .setMessage(activity.getString(R.string.migrate_fail_fmt, Web3AndroidUtil.safeMessage(e)))
-                        .setPositiveButton(R.string.btn_ok, null)
-                        .show());
-            } finally {
-                Arrays.fill(pwdCharArray, (char) 0);
-            }
-        }).start());
     }
 
     /**

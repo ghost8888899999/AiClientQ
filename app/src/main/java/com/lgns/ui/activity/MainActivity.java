@@ -929,19 +929,9 @@ public class MainActivity extends BaseActivity implements TaskLogCallback, Batch
         spAppSetting.edit().putString("group_list", sb.toString()).apply();
     }
 
-    /** 刷新私钥清单（含地址补全等耗时工作），具体逻辑在 MainDataLoader */
+    /** 刷新私钥清单（含地址等耗时工作），具体逻辑在 MainDataLoader */
     public void refreshCipherKeyList() {
         MainDataLoader.refreshCipherKeyList(this, this, keyListItemList);
-    }
-
-    /**
-     * 密钥数据变更（补全地址/迁移等）后重建本地结构：重读库 → 继承已有数值 → 链上异步回填。
-     *
-     * <p>与 {@link #refreshCipherKeyList()} 的区别：那条只刷新私钥列表本身，
-     * 这条还要把统计卡片按新地址集合重算（增删账号后会直接影响汇总）。</p>
-     */
-    public void refreshLocalAndStats() {
-        loadKeyListLocalOnly(this::applyLocalDefaults);
     }
 
     // endregion
