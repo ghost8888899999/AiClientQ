@@ -1,6 +1,6 @@
 <resources xmlns:tools="http://schemas.android.com/tools">
     <!-- Base application theme. -->
-    <style name="Base.Theme.WlClient" parent="Theme.Material3.DayNight.NoActionBar">
+    <style name="Base.Theme.AiClientQ" parent="Theme.Material3.DayNight.NoActionBar">
         <!-- 夜间同样深蓝底白图标：标题栏本身不随夜间模式变白，状态栏不能反着来 -->
         <item name="android:statusBarColor">@color/primary</item>
         <item name="android:windowLightStatusBar">false</item>

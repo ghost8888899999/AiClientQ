@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
     adaptive icon 背景层：108×108 铺满，由系统按厂商遮罩裁成圆形/方形/水滴形。
-    与 ic_lgns 的背景用同一条渐变，保证桌面图标与图标预览观感一致。
+    与 ic_app_logo 的背景用同一条渐变，保证桌面图标与图标预览观感一致。
 -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:aapt="http://schemas.android.com/aapt"

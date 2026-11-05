@@ -1,5 +1,5 @@
 <resources>
-    <string name="app_name">武灵助手</string>
+    <string name="app_name">AI归集</string>
 
     <!-- ══════════ 通用：按钮 ══════════ -->
     <string name="btn_ok">知道了</string>
@@ -120,13 +120,19 @@
     <string name="master_not_set_msg">请先在私钥管理中编辑某个私钥，勾选「设为主号」</string>
     <string name="master_error_msg">主号信息异常，请重新设置</string>
 
-    <!-- ══════════ 批量充值 ══════════ -->
-    <string name="fund_no_need_msg">所有账号余额均 ≥ 100，无需充值</string>
+    <!-- ══════════ 批量充值 ══════════
+         2026-11-03 从补 fLGNS（入场门票）改为补 LGNS（烧币本金），目标算法同形（单价 100 fLGNS → 500 LGNS）。
+         同日批量转账（BatchTransferActivity/Task）也一并迁到 LGNS，两个入口共用带 LGNS 后缀的两条 fmt key。
+         下面 4 个历史 key（fund_balance_fmt / fund_summary_fmt / fund_label_current_balance / fund_label_need_amount）
+         保留 fLGNS 字面，仅供擂台详情页等旧文案兜底引用，新链路一律走 fund_lgns_balance_fmt -->
+    <string name="fund_no_need_msg">所有账号 LGNS 余额已达目标，无需充值</string>
     <string name="fund_query_fail">查询失败: %s</string>
     <string name="fund_master_info">主号信息</string>
     <string name="fund_master_balance_label">主号余额</string>
     <string name="fund_list_title">需要补齐到以下账号</string>
-    <string name="fund_balance_fmt">%1$s fLGNS</string>
+    <string name="fund_balance_fmt">%1$s LGNS</string>
+    <!-- 批量充值/批量转账均已切到 LGNS：两个入口的余额、合计、行上金额都用这一条 -->
+    <string name="fund_lgns_balance_fmt">%1$s LGNS</string>
     <string name="fund_summary_fmt">共 %1$d 个账号 · 需转入合计 %2$s fLGNS</string>
     <string name="fund_label_current_balance">当前余额 (fLGNS)</string>
     <string name="fund_label_need_amount">本次充值 (fLGNS)</string>
@@ -243,9 +249,33 @@
     <string name="common_cd_add_group">添加分组</string>
     <string name="common_cd_drag_sort">拖拽排序</string>
     <string name="common_cd_expand_toggle">展开/折叠</string>
+    <!-- 擂台线三个批量入口（入场/领取/完整流程）已从主界面下线：这三条文案先留着，
+         入口以后要恢复时不用重写（详情页的单号入场/领取仍走 detail_btn_*） -->
     <string name="common_btn_batch_enter">批量入场</string>
     <string name="common_btn_batch_claim">批量领取</string>
     <string name="common_btn_full_workflow">完整流程</string>
+    <!-- 主界面 2/3/4 号按钮：换成 HELIX 线的三个跳页入口。
+         文案一律压到四个汉字，因为一行四颗各占 1/4 宽，再长就要折行 -->
+    <string name="common_btn_helix_panel">只读面板</string>
+    <!-- 主界面第 4 号位「每日链路」直接进 HelixRunActivity（btn_helix_run → openHelixRun）；
+         齿轮菜单里的重复入口（menu_helix_run）已撤除，保留 common_btn_helix_run 供主界面按钮与写页标题栏引用 -->
+    <string name="common_btn_helix_run">每日链路</string>
+    <string name="common_btn_power_burn">烧币抢功率</string>
+    <!-- 主界面第 3 号位「领涡归」：跳 HelixRunActivity 跑 HelixTurbineTask（领取个人产出/激活涡轮/归集），对标 ling1.py -->
+    <string name="common_btn_turbine">领涡归</string>
+    <!-- 就地烧币相关的提示文案（主界面 tv_log 直接可见） -->
+    <string name="power_burn_inline_confirm_fmt">将对 %1$d 个启用号发起烧币抢功率（每号 500 LGNS）：
+• 确定后弹密码框，验通过才开始
+• 未到窗口时会精确等待
+• 任务会挂上「停止」红键，随时可停
+
+没预先补币时，任务会先日得“余额不足”然后跳过该号（不会自动从主号划币）。确定开始？</string>
+    <string name="power_burn_inline_start_fmt">▶ 烧币抢功率已启动（%1$d 个号），日志中……</string>
+    <string name="power_burn_inline_no_account">没有启用的账号：先到「私钥管理」把需要烧币的号启用。</string>
+    <string name="power_burn_inline_pwd_canceled">已取消：没输入解密密码，没有发出任何交易</string>
+    <string name="power_burn_inline_stop_hint">已请求停止：当前钱包处理完就停，已上链的交易不回滚</string>
+    <string name="power_burn_inline_finish_hint">本轮结束，明细见上方日志</string>
+    <string name="common_btn_revoke">授权撤销</string>
     <!-- 运行中把「正在跑的那个按钮」换成停止键：点一下 = 打完当前这一圈再停，不会留下半轮锁仓 -->
     <string name="common_btn_stop_after_round">停止</string>
     <string name="common_btn_stopping">停止中</string>
@@ -254,6 +284,20 @@
     <string name="common_label_today_champion">今日冠军</string>
     <string name="common_label_total_champion">累计冠军</string>
     <string name="common_label_total_prize">累计收益</string>
+    <!-- HELIX 侧汇总/列标签：主界面顶部 4 项汇总与列表 4 列 arena 位一并换成 HELIX 语义，
+         分短/长两版：短版给列下脚标（9sp），长版给汇总栏（10sp）——一行四颗时短版更耐读 -->
+    <string name="common_label_helix_pending_activate">待激活</string>
+    <string name="common_label_helix_claimable">已解锁可领</string>
+    <string name="common_label_helix_vault_pending">金库待发</string>
+    <string name="common_label_helix_ailgns">AiLGNS余额</string>
+    <string name="common_label_helix_pending_activate_short">待激活</string>
+    <string name="common_label_helix_claimable_short">可领</string>
+    <string name="common_label_helix_vault_pending_short">待发</string>
+    <string name="common_label_helix_ailgns_short">AiLGNS</string>
+    <!-- 行状态胶囊改为 HELIX 语义：LGNS 够 500 就能烧币；不够就标红提醒先补币；
+         未查到沿用「未查到」文案不重造 -->
+    <string name="stats_status_ready_burn">可烧币</string>
+    <string name="stats_status_lgns_low">缺LGNS</string>
     <string name="common_label_total_battles">总场次</string>
     <string name="common_label_champion_count">冠军次数</string>
     <string name="common_label_win_rate">胜率</string>
@@ -265,6 +309,9 @@
     <string name="common_label_today_entered">今日已入场</string>
     <string name="common_label_reset_countdown">距离重置</string>
     <string name="common_label_balance_short">余额</string>
+    <!-- 主界面列表预留下两列的标签：一行 6 列，每列 weight=1；与上面「余额」不互斥（历史行为保留），新代主列表直接写 LGNS / DAI -->
+    <string name="common_label_lgns_short">LGNS</string>
+    <string name="common_label_dai_short">DAI</string>
     <string name="common_label_enter_short">入场</string>
     <string name="common_tag_enterable">可入场</string>
     <string name="common_tag_syncing">同步中</string>
@@ -386,5 +433,13 @@
     <string name="detail_log_enter_single">开始单号入场：本次固定补 1 场（详情页不跟随主界面圈数）</string>
     <string name="detail_log_claim_start">开始单号领取：依次领取甲子/师徒/擂台并扫入钱包</string>
     <string name="detail_chain_failed_fmt">链上数据加载失败：%1$s</string>
+
+    <!-- ── 长任务保活前台服务 ── -->
+    <!-- 任务进行中挂在通知栏的唯一用处，是告知系统「这个进程正在干活」；所以不弄点击跳转、不响也不震 -->
+    <string name="notif_channel_task_name">任务进行中</string>
+    <string name="notif_channel_task_desc">批量入场、批量领取、HELIX 链路上跑时挂着的常驻通知</string>
+    <string name="notif_task_title">链上任务进行中</string>
+    <string name="notif_task_default_detail">请勿关闭应用，任务结束后这条通知自动消失</string>
+    <string name="notif_task_detail_fmt">%1$s 进行中，熄屏也会继续跑</string>
 
 </resources>

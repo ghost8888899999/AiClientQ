@@ -1,10 +1,10 @@
 <resources xmlns:tools="http://schemas.android.com/tools">
     <!-- Base application theme. -->
-    <style name="Base.Theme.WlClient" parent="Theme.Material3.DayNight.NoActionBar">
+    <style name="Base.Theme.AiClientQ" parent="Theme.Material3.DayNight.NoActionBar">
         <!-- 状态栏与标题栏同色：#1976D2 蓝底 + 白色图标，避免默认色在蓝条上方露出一条 -->
         <item name="android:statusBarColor">@color/primary</item>
         <item name="android:windowLightStatusBar">false</item>
     </style>
 
-    <style name="Theme.WlClient" parent="Base.Theme.WlClient" />
+    <style name="Theme.AiClientQ" parent="Base.Theme.AiClientQ" />
 </resources>

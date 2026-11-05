@@ -7,16 +7,19 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!--前台服务权限，Android12+必须-->
+    <!-- 长任务保活：批量入场/HELIX 一轮要跑几十分钟，熄屏后靠前台服务不吃 LMK、靠 wake lock 不吃 Doze -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
 
     <application
         android:allowBackup="false"
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:fullBackupContent="@xml/backup_rules"
-        android:icon="@drawable/ic_lgns"
+        android:icon="@drawable/ic_app_logo"
         android:label="@string/app_name"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
-        android:theme="@style/Theme.WlClient"
+        android:theme="@style/Theme.AiClientQ"
         tools:targetApi="31">
 
         <provider
@@ -28,6 +31,12 @@
                 android:name="android.support.FILE_PROVIDER_PATHS"
                 android:resource="@xml/file_paths" />
         </provider>
+
+        <!-- 任务保活前台服务：只能由界面层 start/stop，不对外提供 -->
+        <service
+            android:name=".service.TaskKeepAliveService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
 
         <activity
             android:name=".ui.activity.MainActivity"
@@ -59,6 +68,21 @@
             android:label="锦标赛统计" />
 
         <activity
+            android:name=".ui.activity.HelixActivity"
+            android:exported="false"
+            android:label="@string/common_title_helix_overview" />
+
+        <activity
+            android:name=".ui.activity.HelixRunActivity"
+            android:exported="false"
+            android:label="@string/common_title_helix_run" />
+
+        <activity
+            android:name=".ui.activity.RevokeApproveActivity"
+            android:exported="false"
+            android:label="@string/common_title_revoke_approve" />
+
+        <activity
             android:name=".ui.activity.AccountDetailActivity"
             android:exported="false"
             android:label="@string/common_title_account_detail" />
@@ -79,6 +103,16 @@
             android:name=".ui.activity.PayerManageActivity"
             android:exported="false"
             android:label="支付方管理" />
+
+        <activity
+            android:name=".ui.activity.TransferListActivity"
+            android:exported="false"
+            android:label="@string/txn_title_list" />
+
+        <activity
+            android:name=".ui.activity.TransferDetailActivity"
+            android:exported="false"
+            android:label="@string/txn_title_detail" />
 
         <activity
             android:name=".ui.activity.BatchGasFundActivity"

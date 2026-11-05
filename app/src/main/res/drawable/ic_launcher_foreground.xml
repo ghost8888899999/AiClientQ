@@ -1,12 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-    adaptive icon 前景层：与 ic_lgns 同一套主体（精灵翼 + 斜置长剑 + 挥剑光弧 + 星尘）。
+    adaptive icon 前景层：与 ic_app_logo 同一套主体（芯片本体 + 四边引脚 + 数据总线 + 发光核心 + 星芒）。
+    背景交给 ic_launcher_background，这里只画主体，透明底。
     用 group 把 24 单位网格整体放大 3.6 倍并居中到 108 网格。
 
     变换关系：最终坐标 = translate + scale × 24 坐标
-    → 24 网格的 (1,1) 映射到 (14.4,14.4)，(23,23) 映射到 (93.6,93.6)，中心正好 (54,54)。
-    最远点：上翼翼尖 (6.2,5.4)→(33.1,30.2)、下翼翼尖 (17.4,18.8)→(73.4,78.5)，
-    到中心 (54,54) 均在 36 以内，圆形/方形/水滴形遮罩都不会切到翼尖与剑身。
+    → 24 网格的 (5.3,5.3) 映射到 (29.9,29.9)，(18.7,18.7) 映射到 (78.1,78.1)，中心正好 (54,54)。
+    最远点是外伸的引脚端点与星芒，到中心 (54,54) 均在 36 以内，
+    圆形 / 方形 / 水滴形遮罩都不会切到引脚与火花。
 -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:aapt="http://schemas.android.com/aapt"
@@ -21,107 +22,75 @@
         android:translateX="10.8"
         android:translateY="10.8">
 
-        <!-- 魔法阵外环：收束全部元素 -->
-        <path
-            android:fillColor="#00000000"
-            android:pathData="M4,12 a8,8 0 1,0 16,0 a8,8 0 1,0 -16,0 Z"
-            android:strokeColor="#4D35D6F0"
-            android:strokeWidth="0.7" />
-
-        <!-- 挥剑光弧：剑锋掠过空气的残影 -->
-        <path
-            android:fillColor="#00000000"
-            android:pathData="M15.1,6.4 Q18.7,10.2 14.0,13.4"
-            android:strokeColor="#7335D6F0"
-            android:strokeLineCap="round"
-            android:strokeWidth="0.75" />
-
-        <!-- 精灵上翼：翼根贴剑，翼尖向左上探出阵外 -->
-        <path android:pathData="M9.8,11.4 Q7.6,9.0 6.2,5.4 Q8.2,6.2 9.6,8.0 Q10.6,9.8 9.8,11.4 Z">
+        <!-- 芯片本体：圆角方框，半透明青色渐变给出金属腔体 -->
+        <path android:pathData="M8.6,7 L15.4,7 A1.6,1.6 0 0 1 17,8.6 L17,15.4 A1.6,1.6 0 0 1 15.4,17 L8.6,17 A1.6,1.6 0 0 1 7,15.4 L7,8.6 A1.6,1.6 0 0 1 8.6,7 Z">
             <aapt:attr name="android:fillColor">
                 <gradient
-                    android:endX="6.2"
-                    android:endY="5.4"
+                    android:endX="17"
+                    android:endY="17"
+                    android:startX="7"
+                    android:startY="7"
+                    android:type="linear">
+                    <item
+                        android:color="#262B5C8F"
+                        android:offset="0" />
+                    <item
+                        android:color="#0D111E36"
+                        android:offset="1" />
+                </gradient>
+            </aapt:attr>
+        </path>
+        <path
+            android:fillColor="#00000000"
+            android:pathData="M8.6,7 L15.4,7 A1.6,1.6 0 0 1 17,8.6 L17,15.4 A1.6,1.6 0 0 1 15.4,17 L8.6,17 A1.6,1.6 0 0 1 7,15.4 L7,8.6 A1.6,1.6 0 0 1 8.6,7 Z"
+            android:strokeColor="#FF35D6F0"
+            android:strokeWidth="0.55" />
+
+        <!-- 四边引脚：每边三根短粗线，圆头 -->
+        <path
+            android:fillColor="#00000000"
+            android:pathData="M9,7 L9,5.3 M12,7 L12,5.3 M15,7 L15,5.3 M9,17 L9,18.7 M12,17 L12,18.7 M15,17 L15,18.7 M7,9 L5.3,9 M7,12 L5.3,12 M7,15 L5.3,15 M17,9 L18.7,9 M17,12 L18.7,12 M17,15 L18.7,15"
+            android:strokeColor="#FF7FE3FF"
+            android:strokeLineCap="round"
+            android:strokeWidth="0.6" />
+
+        <!-- 数据总线：核心向四边本体连出的四条走线 -->
+        <path
+            android:fillColor="#00000000"
+            android:pathData="M12,9.8 L12,8.6 M12,14.2 L12,15.4 M9.8,12 L8.6,12 M14.2,12 L15.4,12"
+            android:strokeColor="#8035D6F0"
+            android:strokeWidth="0.4" />
+
+        <!-- 智能核心：中心圆角方块，青色亮到蓝的渐变 -->
+        <path android:pathData="M11,9.8 L13,9.8 A1.2,1.2 0 0 1 14.2,11 L14.2,13 A1.2,1.2 0 0 1 13,14.2 L11,14.2 A1.2,1.2 0 0 1 9.8,13 L9.8,11 A1.2,1.2 0 0 1 11,9.8 Z">
+            <aapt:attr name="android:fillColor">
+                <gradient
+                    android:endX="14.2"
+                    android:endY="14.2"
                     android:startX="9.8"
-                    android:startY="11.4"
+                    android:startY="9.8"
                     android:type="linear">
                     <item
-                        android:color="#B37FE3FF"
+                        android:color="#FF7FE3FF"
                         android:offset="0" />
                     <item
-                        android:color="#1A35D6F0"
+                        android:color="#FF1E9BD6"
                         android:offset="1" />
                 </gradient>
             </aapt:attr>
         </path>
 
-        <!-- 精灵下翼：与上翼对向展开 -->
-        <path android:pathData="M14.2,12.6 Q16.4,15.2 17.4,18.8 Q15.4,18.0 13.8,16.0 Q12.8,14.0 14.2,12.6 Z">
-            <aapt:attr name="android:fillColor">
-                <gradient
-                    android:endX="17.4"
-                    android:endY="18.8"
-                    android:startX="14.2"
-                    android:startY="12.6"
-                    android:type="linear">
-                    <item
-                        android:color="#B37FE3FF"
-                        android:offset="0" />
-                    <item
-                        android:color="#1A35D6F0"
-                        android:offset="1" />
-                </gradient>
-            </aapt:attr>
-        </path>
-
-        <!-- 剑身：斜指右上的窄刃 -->
-        <path android:pathData="M9.43,15.48 L14.82,7.92 L15.10,6.40 L13.76,7.16 L8.37,14.72 Z">
-            <aapt:attr name="android:fillColor">
-                <gradient
-                    android:endX="15.1"
-                    android:endY="6.4"
-                    android:startX="8.9"
-                    android:startY="15.1"
-                    android:type="linear">
-                    <item
-                        android:color="#FFE89A12"
-                        android:offset="0" />
-                    <item
-                        android:color="#FFFFC13B"
-                        android:offset="0.45" />
-                    <item
-                        android:color="#FFFFF0BF"
-                        android:offset="1" />
-                </gradient>
-            </aapt:attr>
-        </path>
-
-        <!-- 剑格、剑柄、剑首 -->
-        <path
-            android:fillColor="#00000000"
-            android:pathData="M7.60,14.17 L10.20,16.03"
-            android:strokeColor="#FFFFC94A"
-            android:strokeLineCap="round"
-            android:strokeWidth="1" />
-        <path
-            android:fillColor="#00000000"
-            android:pathData="M8.90,15.10 L7.62,16.89"
-            android:strokeColor="#FFFFC94A"
-            android:strokeLineCap="round"
-            android:strokeWidth="1" />
-        <path
-            android:fillColor="#FFFFC94A"
-            android:pathData="M6.70,17.30 a0.6,0.6 0 1,0 1.2,0 a0.6,0.6 0 1,0 -1.2,0 Z" />
-
-        <!-- 三颗星芒：剑势带起的魔法星尘 -->
+        <!-- 核心高光点 -->
         <path
             android:fillColor="#FFFFFFFF"
-            android:pathData="M16.5,8.85 Q16.79,9.71 17.65,10.0 Q16.79,10.29 16.5,11.15 Q16.21,10.29 15.35,10.0 Q16.21,9.71 16.5,8.85 Z" />
+            android:pathData="M11.3,12 a0.7,0.7 0 1,0 1.4,0 a0.7,0.7 0 1,0 -1.4,0 Z" />
+
+        <!-- 两枚星芒：核心辐射出的能量火花 -->
         <path
             android:fillColor="#FFCFEFFF"
-            android:pathData="M12.6,3.8 Q12.82,4.38 13.4,4.6 Q12.82,4.82 12.6,5.4 Q12.38,4.82 11.8,4.6 Q12.38,4.38 12.6,3.8 Z" />
+            android:pathData="M18.4,5.4 Q18.62,5.98 19.2,6.2 Q18.62,6.42 18.4,7 Q18.18,6.42 17.6,6.2 Q18.18,5.98 18.4,5.4 Z" />
         <path
             android:fillColor="#FFCFEFFF"
-            android:pathData="M6.2,11.75 Q6.38,12.22 6.85,12.4 Q6.38,12.58 6.2,13.05 Q6.02,12.58 5.55,12.4 Q6.02,12.22 6.2,11.75 Z" />
+            android:pathData="M5.6,17.2 Q5.78,17.67 6.25,17.85 Q5.78,18.03 5.6,18.5 Q5.42,18.03 4.95,17.85 Q5.42,17.67 5.6,17.2 Z" />
     </group>
 </vector>

@@ -95,7 +95,30 @@
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="@string/common_label_balance_short"
+                        android:text="@string/common_label_lgns_short"
+                        android:textSize="9sp"
+                        android:textColor="#9E9E9E"/>
+                </LinearLayout>
+
+                <!-- 新增 DAI 列：HELIX 写链路（烧币/激活/日得 gas）全部以 DAI 为 gas，与 LGNS 一起作为“能不能行”两大主金 -->
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:orientation="vertical"
+                    android:gravity="center">
+                    <TextView
+                        android:id="@+id/tv_dai_balance"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="1.20"
+                        android:textSize="14sp"
+                        android:textStyle="bold"
+                        android:textColor="#43A047"/>
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/common_label_dai_short"
                         android:textSize="9sp"
                         android:textColor="#9E9E9E"/>
                 </LinearLayout>
@@ -110,14 +133,14 @@
                         android:id="@+id/tv_entries"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="5/12"
+                        android:text="0.00"
                         android:textSize="14sp"
                         android:textStyle="bold"
                         android:textColor="#4CAF50"/>
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="@string/common_label_enter_short"
+                        android:text="@string/common_label_helix_pending_activate_short"
                         android:textSize="9sp"
                         android:textColor="#9E9E9E"/>
                 </LinearLayout>
@@ -132,14 +155,14 @@
                         android:id="@+id/tv_today_champion"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="2"
+                        android:text="0.00"
                         android:textSize="14sp"
                         android:textStyle="bold"
                         android:textColor="#FF5722"/>
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="@string/common_label_today_champion"
+                        android:text="@string/common_label_helix_claimable_short"
                         android:textSize="9sp"
                         android:textColor="#9E9E9E"/>
                 </LinearLayout>
@@ -154,14 +177,14 @@
                         android:id="@+id/tv_total_champion"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="15"
+                        android:text="0.00"
                         android:textSize="14sp"
                         android:textStyle="bold"
                         android:textColor="#E65100"/>
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="@string/common_label_total_champion"
+                        android:text="@string/common_label_helix_vault_pending_short"
                         android:textSize="9sp"
                         android:textColor="#9E9E9E"/>
                 </LinearLayout>
@@ -176,21 +199,20 @@
                         android:id="@+id/tv_prize"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="85.20"
+                        android:text="0.00"
                         android:textSize="14sp"
                         android:textStyle="bold"
                         android:textColor="#FF9800"/>
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="@string/common_label_total_prize"
+                        android:text="@string/common_label_helix_ailgns_short"
                         android:textSize="9sp"
                         android:textColor="#9E9E9E"/>
                 </LinearLayout>
             </LinearLayout>
 
-            <!-- 待领小标签行：甲子/擂台/师徒三类可领额度各一个胶囊，与批量领取口径一致。
-                 绿=有待领、灰=此刻为 0，一眼看出这个号能不能领；具体数值与显隐在适配器里回填 -->
+            <!-- 待领小标签行：新链路下隐去（擂台概念），保留 layout 结构不删 -->
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
@@ -242,8 +264,7 @@
                     android:visibility="gone"/>
             </LinearLayout>
 
-            <!-- 师徒分成解锁提示：今日入场不足 10 场时出现，打满自动消失。
-                 合约按 10%/场线性解锁且只认当天场次，不补打就白丢，所以单开一行说清楚 -->
+            <!-- 师徒分成解锁提示：HELIX 新链路下不再展示（与徒分层同位，无同语义项），保留 layout 结构 -->
             <TextView
                 android:id="@+id/tv_lineage_hint"
                 android:layout_width="match_parent"

@@ -176,8 +176,12 @@
                 android:orientation="vertical"
                 android:visibility="gone">
 
+            <!--
+                充值管理子项：批量充值已从主界面收回本菜单（第一项），
+                下面再跟批量充值手续费（DAI）。
+            -->
                 <LinearLayout
-                    android:id="@+id/menu_batch_recharge"
+                    android:id="@+id/menu_batch_fund"
                     android:layout_width="match_parent"
                     android:layout_height="42dp"
                     android:layout_marginStart="6dp"
@@ -507,6 +511,10 @@
                     android:textSize="14sp" />
             </LinearLayout>
 
+            <!--
+                只读面板（menu_helix_overview）与授权巡检撤销（menu_revoke_approve）都已上主界面按钮
+                （btn_helix_panel / btn_revoke），菜单里不再重复入口。
+            -->
             <LinearLayout
                 android:id="@+id/menu_sys_config"
                 android:layout_width="match_parent"

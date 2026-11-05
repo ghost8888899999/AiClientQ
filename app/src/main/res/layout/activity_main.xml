@@ -26,7 +26,7 @@
             android:layout_height="26dp"
             android:layout_marginEnd="10dp"
             android:importantForAccessibility="no"
-            android:src="@drawable/ic_lgns" />
+            android:src="@drawable/ic_app_logo" />
 
         <!-- 标题 + 状态副标题：副标题由 refreshStatusSubtitle() 按「加载/同步/失败/运行中/就绪」切换 -->
         <LinearLayout
@@ -87,7 +87,9 @@
             app:tint="@color/white" />
     </LinearLayout>
 
-    <!-- 汇总数据卡：从「通栏白条」收成卡片，和蓝色标题栏拉开层次；padding 保持 8dp，高度不增 -->
+    <!-- 汇总数据卡：从「通栏白条」收成卡片，和蓝色标题栏拉开层次；padding 保持 8dp，高度不增。
+         2026-11-03 四项汇总从擂台（今日入场/今日冠军/累计冠军/累计收益）换到 HELIX
+         （待激活/已解锁可领/金库待发/累计功率），下面的 xml id 沿用旧名，不牵动 MainActivity 那一片 findViewById -->
     <androidx.cardview.widget.CardView
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
@@ -114,7 +116,7 @@
                     android:id="@+id/tv_summary_enter"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="0/0"
+                    android:text="0.00"
                     android:textSize="16sp"
                     android:textStyle="bold"
                     android:textColor="#4CAF50" />
@@ -123,7 +125,7 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:maxLines="1"
-                    android:text="@string/common_label_today_enter"
+                    android:text="@string/common_label_helix_pending_activate"
                     android:textSize="10sp"
                     android:textColor="#757575" />
             </LinearLayout>
@@ -140,14 +142,14 @@
                     android:id="@+id/tv_summary_today_win"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="0"
+                    android:text="0.00"
                     android:textSize="16sp"
                     android:textStyle="bold"
                     android:textColor="#FF5722" />
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="@string/common_label_today_champion"
+                    android:text="@string/common_label_helix_claimable"
                     android:textSize="10sp"
                     android:textColor="#757575" />
             </LinearLayout>
@@ -164,14 +166,14 @@
                     android:id="@+id/tv_summary_total_win"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="0"
+                    android:text="0.00"
                     android:textSize="16sp"
                     android:textStyle="bold"
                     android:textColor="#E65100" />
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="@string/common_label_total_champion"
+                    android:text="@string/common_label_helix_vault_pending"
                     android:textSize="10sp"
                     android:textColor="#757575" />
             </LinearLayout>
@@ -195,7 +197,7 @@
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="@string/common_label_total_prize"
+                    android:text="@string/common_label_helix_ailgns"
                     android:textSize="10sp"
                     android:textColor="#757575" />
             </LinearLayout>
@@ -235,34 +237,7 @@
         android:elevation="2dp">
 
         <LinearLayout
-            android:id="@+id/btn_batch_fund"
-            android:layout_width="0dp"
-            android:layout_height="40dp"
-            android:layout_weight="1"
-            android:orientation="horizontal"
-            android:gravity="center"
-            android:background="@drawable/bg_btn_rounded"
-            android:backgroundTint="#E65100"
-            android:clickable="true"
-            android:focusable="true">
-            <ImageView
-                android:layout_width="16dp"
-                android:layout_height="16dp"
-                android:src="@drawable/ic_fund_svg"
-                android:layout_marginEnd="4dp" />
-            <TextView
-                android:id="@+id/tv_btn_fund_label"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="@string/title_batch_fund"
-                android:textColor="#ffffff"
-                android:textSize="13sp" />
-        </LinearLayout>
-
-        <View android:layout_width="4dp" android:layout_height="0dp" />
-
-        <LinearLayout
-            android:id="@+id/btn_batch_enter"
+            android:id="@+id/btn_helix_panel"
             android:layout_width="0dp"
             android:layout_height="40dp"
             android:layout_weight="1"
@@ -272,16 +247,19 @@
             android:backgroundTint="#1976D2"
             android:clickable="true"
             android:focusable="true">
+            <!-- 菜单用的眼睛图标本体是蓝色，落在这颗蓝底按钮上会糊掉，所以在视图层重新染白；
+                 不改 drawable 本身，齿轮菜单里那一项还要按菜单的浅底色显示 -->
             <ImageView
                 android:layout_width="16dp"
                 android:layout_height="16dp"
-                android:src="@drawable/ic_enter_svg"
+                android:src="@drawable/ic_menu_eye_svg"
+                app:tint="#ffffff"
                 android:layout_marginEnd="4dp" />
             <TextView
-                android:id="@+id/tv_btn_enter_label"
+                android:id="@+id/tv_btn_panel_label"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="@string/common_btn_batch_enter"
+                android:text="@string/common_btn_helix_panel"
                 android:textColor="#ffffff"
                 android:textSize="13sp" />
         </LinearLayout>
@@ -289,26 +267,26 @@
         <View android:layout_width="4dp" android:layout_height="0dp" />
 
         <LinearLayout
-            android:id="@+id/btn_batch_claim"
+            android:id="@+id/btn_turbine"
             android:layout_width="0dp"
             android:layout_height="40dp"
             android:layout_weight="1"
             android:orientation="horizontal"
             android:gravity="center"
             android:background="@drawable/bg_btn_rounded"
-            android:backgroundTint="#388E3C"
+            android:backgroundTint="#00897B"
             android:clickable="true"
             android:focusable="true">
             <ImageView
                 android:layout_width="16dp"
                 android:layout_height="16dp"
-                android:src="@drawable/ic_claim_svg"
+                android:src="@drawable/ic_fund_svg"
                 android:layout_marginEnd="4dp" />
             <TextView
-                android:id="@+id/tv_btn_claim_label"
+                android:id="@+id/tv_btn_turbine_label"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="@string/common_btn_batch_claim"
+                android:text="@string/common_btn_turbine"
                 android:textColor="#ffffff"
                 android:textSize="13sp" />
         </LinearLayout>
@@ -316,7 +294,7 @@
         <View android:layout_width="4dp" android:layout_height="0dp" />
 
         <LinearLayout
-            android:id="@+id/btn_full_workflow"
+            android:id="@+id/btn_revoke"
             android:layout_width="0dp"
             android:layout_height="40dp"
             android:layout_weight="1"
@@ -329,13 +307,13 @@
             <ImageView
                 android:layout_width="16dp"
                 android:layout_height="16dp"
-                android:src="@drawable/ic_workflow_svg"
+                android:src="@drawable/ic_menu_undo_svg"
                 android:layout_marginEnd="4dp" />
             <TextView
-                android:id="@+id/tv_btn_workflow_label"
+                android:id="@+id/tv_btn_revoke_label"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="@string/common_btn_full_workflow"
+                android:text="@string/common_btn_revoke"
                 android:textColor="#ffffff"
                 android:textSize="13sp" />
         </LinearLayout>
