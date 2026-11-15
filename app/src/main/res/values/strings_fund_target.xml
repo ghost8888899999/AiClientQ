@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+        批量充值的目标金额提示。
+
+        目标 = 500 LGNS × 连打场数（跟 ArenaConfig.lgnsFundTargetFor 同源）。上一个版本
+        这里目标是 fLGNS（单价 100 fLGNS，跟门票数量联动），任务入口与 UI 都保留，
+        只把资金目的从「买门票」换成「烧币换功率」。不取固定值 500：多窗口或多日
+        堆叠时用户需要更多份，跟场数联动保留同一个语义。
+
+        用词统一成「场」而不是「圈」：系统配置页写的也是「连打场数」，
+        界面两处用同一套说法用户才不会以为是两个不同的设置。
+    -->
+    <string name="fund_detail_target_fmt">每号 %1$s LGNS · 连打 %2$d 场</string>
+    <string name="fund_no_need_target_fmt">所有启用账户的余额均已达到目标（每号 %1$s LGNS、连打 %2$d 场），暂时不需要充值。</string>
+</resources>

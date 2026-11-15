@@ -1,0 +1,170 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    HELIX（AiLGNS）只读面板的文案。
+    单独一个文件，和 strings_batch_fund / strings_recharge 同样的分法：
+    这一条业务线的标签会随步骤 2（写入链路）继续增长，混进 strings.xml 以后不好找。
+-->
+<resources>
+
+    <!-- ── 页面标题与总提示 ── -->
+    <string name="common_title_helix_overview">HELIX 只读面板</string>
+    <string name="helix_readonly_hint">本页全部是 eth_call 只读查询：不碰私钥、不签交易、不上链。数值是从下面这个节点、这个块高度读的。</string>
+    <string name="helix_btn_refresh">刷新</string>
+
+    <!-- ── 分区标题 ── -->
+    <string name="helix_sec_chain">链与节点</string>
+    <string name="helix_sec_price">价格源</string>
+    <string name="helix_sec_turbine_params">涡轮参数</string>
+    <string name="helix_sec_position">账号持仓（涡轮 / 金库 / 功率）</string>
+    <string name="helix_sec_tokens">代币余额与授权</string>
+    <string name="helix_sec_vault">社区金库</string>
+    <string name="helix_sec_burn">功率入口对比诊断（burnForPower / participate）</string>
+    <string name="helix_sec_addrs">合约地址（均为代理地址）</string>
+
+    <!-- ── 链与节点 ── -->
+    <string name="helix_lbl_node">当前节点</string>
+    <string name="helix_lbl_chain_id">链 ID</string>
+    <string name="helix_lbl_block">最新块高</string>
+    <string name="helix_lbl_block_time">出块时间</string>
+    <string name="helix_lbl_gas_price">Gas Price</string>
+
+    <!-- ── 价格源 ── -->
+    <string name="helix_lbl_twap">Oracle  TWAP</string>
+    <string name="helix_lbl_twap_time">TWAP 更新时间</string>
+    <string name="helix_lbl_twap_age">距今</string>
+    <string name="helix_lbl_spot">主池瞬时价</string>
+    <string name="helix_lbl_deviation">两者偏差</string>
+    <string name="helix_lbl_quote_out">quote 输出 DAI</string>
+    <string name="helix_lbl_quote_fee">quote 手续费</string>
+    <string name="helix_lbl_quote_total">quote 合计（= maxDaiIn）</string>
+    <string name="helix_lbl_quote_probe">报价探针入参</string>
+    <string name="helix_note_price_unit">单位：1 AiLGNS 折多少 DAI</string>
+    <string name="helix_note_oracle_stale">更新时间偏旧：TWAP 靠外部调 update() 喂，旧不等于错，但激活前最好看一眼</string>
+
+    <!-- ── 涡轮参数 ── -->
+    <string name="helix_lbl_fee_bps">手续费 feeBps</string>
+    <string name="helix_lbl_burn_bps">销毁 burnBps</string>
+    <string name="helix_lbl_lock_seconds">锁仓时长</string>
+    <string name="helix_lbl_max_fee_bps">手续费上限 MAX_FEE_BPS</string>
+    <string name="helix_lbl_lock_count">锁仓总笔数</string>
+    <string name="helix_lbl_total_claimed">全链累计已领取</string>
+
+    <!-- ── 账号持仓 ── -->
+    <!-- 三个名字按链上实测语义叫：claimableOf 是「锁仓到期已解锁」，claimedBalance 是「领到了但还没激活」，
+         不叫「历史已领」——那个口径会让写链路的参数算错（activate 的额度正是从 claimedBalance 扣的） -->
+    <string name="helix_pos_claimable">已解锁可领</string>
+    <string name="helix_pos_locked">锁仓中</string>
+    <string name="helix_pos_claimed">待激活</string>
+    <string name="helix_pos_locks">锁仓笔数</string>
+    <string name="helix_pos_pending">金库待领</string>
+    <string name="helix_pos_power">功率</string>
+    <string name="helix_pos_unknown">—</string>
+    <string name="helix_position_none">没有选中启用的账号，本节只显示全局数据；写链路要用的持仓需先在主界面勾选账号。</string>
+    <string name="helix_position_truncated_fmt">选中 %1$d 个账号，本页只查前 %2$d 个（每号 6 笔 eth_call，一次点完别打出几百笔请求）</string>
+    <string name="helix_position_failed_fmt">%1$d 项查询失败，对应数值显示 —，未当作 0</string>
+
+    <!-- ── 代币 ── -->
+    <string name="helix_lbl_dai_balance">DAI 余额</string>
+    <string name="helix_lbl_dai_allow">DAI → Turbine 授权</string>
+    <string name="helix_lbl_lgns_balance">LGNS 余额</string>
+    <string name="helix_lbl_lgns_allow">LGNS → PowerLedger 授权</string>
+    <string name="helix_lbl_ailgns_balance">AiLGNS 余额</string>
+    <string name="helix_lbl_watch_account">观察地址</string>
+    <string name="helix_note_inf_allow">无限授权（MAX_UINT256）：链上取样全网都是这个值，是本系统的常态</string>
+
+    <!-- ── 金库 ── -->
+    <string name="helix_lbl_total_released">累计已释放</string>
+
+    <!-- ── 功率入口对比诊断 ──
+         两个入口各摆「发起方 + 干跑结果」两行，而且传同一个额度：只在一条通道上拿到失败文案时，
+         分不清是通道关了还是这个号没资格，并排同参数对跑才能把这两件事分开。 -->
+    <string name="helix_burn_probe_amount">探针额度（两条入口同一个数）</string>
+    <string name="helix_burn_probe_from">burnForPower 发起方</string>
+    <string name="helix_burn_probe_result">burnForPower 干跑结果</string>
+    <string name="helix_part_probe_from">participate 发起方</string>
+    <string name="helix_part_probe_result">participate 干跑结果</string>
+    <string name="helix_burn_ok">额度窗口是开的，可以发交易</string>
+    <string name="helix_burn_blocked">当前不可用：本页不会替这笔发交易，也不会去抢 90 秒窗口</string>
+    <string name="helix_part_ok">participate 可用</string>
+    <string name="helix_part_blocked">participate 当前不可用</string>
+    <string name="helix_burn_note">ai.py 的「烧 500 LGNS 换生产资格」走 burnForPower，官方 App 用的是同一个合约上的 participate（sel 0x845c9306：最近 300 笔直接交易里 197 笔）。2026-11-03 实测 burnForPower 的判定分三层：低于 500 判 PowerLedger: below minimum；正好 500 判 LgnsBurnGate: not open today，即每日闸门——ai.py 里 11:59 / 23:59（UTC+8）各 90 秒的窗口就是给它用的；只有窗口开着才走到 stake 区间判定，11-02 拿到的就是那一层（500 判 stake below minimum、加 1 wei 判 above maximum，当时区间为空集）。所以这两条入口每次进页各干跑一次，报的是此刻这一层的结论，不写死。</string>
+    <string name="helix_part_note">participate 的入参口径未逐档实测，这里只拿同一个 500 LGNS 的数跟 burnForPower 对跑；它的 revert 文案只用来看「通不通」，不能拿来反推计价单位。实测对照：真实地址上 1 / 10 / 100 / 500 LGNS 四档全部干跑通过，零地址则回一个自定义错误 0xfb8f41b2（合约未开源，解不出文案）——这一路卡的是发起方自己的资格，不是额度。</string>
+
+    <!-- ── 执行链路（写）独立页 ── -->
+    <!-- 与只读面板分成两页是有意为之：只读页可以从齿轮随时点进去核对数值，
+         写页每一步都花真金白银的 gas，必须多一层「选账号 → 确认 → 输密码」才动得了私钥 -->
+    <string name="common_title_helix_run">HELIX 每日链路</string>
+    <string name="helix_run_note">这一页会真的发交易：结到期锁仓 → 领金库发行 → 补 DAI → 授权 → 涡轮激活 → 归集 AiLGNS。gas 用 DAI 付，实测 12 Gwei 下四笔合计不到 0.02 DAI。开跑前先在只读面板核对持仓与价格。</string>
+    <string name="helix_run_sec_scope">执行范围</string>
+    <string name="helix_run_lbl_accounts">本次账号</string>
+    <string name="helix_run_lbl_fund">主钱包</string>
+    <string name="helix_run_fund_hint">补 DAI 的来源，也是 AiLGNS 的归集目标；选「不补差、不归集」时这两步都不做</string>
+    <string name="helix_run_fund_none">不补差、不归集</string>
+    <string name="helix_run_sec_options">要不要做这几步</string>
+    <string name="helix_run_opt_activate">执行涡轮激活（花钱的那步）</string>
+    <string name="helix_run_opt_activate_sub">关掉就只结锁仓和领发行，可以先跑一轮看读数对不对</string>
+    <string name="helix_run_opt_topup">DAI 不足时从主钱包补差</string>
+    <string name="helix_run_opt_topup_sub">按「缺口 + 实际 gas」算，不再照搬脚本里那固定 2 DAI</string>
+    <string name="helix_run_opt_aggregate">收尾把各号 AiLGNS 归集到主钱包</string>
+
+    <!-- ── 步骤开关迁到系统配置页后的入口文案 ──
+         三个开关的标题/副标直接复用上面 helix_run_opt_* 那几条，改一处两处一起变；这里只补卡标题 ── -->
+    <string name="auto_clear_helix_section">HELIX 每日链路要做哪几步</string>
+
+    <string name="helix_run_btn_start">开始执行</string>
+    <string name="helix_run_btn_stop">停止</string>
+    <string name="helix_run_btn_clear">清空</string>
+    <string name="helix_run_sec_log">执行日志</string>
+    <string name="helix_run_log_empty">还没开始。日志同时写进数据库，之后可在「查看日志」里按 HELIX 分类翻。</string>
+    <string name="helix_run_no_account">没有可执行的账号：请先回主界面勾选启用且有地址的账号，再进来这一页。</string>
+    <string name="helix_run_key_missing_fmt">这几个账号在密钥库里查不到对应私钥，本次会跳过：%1$s</string>
+    <string name="helix_run_task_busy">另一个任务正在跑（主界面或账号详情），等它结束再执行</string>
+    <string name="helix_run_running_fmt">执行中（%1$d 个账号）…点「停止」可在当前账号处理完后退出</string>
+    <string name="helix_run_stop_requested">已请求停止：当前账号处理完就停，已上链的交易不回滚</string>
+    <string name="helix_run_confirm_title">确认发起链上交易</string>
+    <string name="helix_run_confirm_msg_fmt">将对 %1$d 个账号发起交易，主钱包 %2$s。确定开始？</string>
+    <string name="helix_run_confirm_msg_nofund_fmt">将对 %1$d 个账号发起交易；未选主钱包，本次不补 DAI、也不归集。确定开始？</string>
+    <string name="helix_run_pwd_canceled">已取消：没输入解密密码，没有发出任何交易</string>
+    <string name="helix_run_no_fund_warn">没选主钱包：补 DAI 与归集这两步本轮不会执行（子号 DAI 不够时激活会直接跳过）</string>
+    <string name="helix_run_finish_hint">本轮结束，明细见上方日志；持仓有变动可回只读面板刷新</string>
+
+    <!-- ── 授权巡检与撤销（写）独立页 ──
+         标题栏、执行范围小标题、开始/停止/清空按钮、日志小标题都直接复用上面 helix_run_* 的那几条：
+         它们是纯通用文案，两处用同一份，改一处两个页面一起变，不另开一份近似重复的 key。 -->
+    <string name="common_title_revoke_approve">授权巡检与撤销</string>
+    <string name="revoke_note">这一页只改 ERC20 授权额度（allowance），不动任何币。每改一条要签一笔 approve 交易，gas 用 DAI 付，实测 12 Gwei 下一笔约 0.0012 DAI；已经是目标值的号会自动跳过，不花这笔钱。这里的每个授权项都来自链上实测与脚本原文，出处见 RevokeApproveTask 的类注释。</string>
+    <string name="revoke_lbl_target">授权项</string>
+    <string name="revoke_target_hint">选「全部巡检」会把每条关系都读一遍，只对不等于目标值的那条发交易</string>
+    <string name="revoke_target_all">全部巡检（%1$d 项一起查）</string>
+    <string name="revoke_target_line_fmt">%1$s → %2$s，本次改成 %3$s</string>
+    <string name="revoke_impact_fmt">影响：%1$s</string>
+    <string name="revoke_sec_action">改成什么</string>
+    <string name="revoke_act_revoke">撤回到 0</string>
+    <string name="revoke_act_revoke_sub">合约再也划不走这枚币，直到重新授权为止</string>
+    <string name="revoke_act_restore">恢复成原本额度</string>
+    <string name="revoke_act_restore_sub">DAI→涡轮恢复无限授权；LGNS→功率账本恢复成脚本原本的 500 LGNS</string>
+    <string name="revoke_log_empty">还没开始。日志同时写进数据库，之后可在「查看日志」里按 REVOKE 分类翻。</string>
+    <string name="revoke_no_account">没有可处理的账号：请先回主界面勾选启用且有地址的账号，再进来这一页。</string>
+    <string name="revoke_key_missing_fmt">这几个账号在密钥库里查不到对应私钥，本次会跳过：%1$s</string>
+    <string name="revoke_task_busy">另一个任务正在跑（主界面或账号详情），等它结束再执行</string>
+    <string name="revoke_running_fmt">执行中（%1$d 个账号）…点「停止」可在当前账号处理完后退出</string>
+    <string name="revoke_stop_requested">已请求停止：当前账号处理完就停，已上链的交易不回滚</string>
+    <string name="revoke_confirm_title">确认修改链上授权</string>
+    <string name="revoke_confirm_msg_fmt">将对 %1$d 个账号执行「%2$s」，授权项：%3$s。确定开始？</string>
+    <string name="revoke_pwd_canceled">已取消：没输入解密密码，没有发出任何交易</string>
+    <string name="revoke_finish_hint">本轮结束，明细见上方日志；想核对结果再点一次「开始执行」，已符合的号只会读不会发交易</string>
+
+    <!-- ── 自检与免责 ── -->
+    <string name="helix_lbl_abi_check">ABI 自检</string>
+    <string name="helix_chain_failed_fmt">链上读取失败：%1$s</string>
+    <string name="helix_part_failed_fmt">部分数据没读到：%1$s</string>
+
+    <!-- ── 单位 ── -->
+    <string name="helix_unit_dai">DAI</string>
+    <string name="helix_unit_lgns">LGNS</string>
+    <string name="helix_unit_ailgns">AiLGNS</string>
+    <string name="helix_unit_power">功率</string>
+    <string name="helix_unit_second">秒</string>
+    <string name="helix_unit_bps">bps</string>
+
+</resources>

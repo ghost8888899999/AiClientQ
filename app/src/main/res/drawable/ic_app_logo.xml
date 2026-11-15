@@ -1,0 +1,122 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    App 图标：AI 智能芯片（六边形/方形芯片 + 电路走线 + 发光核心）。
+
+    取代旧版「精灵舞剑」，改贴合 AiClientQ 的算力 / 智能场景。
+    缩到 48dp 桌面尺寸后仍能靠三层独立符号读出来——
+    · 一枚圆角方形芯片本体 + 四边伸出的引脚：一眼是「处理器 / 算力」；
+    · 中心一颗青色发光核心 + 四条连到本体内侧的走线：交代「智能 / 数据总线」；
+    · 核心上一点白色高光与两枚星芒：给冷色科技面加一点灵动的能量感。
+
+    尺寸约定：24 单位网格，芯片本体 (7,7)~(17,17)，引脚外伸到 5.3 / 18.7，
+    四周留约 1 单位安全边，保证桌面与自适应遮罩都切不到引脚。
+    背景沿用与 ic_launcher_background 同一条深空蓝渐变，观感统一。
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="128dp"
+    android:height="128dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+
+    <!-- 底：深空蓝三段渐变，圆角 5.5 对齐 Material 图标圆角规范 -->
+    <path
+        android:pathData="M6.5,1 L17.5,1 A5.5,5.5 0 0 1 23,6.5 L23,17.5 A5.5,5.5 0 0 1 17.5,23 L6.5,23 A5.5,5.5 0 0 1 1,17.5 L1,6.5 A5.5,5.5 0 0 1 6.5,1 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:endX="20"
+                android:endY="23"
+                android:startX="4"
+                android:startY="1"
+                android:type="linear">
+                <item
+                    android:color="#FF22355C"
+                    android:offset="0" />
+                <item
+                    android:color="#FF111E36"
+                    android:offset="0.55" />
+                <item
+                    android:color="#FF060A12"
+                    android:offset="1" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- 玻璃内高光：内缩 0.75 的极细描边 -->
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M6.9,1.75 L17.1,1.75 A5.15,5.15 0 0 1 22.25,6.9 L22.25,17.1 A5.15,5.15 0 0 1 17.1,22.25 L6.9,22.25 A5.15,5.15 0 0 1 1.75,17.1 L1.75,6.9 A5.15,5.15 0 0 1 6.9,1.75 Z"
+        android:strokeColor="#1FFFFFFF"
+        android:strokeWidth="0.7" />
+
+    <!-- 芯片本体：圆角方框，半透明青色渐变给出金属腔体 -->
+    <path android:pathData="M8.6,7 L15.4,7 A1.6,1.6 0 0 1 17,8.6 L17,15.4 A1.6,1.6 0 0 1 15.4,17 L8.6,17 A1.6,1.6 0 0 1 7,15.4 L7,8.6 A1.6,1.6 0 0 1 8.6,7 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:endX="17"
+                android:endY="17"
+                android:startX="7"
+                android:startY="7"
+                android:type="linear">
+                <item
+                    android:color="#262B5C8F"
+                    android:offset="0" />
+                <item
+                    android:color="#0D111E36"
+                    android:offset="1" />
+            </gradient>
+        </aapt:attr>
+    </path>
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M8.6,7 L15.4,7 A1.6,1.6 0 0 1 17,8.6 L17,15.4 A1.6,1.6 0 0 1 15.4,17 L8.6,17 A1.6,1.6 0 0 1 7,15.4 L7,8.6 A1.6,1.6 0 0 1 8.6,7 Z"
+        android:strokeColor="#FF35D6F0"
+        android:strokeWidth="0.55" />
+
+    <!-- 四边引脚：每边三根短粗线，圆头，读作芯片管脚 -->
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M9,7 L9,5.3 M12,7 L12,5.3 M15,7 L15,5.3 M9,17 L9,18.7 M12,17 L12,18.7 M15,17 L15,18.7 M7,9 L5.3,9 M7,12 L5.3,12 M7,15 L5.3,15 M17,9 L18.7,9 M17,12 L18.7,12 M17,15 L18.7,15"
+        android:strokeColor="#FF7FE3FF"
+        android:strokeLineCap="round"
+        android:strokeWidth="0.6" />
+
+    <!-- 数据总线：核心向四边本体连出的四条走线 -->
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M12,9.8 L12,8.6 M12,14.2 L12,15.4 M9.8,12 L8.6,12 M14.2,12 L15.4,12"
+        android:strokeColor="#8035D6F0"
+        android:strokeWidth="0.4" />
+
+    <!-- 智能核心：中心圆角方块，青色亮到蓝的渐变 -->
+    <path android:pathData="M11,9.8 L13,9.8 A1.2,1.2 0 0 1 14.2,11 L14.2,13 A1.2,1.2 0 0 1 13,14.2 L11,14.2 A1.2,1.2 0 0 1 9.8,13 L9.8,11 A1.2,1.2 0 0 1 11,9.8 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:endX="14.2"
+                android:endY="14.2"
+                android:startX="9.8"
+                android:startY="9.8"
+                android:type="linear">
+                <item
+                    android:color="#FF7FE3FF"
+                    android:offset="0" />
+                <item
+                    android:color="#FF1E9BD6"
+                    android:offset="1" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- 核心高光点：一点白，暗示能量在核心里亮着 -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M11.3,12 a0.7,0.7 0 1,0 1.4,0 a0.7,0.7 0 1,0 -1.4,0 Z" />
+
+    <!-- 两枚星芒：核心辐射出的能量火花，大小错落 -->
+    <path
+        android:fillColor="#FFCFEFFF"
+        android:pathData="M18.4,5.4 Q18.62,5.98 19.2,6.2 Q18.62,6.42 18.4,7 Q18.18,6.42 17.6,6.2 Q18.18,5.98 18.4,5.4 Z" />
+    <path
+        android:fillColor="#FFCFEFFF"
+        android:pathData="M5.6,17.2 Q5.78,17.67 6.25,17.85 Q5.78,18.03 5.6,18.5 Q5.42,18.03 4.95,17.85 Q5.42,17.67 5.6,17.2 Z" />
+</vector>

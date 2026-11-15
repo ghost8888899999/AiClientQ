@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 菜单项「授权巡检与撤销」用的撤销箭头：与 ic_workflow_svg 同样 16dp、白色填充，
+     颜色由菜单布局里的 app:tint 统一给，这里不做着色。 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="16dp"
+    android:height="16dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M12.5,8c-2.65,0 -5.05,0.99 -6.9,2.6L2,7v9h9l-3.62,-3.62c1.39,-2.04 3.75,-3.44 6.42,-3.44 3.61,0 6.63,2.54 7.42,5.95l2.33,-0.72C20.19,11.3 16.69,8 12.5,8z"/>
+</vector>
