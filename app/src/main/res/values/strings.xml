@@ -154,8 +154,9 @@
     <string name="hint_pk_part1">私钥 前半段</string>
     <string name="hint_pk_part2">私钥 后半段</string>
     <string name="label_crypto_key">加解密密码</string>
-    <string name="hint_crypto_key">输入加解密Key,建议7位字母+数字组合及以上</string>
+    <string name="hint_crypto_key">输入加解密Key,建议7位字母+数字组合及以上；已有私钥时须与现有密码一致</string>
     <string name="toast_key_added">✅ 添加成功</string>
+    <string name="err_pwd_not_match_first_key">加密密码与已有私钥不一致：新私钥必须使用第一条私钥的密码，否则批量任务只能解开一部分账号。若需换密码请用改密功能整体更换</string>
 
     <!-- ══════════ 编辑私钥对话框 ══════════ -->
     <string name="dialog_edit_key_title">编辑私钥信息</string>
@@ -433,6 +434,18 @@
     <string name="detail_log_enter_single">开始单号入场：本次固定补 1 场（详情页不跟随主界面圈数）</string>
     <string name="detail_log_claim_start">开始单号领取：依次领取甲子/师徒/擂台并扫入钱包</string>
     <string name="detail_chain_failed_fmt">链上数据加载失败：%1$s</string>
+
+    <!-- ── HELIX / 烧币诊断节：复用只读探针与浏览器计数，判断某号今天到底烧没烧满 daily maximum ── -->
+    <string name="detail_section_helix">⚡ HELIX / 烧币诊断</string>
+    <string name="detail_helix_burn_today">今日已烧币（UTC+8 当日计数）</string>
+    <string name="detail_helix_burn_probe">burnForPower 干跑（此刻能否烧）</string>
+    <string name="detail_helix_part_probe">participate 干跑</string>
+    <string name="detail_helix_power">功率（链上累计）</string>
+    <string name="detail_helix_claimable">涡轮已解锁可领 (AiLGNS)</string>
+    <string name="detail_helix_pending">待激活 AiLGNS</string>
+    <string name="detail_helix_lgns_bal">LGNS 余额</string>
+    <string name="detail_helix_lgns_allow">LGNS → PowerLedger 授权</string>
+    <string name="detail_helix_probe_ok">通过（窗口开）</string>
 
     <!-- ── 长任务保活前台服务 ── -->
     <!-- 任务进行中挂在通知栏的唯一用处，是告知系统「这个进程正在干活」；所以不弄点击跳转、不响也不震 -->
